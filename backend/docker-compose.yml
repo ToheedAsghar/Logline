@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16
+    container_name: logline_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: logline
+      POSTGRES_PASSWORD: logline
+      POSTGRES_DB: logline
+    ports:
+      - "5432:5432"
+    volumes:
+      - logline_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  logline_postgres_data:
