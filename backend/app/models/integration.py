@@ -1,6 +1,7 @@
 import enum
 
 from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -32,6 +33,7 @@ class Integration(Base):
         default=IntegrationStatus.disconnected,
     )
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    integration_metadata = Column("metadata", JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     user = relationship("User", back_populates="integrations")

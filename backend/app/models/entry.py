@@ -1,6 +1,7 @@
 import enum
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, Text
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -24,7 +25,7 @@ class Entry(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     format = Column(Enum(EntryFormat, name="entry_format"), nullable=False)
-    content = Column(Text, nullable=False)
+    content = Column(JSONB, nullable=False)
     status = Column(Enum(EntryStatus, name="entry_status"), nullable=False, default=EntryStatus.draft)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     approved_at = Column(DateTime(timezone=True), nullable=True)
