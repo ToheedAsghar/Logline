@@ -8,6 +8,7 @@ load_dotenv()
 class Settings:
     database_url: str = os.getenv("DATABASE_URL", "")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    encryption_key: str = os.getenv("ENCRYPTION_KEY", "")
 
     github_client_id: str = os.getenv("GITHUB_CLIENT_ID", "")
     github_client_secret: str = os.getenv("GITHUB_CLIENT_SECRET", "")
