@@ -106,8 +106,9 @@ LLM API:
 
 ## Agent tools progress
 
-`write_event` (`app/agent/tools/write_event.py`) is built and tested. Next up:
-`flag_gap` and `get_existing_events`, following the same pattern.
+`write_event`, `get_existing_events`, and `flag_gap` (all in
+`app/agent/tools/`) are built and tested. `flag_gap` computes gaps
+dynamically from the `events` table — it never writes a row.
 
 ## Local dev
 

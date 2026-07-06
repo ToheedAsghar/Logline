@@ -58,25 +58,23 @@ def write_event(**kwargs) -> dict:
     except ValidationError as exc:
         raise WriteEventValidationError(str(exc)) from exc
 
-    db = SessionLocal()
-    try:
-        event = Event(
-            user_id=payload.user_id,
-            source=payload.source,
-            type=payload.type,
-            timestamp=payload.timestamp,
-            event_metadata=payload.metadata,
-            confidence=payload.confidence,
-        )
-        db.add(event)
-        db.commit()
-        db.refresh(event)
-    except IntegrityError as exc:
-        db.rollback()
-        raise WriteEventDatabaseError(
-            f"Could not write event, likely an invalid user_id: {exc}"
-        ) from exc
-    finally:
-        db.close()
+    with SessionLocal() as db:
+        try:
+            event = Event(
+                user_id=payload.user_id,
+                source=payload.source,
+                type=payload.type,
+                timestamp=payload.timestamp,
+                event_metadata=payload.metadata,
+                confidence=payload.confidence,
+            )
+            db.add(event)
+            db.commit()
+            db.refresh(event)
+        except IntegrityError as exc:
+            db.rollback()
+            raise WriteEventDatabaseError(
+                f"Could not write event, likely an invalid user_id: {exc}"
+            ) from exc
 
     return {"success": True, "event_id": event.id}
