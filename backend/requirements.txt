@@ -8,3 +8,6 @@ alembic
 anthropic
 cryptography
 mcp
+bcrypt
+pyjwt
+email-validator

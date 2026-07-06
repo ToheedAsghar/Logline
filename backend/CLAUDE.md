@@ -110,6 +110,29 @@ LLM API:
 `app/agent/tools/`) are built and tested. `flag_gap` computes gaps
 dynamically from the `events` table — it never writes a row.
 
+## REST API (`app/api/`)
+
+Ordinary FastAPI CRUD routes for the frontend — no LLM/agent/MCP involved.
+Wired into `app/main.py` with prefixes `/auth`, `/integrations`, `/entries`,
+`/timeline`, `/self_captures`.
+
+- Auth is JWT bearer tokens (`pyjwt` + `bcrypt`, see `app/core/security.py`),
+  not session cookies. `app/api/deps.py::get_current_user` decodes the
+  `Authorization: Bearer <token>` header and is the DI dependency every other
+  router uses to scope queries to the current user.
+- `POST /integrations/{source}/connect` is a placeholder returning 501 — real
+  per-source OAuth flows aren't built yet.
+- There's intentionally no `POST /entries` — entries are created by the agent
+  (via `write_event`-style tools), not directly by the user through the API.
+- Error convention: 404 for a resource that doesn't exist *or* belongs to
+  another user, 401 for missing/invalid auth. Do not use 403 to distinguish
+  "not yours" from "doesn't exist" — with no sharing/collaboration model,
+  every resource is single-owner, so confirming existence to a non-owner via
+  a different status code is a pure information leak with no legitimate use.
+  Scope ownership checks in the query itself (`.filter(Entry.id == id,
+  Entry.user_id == current_user.id)`), not as a separate check after
+  fetching — see `_get_owned_entry` in `app/api/entries.py`.
+
 ## Local dev
 
 Postgres runs via Docker Compose (container name `logline_postgres`), not
