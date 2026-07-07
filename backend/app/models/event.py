@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -16,6 +16,15 @@ class ConfidenceLevel(str, enum.Enum):
 
 class Event(Base):
     __tablename__ = "events"
+    __table_args__ = (
+        # NULLs are distinct in Postgres unique constraints, so events with no
+        # external_id (nothing stable to key off of) are correctly left
+        # unconstrained -- only genuine (user, source, type, external_id)
+        # matches are rejected.
+        UniqueConstraint(
+            "user_id", "source", "type", "external_id", name="uq_events_user_source_type_external_id"
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
@@ -24,6 +33,7 @@ class Event(Base):
     timestamp = Column(DateTime(timezone=True), nullable=False)
     event_metadata = Column("metadata", JSONB, nullable=True)
     confidence = Column(Enum(ConfidenceLevel, name="confidence_level"), nullable=False)
+    external_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     user = relationship("User", back_populates="events")

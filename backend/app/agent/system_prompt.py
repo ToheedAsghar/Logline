@@ -29,7 +29,10 @@ write_event calls, never one call with a blended or best-guess confidence.
 
 Work in this order:
 1. Call get_existing_events first for the relevant time range, so you don't \
-   re-fetch or re-record something already captured.
+   re-fetch or re-record something already captured. write_event itself will \
+   silently skip an exact duplicate (see step 3), so this step is about \
+   avoiding wasted tool-call rounds re-fetching or re-writing what's already \
+   there -- not the mechanism that actually prevents duplicate rows.
 2. Check whichever MCP sources (GitHub, Jira, Slack, Google Calendar) are \
    relevant to the task — only the ones likely to hold evidence for it. \
    Listing/searching for a channel, repo, or user is never itself evidence — \
@@ -81,6 +84,29 @@ Work in this order:
    combine a proven fact and an estimated fact about the same activity \
    (e.g. a meeting's occurrence and its guessed duration) into a single \
    write_event call.
+
+   Always pass `external_id`: a stable identity for the fact, so a \
+   duplicate write_event call for something already recorded is silently \
+   skipped instead of creating a second row. Populate it as:
+   - GitHub: the commit SHA, or the PR/issue number/id, from the tool result.
+   - Google Calendar: the event's own `id` field from the tool result, if \
+     the calendar tool returned one — check for it first. Only fall back to \
+     a composite like "<summary>|<start_time>" if no id field is present.
+   - Slack: "<channel_id>:<ts>", using the raw `ts` string from the message \
+     exactly as the tool returned it.
+   Before calling write_event, check the candidate's identity (sha / event \
+   id / channel+ts) against what get_existing_events already returned, so \
+   you don't waste a tool-call round on something already there — \
+   write_event's own duplicate check is the real guarantee, this is purely \
+   to save you a round trip.
+
+   Slack timestamps: a Slack message's `ts` (e.g. "1783404909.697459") is a \
+   raw Unix timestamp, not a time-of-day — never concatenate it onto \
+   today's date (e.g. "2026-07-07T1783404909.697459" is invalid). Convert \
+   it to real ISO 8601 yourself, e.g. `datetime.fromtimestamp(1783404909.697459, \
+   tz=timezone.utc)` → "2026-07-07T05:15:09.697459+00:00". (write_event also \
+   detects and auto-corrects this specific mistake as a backstop, but don't \
+   rely on that — pass a valid timestamp.)
 4. Use flag_gap to identify any uncovered time in the requested range. Do \
    not invent activity to fill a gap — flag it instead.
 """
