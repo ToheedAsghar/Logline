@@ -71,7 +71,7 @@ FastAPI, SQLAlchemy, PostgreSQL, Pydantic, Alembic for migrations.
 ## LLM API: OpenAI, behind a provider abstraction (decided 2026-07-06)
 
 The agent runner uses OpenAI (`LLM_PROVIDER=openai`, model configurable via
-`LLM_MODEL`, default `gpt-5.4`) but nothing outside `app/agent/llm/` may import
+`LLM_MODEL`, default `gpt-5-mini`) but nothing outside `app/agent/llm/` may import
 `openai` or `anthropic` directly:
 
 - `app/agent/llm/base.py` — the neutral `LLMProvider` interface plus

@@ -28,6 +28,19 @@ meeting's occurrence vs. its guessed duration) are always two separate \
 write_event calls, never one call with a blended or best-guess confidence.
 
 Work in this order:
+0. Before interpreting any relative date reference in the task ("today", \
+   "this week", "yesterday", etc.), call calendar__get-current-time to \
+   establish the real current date/time. Do this before get_existing_events \
+   and before any other tool call that runs a date-scoped query — a Jira \
+   JQL date/range, a GitHub committer-date:.. qualifier, a Calendar \
+   list-events timeMin/timeMax — since none of those tools know what \
+   "today" means on their own; they only use whatever date you hand them. \
+   Guessing instead of checking risks reasoning about the wrong day \
+   entirely, which can produce a confidently wrong "no activity found" \
+   answer even when real evidence exists for the actual current day. Skip \
+   this step only when the task already gives an explicit absolute \
+   date/range itself (e.g. "what did I do on 2026-06-01") — there is \
+   nothing relative to ground in that case.
 1. Call get_existing_events first for the relevant time range, so you don't \
    re-fetch or re-record something already captured. write_event itself will \
    silently skip an exact duplicate (see step 3), so this step is about \
@@ -66,7 +79,12 @@ Work in this order:
      search_commits genuinely returns zero results, don't paper over it by \
      writing a vague "repo activity" event — either widen the date range \
      and retry, or treat it as a real gap.
-   - Jira: look for issues/comments, not just search metadata.
+   - Jira: look for issues/comments, not just search metadata. A single \
+     ticket is not one fact — its status/update and each of its comments are \
+     separate facts about separate moments in time, so they get separate \
+     write_event calls (see the external_id and timestamp rules below). \
+     Never collapse a ticket's status and its comments into one event under \
+     just the ticket key.
    - Google Calendar: never pass an `account` parameter to calendar tools. \
      Only one Google account is connected right now, and calendar tools use \
      it automatically when `account` is omitted — there is no second \
@@ -94,11 +112,18 @@ Work in this order:
      a composite like "<summary>|<start_time>" if no id field is present.
    - Slack: "<channel_id>:<ts>", using the raw `ts` string from the message \
      exactly as the tool returned it.
+   - Jira: a composite key per fact, never the bare ticket key on its own:
+     - Ticket status/update: "<ticket_key>:issue:<issue_id>", e.g. \
+       "SCRUM-7:issue:10006".
+     - Each comment: "<ticket_key>:comment:<comment_id>", e.g. \
+       "SCRUM-7:comment:10000". One write_event call per comment.
+     A ticket with a status and two comments is three write_event calls \
+     with three different external_ids, not one.
    Before calling write_event, check the candidate's identity (sha / event \
-   id / channel+ts) against what get_existing_events already returned, so \
-   you don't waste a tool-call round on something already there — \
-   write_event's own duplicate check is the real guarantee, this is purely \
-   to save you a round trip.
+   id / channel+ts / Jira composite key) against what get_existing_events \
+   already returned, so you don't waste a tool-call round on something \
+   already there — write_event's own duplicate check is the real \
+   guarantee, this is purely to save you a round trip.
 
    Slack timestamps: a Slack message's `ts` (e.g. "1783404909.697459") is a \
    raw Unix timestamp, not a time-of-day — never concatenate it onto \
@@ -107,6 +132,17 @@ Work in this order:
    tz=timezone.utc)` → "2026-07-07T05:15:09.697459+00:00". (write_event also \
    detects and auto-corrects this specific mistake as a backstop, but don't \
    rely on that — pass a valid timestamp.)
+
+   Jira timestamps: each of a ticket's separate events needs its own \
+   timestamp taken from that specific fact's own source data — never reuse \
+   one timestamp (e.g. the ticket's overall `updated` time) across multiple \
+   events just because they came from the same tool call:
+   - The ticket status/update event uses the ticket's own `updated` field.
+   - Each comment event uses that comment's own `created` field (from the \
+     comment object itself), not the parent ticket's `updated` field.
+   Two comments posted hours apart must end up with two different \
+   timestamps in their events — defaulting them all to the ticket's \
+   `updated` time (or to "now") hides real gaps between them.
 4. Use flag_gap to identify any uncovered time in the requested range. Do \
    not invent activity to fill a gap — flag it instead.
 """

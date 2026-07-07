@@ -13,6 +13,7 @@ same MCP connections.
 """
 
 import json
+import logging
 import os
 import re
 from contextlib import AsyncExitStack
@@ -30,6 +31,8 @@ from app.db.session import SessionLocal
 from app.models.integration import Integration, IntegrationSource
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+
+logger = logging.getLogger(__name__)
 
 # Slack write tools are hard-restricted to this channel, mirroring the same
 # guard in scripts/manual_test_slack_mcp.py — carried over unchanged so the
@@ -237,6 +240,28 @@ def _validate_github_date_syntax(query: str) -> str:
     return f"{remainder} {committer_date_qualifier}".strip()
 
 
+# Code-level backstop for the date-grounding rule in SYSTEM_PROMPT (see step
+# 0): the model is told to call calendar__get-current-time before reasoning
+# about "today"/"this week"/etc., but a prompt is advisory, not enforced --
+# live testing showed the model sometimes skips that call and hallucinates a
+# literal date instead (e.g. a training-cutoff-ish date), which silently
+# produces a wrong "no activity found" answer rather than an error. We can't
+# know a literal date is *wrong* without an independent clock, so this can
+# only flag "date used before grounding happened", not correctness -- logged
+# as a warning rather than rejected, matching this file's existing
+# auto-correct-don't-raise style for tool-call backstops.
+DATE_GROUNDING_SOURCES = {"jira", "github", "calendar"}
+CALENDAR_CURRENT_TIME_TOOL_NATIVE_NAME = "get-current-time"
+# Lookarounds instead of \b: a plain \b fails to match the date prefix of an
+# ISO datetime like "2024-01-19T00:00:00Z" -- "9" and "T" are both \w
+# characters, so \b never breaks between them.
+_LITERAL_DATE_RE = re.compile(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)")
+
+
+def _contains_literal_date(arguments: dict[str, Any]) -> bool:
+    return bool(_LITERAL_DATE_RE.search(json.dumps(arguments, default=str)))
+
+
 SLACK_FIND_CHANNEL_TOOL = ToolDefinition(
     name="slack_find_channel",
     description=(
@@ -317,6 +342,7 @@ class Toolbelt:
             definition.name: handler for definition, handler in CUSTOM_TOOLS
         }
         self._slack_allowed_channel_id: Optional[str] = None
+        self._current_time_established = False
 
     async def __aenter__(self) -> "Toolbelt":
         for source, build_params in MCP_SERVER_BUILDERS.items():
@@ -397,6 +423,20 @@ class Toolbelt:
                     }
 
             arguments = dict(tool_call.arguments)
+
+            if source == "calendar" and native_name == CALENDAR_CURRENT_TIME_TOOL_NATIVE_NAME:
+                self._current_time_established = True
+            elif not self._current_time_established and source in DATE_GROUNDING_SOURCES:
+                if _contains_literal_date(arguments):
+                    logger.warning(
+                        "[date-grounding] %s called with a literal date before "
+                        "calendar__get-current-time was ever called this run -- "
+                        "the agent may be reasoning about 'today' using a "
+                        "hallucinated or guessed date instead of the real "
+                        "current time. arguments=%s",
+                        tool_call.name,
+                        arguments,
+                    )
 
             if source == "github" and native_name in GITHUB_SEARCH_TOOLS_REQUIRING_SCOPE:
                 query = _validate_github_date_syntax(arguments.get("query", ""))

@@ -11,7 +11,7 @@ class Settings:
     encryption_key: str = os.getenv("ENCRYPTION_KEY", "")
 
     llm_provider: str = os.getenv("LLM_PROVIDER", "openai")
-    llm_model: str = os.getenv("LLM_MODEL", "gpt-5.4")
+    llm_model: str = os.getenv("LLM_MODEL", "gpt-5-mini")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
 
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "")
