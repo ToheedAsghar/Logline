@@ -35,9 +35,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.agent.llm.base import ToolCall
+from app.agent.llm.base import AgentResponse, LLMProvider, ToolCall
+from app.agent.runner import run_agent
 from app.agent.system_prompt import SYSTEM_PROMPT
 from app.agent.toolbelt import SLACK_LIST_MY_CHANNELS_TOOL, Toolbelt
+import app.agent.runner as runner_module
 
 
 def _slack_page_result(channels: list[dict], next_cursor: str | None = None) -> MagicMock:
@@ -166,3 +168,107 @@ class TestSlackNotInChannelFallback:
         result = asyncio.run(toolbelt.dispatch(tool_call))
 
         assert result == {"channels": [{"id": "C2", "name": "logline_mcp_test"}]}
+
+
+class _ScriptedSlackFallbackProvider(LLMProvider):
+    """Stands in for an LLM that follows SYSTEM_PROMPT's not_in_channel
+    fallback instruction. It is *reactive* -- it inspects the actual tool
+    result content in `messages` to decide its next move, rather than
+    replaying a fixed call sequence blind to input -- so a test built on top
+    of it actually exercises `run_agent`'s message-threading (does the tool
+    result really make it back to the "model" in a form it can act on),
+    not just a hardcoded list of expected calls.
+
+    This cannot prove a *real* LLM will choose to fall back -- that's
+    inherently untestable offline. What it proves is that the real
+    `runner.py` + `toolbelt.py` code, unmodified, correctly turns "the model
+    asked for slack_list_my_channels" into an actual dispatched call and a
+    result the loop can continue from -- closing the gap left by
+    TestSlackNotInChannelFallback's prompt-text-only assertions above.
+    """
+
+    def __init__(self) -> None:
+        self.requested_tool_names: list[str] = []
+
+    async def run_turn(self, messages, tools) -> AgentResponse:
+        last = messages[-1]
+
+        if last.role == "user":
+            call = ToolCall(
+                id="1",
+                name="slack__slack_get_channel_history",
+                arguments={"channel_id": "C_GUESSED"},
+            )
+            self.requested_tool_names.append(call.name)
+            return AgentResponse(text=None, tool_calls=[call], is_final=False)
+
+        if last.role == "tool" and "not_in_channel" in (last.content or ""):
+            call = ToolCall(id="2", name="slack_list_my_channels", arguments={})
+            self.requested_tool_names.append(call.name)
+            return AgentResponse(text=None, tool_calls=[call], is_final=False)
+
+        return AgentResponse(
+            text="Checked Slack via the real channel from the fallback list.",
+            tool_calls=[],
+            is_final=True,
+        )
+
+
+class TestFullAgentRunNotInChannelFallback:
+    """
+    Full-loop behavioral test: mocks the LLM (reactively, see
+    `_ScriptedSlackFallbackProvider`) and the Slack MCP session, then drives
+    the actual `run_agent` loop end to end -- not an isolated
+    `Toolbelt.dispatch` call -- to prove the not_in_channel ->
+    slack_list_my_channels fallback really happens in the assembled agent,
+    not just as prompt text asserted in isolation.
+    """
+
+    def test_not_in_channel_result_leads_to_slack_list_my_channels_call(self, monkeypatch):
+        mock_session = AsyncMock()
+
+        async def fake_call_tool(name, arguments=None, **_kwargs):
+            if name == "slack_list_channels":
+                return _slack_page_result(
+                    [
+                        {"id": "C1", "name": "random", "is_member": False},
+                        {"id": "C2", "name": "logline_mcp_test", "is_member": True},
+                    ]
+                )
+            if name == "slack_get_channel_history":
+                result = MagicMock()
+                result.content = [MagicMock(text=json.dumps({"ok": False, "error": "not_in_channel"}))]
+                return result
+            raise AssertionError(f"unexpected slack tool call: {name}")
+
+        mock_session.call_tool.side_effect = fake_call_tool
+
+        async def fake_connect_mcp_source(self, source, build_params):
+            if source == "slack":
+                self._sessions["slack"] = mock_session
+                self._mcp_tool_index["slack__slack_get_channel_history"] = (
+                    "slack",
+                    "slack_get_channel_history",
+                )
+            # github/calendar/jira intentionally left unconnected -- this test
+            # only exercises the Slack fallback path, and real connections
+            # would require real credentials/subprocesses.
+
+        monkeypatch.setattr(Toolbelt, "_connect_mcp_source", fake_connect_mcp_source)
+
+        provider = _ScriptedSlackFallbackProvider()
+        monkeypatch.setattr(runner_module, "get_llm_provider", lambda: provider)
+
+        final_text = asyncio.run(run_agent(user_id=1, task="Summarize my Slack activity today."))
+
+        assert provider.requested_tool_names == [
+            "slack__slack_get_channel_history",
+            "slack_list_my_channels",
+        ]
+        called_native_names = [call.args[0] for call in mock_session.call_tool.call_args_list]
+        assert called_native_names == [
+            "slack_list_channels",  # __aenter__ resolving the write-restricted allowed channel
+            "slack_get_channel_history",  # round 1: the guessed channel, returns not_in_channel
+            "slack_list_channels",  # round 2: the fallback, triggered by the not_in_channel result
+        ]
+        assert final_text == "Checked Slack via the real channel from the fallback list."

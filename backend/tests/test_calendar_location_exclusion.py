@@ -39,15 +39,18 @@ No real Calendar MCP calls are made in these tests.
 """
 
 import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.agent.llm.base import ToolCall
+from app.agent.llm.base import AgentResponse, LLMProvider, ToolCall
+from app.agent.runner import run_agent
 from app.agent.system_prompt import SYSTEM_PROMPT
 from app.agent.toolbelt import Toolbelt
 from app.agent.tools.flag_gap import flag_gap
 from app.agent.tools.write_event import write_event
+import app.agent.runner as runner_module
 import app.agent.tools.flag_gap as flag_gap_module
 import app.agent.tools.write_event as write_event_module
 
@@ -68,8 +71,6 @@ REAL_EVENT = {
 
 
 def _mock_call_tool_result(payload: dict) -> MagicMock:
-    import json
-
     result = MagicMock()
     result.content = [MagicMock(text=json.dumps(payload))]
     return result
@@ -170,3 +171,121 @@ class TestSystemPromptStillRequiresRealEventsAsEvidence:
         assert (
             "actual title and attendees count as calendar-sourced work evidence" in SYSTEM_PROMPT
         )
+
+
+class _ScriptedCalendarExclusionProvider(LLMProvider):
+    """Stands in for an LLM that correctly follows SYSTEM_PROMPT's
+    working-location exclusion rule. It inspects the actual mixed event list
+    returned by the mocked Calendar MCP call and applies the same skip rule
+    the prompt asks the real model to apply (skip eventType ==
+    "workingLocation"), then requests write_event only for what's left,
+    followed by flag_gap -- reacting to real tool-result content and
+    `tool_call_id`s threaded through `messages`, not replaying a fixed
+    script blind to input.
+
+    This cannot prove a *real* LLM will make this choice -- that's
+    inherently untestable offline (SYSTEM_PROMPT's wording is covered
+    separately, above). What it proves is that the real `runner.py` +
+    `toolbelt.py` + `write_event.py` + `flag_gap.py` code, unmodified,
+    correctly turns "the model chose to skip the Home entry" into a real
+    DB write (or lack thereof) end to end -- closing the gap left by
+    testing `write_event`/`Toolbelt.dispatch` in isolation.
+    """
+
+    def __init__(self) -> None:
+        self.requested_tool_names: list[str] = []
+
+    async def run_turn(self, messages, tools) -> AgentResponse:
+        last = messages[-1]
+
+        if last.role == "user":
+            call = ToolCall(id="1", name="calendar__list-events", arguments={"calendarId": "primary"})
+            self.requested_tool_names.append(call.name)
+            return AgentResponse(text=None, tool_calls=[call], is_final=False)
+
+        if last.role == "tool" and last.tool_call_id == "1":
+            payload = json.loads(last.content)
+            real_events = [
+                event for event in payload["events"] if event.get("eventType") != "workingLocation"
+            ]
+            event = real_events[0]
+            call = ToolCall(
+                id="2",
+                name="write_event",
+                arguments={
+                    "source": "calendar",
+                    "type": "meeting",
+                    "timestamp": "2026-07-06T09:00:00",
+                    "metadata": {"summary": event["summary"], "attendees": event.get("attendees")},
+                    "confidence": "proven",
+                },
+            )
+            self.requested_tool_names.append(call.name)
+            return AgentResponse(text=None, tool_calls=[call], is_final=False)
+
+        if last.role == "tool" and last.tool_call_id == "2":
+            call = ToolCall(
+                id="3",
+                name="flag_gap",
+                arguments={"start_time": "2026-07-06T00:00:00", "end_time": "2026-07-06T23:59:59"},
+            )
+            self.requested_tool_names.append(call.name)
+            return AgentResponse(text=None, tool_calls=[call], is_final=False)
+
+        return AgentResponse(text="Recorded today's real meeting; no gap found.", tool_calls=[], is_final=True)
+
+
+class TestFullAgentRunCalendarLocationExclusion:
+    """
+    Full-loop behavioral test: mocks the LLM (reactively, see
+    `_ScriptedCalendarExclusionProvider`) and the Calendar MCP session, then
+    drives the actual `run_agent` loop end to end -- not an isolated
+    `Toolbelt.dispatch`/`write_event` call -- to prove the "Home" entry
+    never reaches a real `write_event` DB write while the real "Team
+    Standup" event does, and that flag_gap still runs as the final step.
+    """
+
+    def test_working_location_entry_never_reaches_write_event(self, monkeypatch):
+        mock_session = AsyncMock()
+        mock_session.call_tool.return_value = _mock_call_tool_result(
+            {"events": [WORKING_LOCATION_EVENT, REAL_EVENT]}
+        )
+
+        async def fake_connect_mcp_source(self, source, build_params):
+            if source == "calendar":
+                self._sessions["calendar"] = mock_session
+                self._mcp_tool_index["calendar__list-events"] = ("calendar", "list-events")
+            # github/slack/jira intentionally left unconnected -- this test
+            # only exercises the calendar location-exclusion path.
+
+        monkeypatch.setattr(Toolbelt, "_connect_mcp_source", fake_connect_mcp_source)
+
+        fake_write_db = MagicMock()
+        fake_write_session_cm = MagicMock()
+        fake_write_session_cm.__enter__.return_value = fake_write_db
+        fake_write_session_cm.__exit__.return_value = False
+        monkeypatch.setattr(write_event_module, "SessionLocal", lambda: fake_write_session_cm)
+
+        fake_gap_query = MagicMock()
+        fake_gap_query.filter.return_value.count.return_value = 1
+        fake_gap_db = MagicMock()
+        fake_gap_db.query.return_value = fake_gap_query
+        fake_gap_session_cm = MagicMock()
+        fake_gap_session_cm.__enter__.return_value = fake_gap_db
+        fake_gap_session_cm.__exit__.return_value = False
+        monkeypatch.setattr(flag_gap_module, "SessionLocal", lambda: fake_gap_session_cm)
+
+        provider = _ScriptedCalendarExclusionProvider()
+        monkeypatch.setattr(runner_module, "get_llm_provider", lambda: provider)
+
+        final_text = asyncio.run(run_agent(user_id=1, task="Log today's calendar activity."))
+
+        assert provider.requested_tool_names == ["calendar__list-events", "write_event", "flag_gap"]
+        assert mock_session.call_tool.call_count == 1
+
+        assert fake_write_db.add.call_count == 1
+        written_event = fake_write_db.add.call_args.args[0]
+        assert written_event.event_metadata["summary"] == "Team Standup"
+        assert "Home" not in json.dumps(written_event.event_metadata)
+
+        assert final_text == "Recorded today's real meeting; no gap found."
