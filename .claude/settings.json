@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk '{ if \\(length\\($0\\) > 250\\) print substr\\($0,1,250\\) \"... [truncated]\"; else print }')"
+    ]
+  }
+}

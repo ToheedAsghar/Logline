@@ -68,12 +68,23 @@ is a plain string anywhere.
 
 FastAPI, SQLAlchemy, PostgreSQL, Pydantic, Alembic for migrations.
 
-## LLM API: not yet decided
+## LLM API: OpenAI, behind a provider abstraction (decided 2026-07-06)
 
-Do not assume Anthropic or OpenAI anywhere in the codebase until explicitly told
-which one we're using. Keep tool definitions and schema work API-agnostic until
-that decision is made. This is still undecided as of 2026-07-06 — continue to
-keep all tool/schema code API-agnostic until told otherwise.
+The agent runner uses OpenAI (`LLM_PROVIDER=openai`, model configurable via
+`LLM_MODEL`, default `gpt-5.4`) but nothing outside `app/agent/llm/` may import
+`openai` or `anthropic` directly:
+
+- `app/agent/llm/base.py` — the neutral `LLMProvider` interface plus
+  `Message`/`ToolDefinition`/`ToolCall`/`AgentResponse` dataclasses.
+- `app/agent/llm/openai_provider.py` — the only file that imports `openai` and
+  converts to/from its wire format.
+- `app/agent/llm/__init__.py::get_llm_provider()` — factory reading
+  `LLM_PROVIDER` from `.env`; anything other than `"openai"` raises
+  `NotImplementedError` rather than failing silently.
+
+Switching providers (e.g. adding Anthropic back) means adding one new file
+under `app/agent/llm/` and one branch in the factory — `runner.py` and
+`toolbelt.py` never change.
 
 ## MCP integrations: all four independently verified (as of 2026-07-06)
 
@@ -109,6 +120,25 @@ LLM API:
 `write_event`, `get_existing_events`, and `flag_gap` (all in
 `app/agent/tools/`) are built and tested. `flag_gap` computes gaps
 dynamically from the `events` table — it never writes a row.
+
+## Agent runner (`app/agent/runner.py`, `app/agent/toolbelt.py`)
+
+`run_agent(user_id, task)` is the live loop: build the toolbelt, get the
+configured `LLMProvider`, then call/execute/append in a loop (capped at
+`MAX_TOOL_ROUNDS = 15`) until the model stops requesting tools. Tested
+end-to-end via `backend/scripts/manual_test_agent_runner.py`.
+
+`Toolbelt` (in `toolbelt.py`) connects to all four MCP servers using the same
+stdio server params proven in `scripts/manual_test_*_mcp.py`, and registers
+`write_event`/`get_existing_events`/`flag_gap` as `ToolDefinition`s so the
+runner treats every tool uniformly. MCP tool names are namespaced
+`{source}__{native_name}` (e.g. `github__get_me`) to route dispatch and avoid
+cross-server name collisions. The Slack write-tool channel restriction from
+`manual_test_slack_mcp.py` is carried over unchanged in `Toolbelt.dispatch`.
+
+Current limitation: MCP connections use the shared test credentials in
+`.env`, not per-user OAuth — every `user_id` gets the same MCP sessions until
+the real `/integrations/{source}/connect` flow exists.
 
 ## REST API (`app/api/`)
 

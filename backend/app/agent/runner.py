@@ -1,49 +1,65 @@
-from anthropic import Anthropic
+"""Main agent orchestration loop.
 
+Given a user and a task, build the toolbelt, get the configured LLMProvider,
+and loop: run_turn -> execute any requested tool calls -> append results ->
+repeat until the model returns a final response with no more tool calls.
+
+There is no fixed sequence of steps here beyond that loop — which tools get
+called, in what order, is entirely the model's decision (see
+app/agent/system_prompt.py for the guidance it reasons from). This file must
+never import `openai` or `anthropic` directly; it only talks to the
+LLMProvider interface and the toolbelt's dispatcher.
+"""
+
+import json
+import logging
+
+from app.agent.llm import get_llm_provider
+from app.agent.llm.base import Message
 from app.agent.system_prompt import SYSTEM_PROMPT
-from app.config import settings
+from app.agent.toolbelt import Toolbelt
 
-# Custom tool schemas + handlers live in app/agent/tools/. MCP servers
-# (GitHub, Slack, Jira, Calendar) are wired in here as additional tools.
-# The agent loop below decides which tools to call and when to stop —
-# there is no separate pipeline module dictating the sequence of steps.
+logger = logging.getLogger(__name__)
 
-client = Anthropic(api_key=settings.anthropic_api_key)
-
-MODEL = "claude-sonnet-5"
+MAX_TOOL_ROUNDS = 15
 
 
-def run_agent(user_message: str, tools: list[dict], tool_handlers: dict) -> str:
-    messages = [{"role": "user", "content": user_message}]
+async def run_agent(user_id: int, task: str) -> str:
+    provider = get_llm_provider()
 
-    while True:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            tools=tools,
-            messages=messages,
-        )
+    messages: list[Message] = [
+        Message(role="system", content=SYSTEM_PROMPT),
+        Message(role="user", content=task),
+    ]
 
-        if response.stop_reason != "tool_use":
-            return "".join(
-                block.text for block in response.content if block.type == "text"
+    async with Toolbelt(user_id=user_id) as toolbelt:
+        logger.info("Toolbelt assembled with %d tools.", len(toolbelt.tool_definitions))
+
+        for round_number in range(1, MAX_TOOL_ROUNDS + 1):
+            response = await provider.run_turn(messages, toolbelt.tool_definitions)
+
+            if response.is_final:
+                logger.info("Agent finished after %d tool-call round(s).", round_number - 1)
+                return response.text or ""
+
+            messages.append(
+                Message(role="assistant", content=response.text, tool_calls=response.tool_calls)
             )
 
-        messages.append({"role": "assistant", "content": response.content})
+            for tool_call in response.tool_calls:
+                logger.info(
+                    "[round %d] calling %s(%s)", round_number, tool_call.name, tool_call.arguments
+                )
+                result = await toolbelt.dispatch(tool_call)
+                logger.info("[round %d] %s -> %s", round_number, tool_call.name, result)
 
-        tool_results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
-            handler = tool_handlers[block.name]
-            result = handler(**block.input)
-            tool_results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": str(result),
-                }
-            )
+                messages.append(
+                    Message(
+                        role="tool",
+                        content=json.dumps(result, default=str),
+                        tool_call_id=tool_call.id,
+                    )
+                )
 
-        messages.append({"role": "user", "content": tool_results})
+    logger.warning("Agent stopped: exceeded MAX_TOOL_ROUNDS=%d without a final response.", MAX_TOOL_ROUNDS)
+    return "[agent stopped: exceeded max tool-call rounds without a final answer]"

@@ -50,6 +50,9 @@ Thumbs.db
 .idea/
 *.swp
 
+# --- Claude Code (local-only) ---
+.claude/settings.local.json
+
 # --- Local data / uploads (voice notes, etc.) ---
 uploads/
 *.local

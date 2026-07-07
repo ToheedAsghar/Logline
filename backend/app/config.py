@@ -10,6 +10,10 @@ class Settings:
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
     encryption_key: str = os.getenv("ENCRYPTION_KEY", "")
 
+    llm_provider: str = os.getenv("LLM_PROVIDER", "openai")
+    llm_model: str = os.getenv("LLM_MODEL", "gpt-5.4")
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", str(60 * 24)))
