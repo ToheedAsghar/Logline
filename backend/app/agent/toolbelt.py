@@ -14,6 +14,7 @@ same MCP connections.
 
 import json
 import os
+import re
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Optional
@@ -216,6 +217,26 @@ def _query_has_repo_scope(query: str) -> bool:
     return any(qualifier in query for qualifier in GITHUB_QUERY_SCOPE_QUALIFIERS)
 
 
+# search_commits has no since:/until: qualifiers -- GitHub silently ignores
+# them rather than erroring (see SYSTEM_PROMPT), which looks identical to "no
+# commits in range" and is easy to miss. SYSTEM_PROMPT tells the model to use
+# committer-date:YYYY-MM-DD..YYYY-MM-DD instead; this is the code-level
+# backstop in case the model reverts to the invalid syntax anyway.
+_GITHUB_INVALID_DATE_QUALIFIER_RE = re.compile(r"\b(since|until):(\S+)")
+
+
+def _validate_github_date_syntax(query: str) -> str:
+    matches = dict(_GITHUB_INVALID_DATE_QUALIFIER_RE.findall(query))
+    if not matches:
+        return query
+
+    since_value = matches.get("since", "")
+    until_value = matches.get("until", "")
+    remainder = " ".join(_GITHUB_INVALID_DATE_QUALIFIER_RE.sub("", query).split())
+    committer_date_qualifier = f"committer-date:{since_value}..{until_value}"
+    return f"{remainder} {committer_date_qualifier}".strip()
+
+
 SLACK_FIND_CHANNEL_TOOL = ToolDefinition(
     name="slack_find_channel",
     description=(
@@ -378,7 +399,8 @@ class Toolbelt:
             arguments = dict(tool_call.arguments)
 
             if source == "github" and native_name in GITHUB_SEARCH_TOOLS_REQUIRING_SCOPE:
-                query = arguments.get("query", "")
+                query = _validate_github_date_syntax(arguments.get("query", ""))
+                arguments["query"] = query
                 if not _query_has_repo_scope(query):
                     stored_repos = get_user_github_repos(self.user_id)
                     if stored_repos:

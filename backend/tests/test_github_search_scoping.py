@@ -39,7 +39,12 @@ import pytest
 
 from app.agent.llm.base import ToolCall
 from app.agent.system_prompt import SYSTEM_PROMPT
-from app.agent.toolbelt import Toolbelt, _query_has_repo_scope, get_user_github_repos
+from app.agent.toolbelt import (
+    Toolbelt,
+    _query_has_repo_scope,
+    _validate_github_date_syntax,
+    get_user_github_repos,
+)
 import app.agent.toolbelt as toolbelt_module
 
 
@@ -114,6 +119,49 @@ class TestRepoScoping:
 
         sent_query = mock_session.call_tool.call_args.kwargs["arguments"]["query"]
         assert sent_query == original_query
+
+
+class TestValidateGithubDateSyntax:
+    """
+    Code-level backstop for the same since:/until: bug documented in
+    SYSTEM_PROMPT: even though the prompt tells the model to use
+    committer-date:YYYY-MM-DD..YYYY-MM-DD, `_validate_github_date_syntax`
+    rewrites the invalid since:/until: qualifiers in code too, so a prompt
+    regression doesn't silently zero out real results (GitHub ignores
+    since:/until: rather than erroring on them).
+    """
+
+    def test_rewrites_since_and_until_to_committer_date_range(self):
+        query = "repo:owner/name since:2026-07-01 until:2026-07-06"
+        result = _validate_github_date_syntax(query)
+
+        assert "since:" not in result
+        assert "until:" not in result
+        assert "committer-date:2026-07-01..2026-07-06" in result
+        assert "repo:owner/name" in result
+
+    def test_leaves_correct_committer_date_syntax_unchanged(self):
+        query = "repo:owner/name committer-date:2026-07-01..2026-07-06"
+        assert _validate_github_date_syntax(query) == query
+
+    def test_leaves_query_with_neither_qualifier_unchanged(self):
+        query = "repo:owner/name some other search terms"
+        assert _validate_github_date_syntax(query) == query
+
+    def test_dispatch_corrects_invalid_since_until_syntax(self, monkeypatch):
+        toolbelt, mock_session = _github_toolbelt(monkeypatch, None)
+        tool_call = ToolCall(
+            id="1",
+            name="github__search_commits",
+            arguments={"query": "repo:owner/name since:2026-07-01 until:2026-07-06"},
+        )
+
+        asyncio.run(toolbelt.dispatch(tool_call))
+
+        sent_query = mock_session.call_tool.call_args.kwargs["arguments"]["query"]
+        assert "since:" not in sent_query
+        assert "until:" not in sent_query
+        assert "committer-date:2026-07-01..2026-07-06" in sent_query
 
 
 class TestCommitterDateSyntax:
