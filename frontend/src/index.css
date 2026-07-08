@@ -1,0 +1,258 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------
+ * Theme wiring: Tailwind v4 reads token *names* here (--color-bg etc.) and
+ * generates utilities from them (bg-bg, text-text, border-border …). Each
+ * name points at an indirection var (--ll-*) whose actual value flips with
+ * [data-theme] below — this is what lets `bg-bg` etc. respond to the theme
+ * toggle without any JS-driven class swapping.
+ * ------------------------------------------------------------------- */
+@theme {
+  --font-sans: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-bg: var(--ll-bg);
+  --color-surface: var(--ll-surface);
+  --color-surface-2: var(--ll-surface-2);
+  --color-border: var(--ll-border);
+  --color-border-2: var(--ll-border-2);
+  --color-text: var(--ll-text);
+  --color-muted: var(--ll-muted);
+  --color-faint: var(--ll-faint);
+  --color-accent: var(--ll-accent);
+  --color-accent-ink: var(--ll-accent-ink);
+  --color-accent-dim: var(--ll-accent-dim);
+  --color-accent-soft: var(--ll-accent-soft);
+  --color-danger: var(--ll-danger);
+  --color-danger-soft: var(--ll-danger-soft);
+  --color-sidebar-bg: var(--ll-sidebar-bg);
+  --color-sidebar-surface: var(--ll-sidebar-surface);
+  --color-sidebar-text: var(--ll-sidebar-text);
+  --color-sidebar-muted: var(--ll-sidebar-muted);
+  --color-sidebar-border: var(--ll-sidebar-border);
+
+  --radius-xs: 4px;
+  --radius-sm: 7px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+  --radius-2xl: 16px;
+  --radius-3xl: 18px;
+  --radius-pill: 999px;
+
+  --shadow-elevated: var(--ll-shadow);
+
+  --animate-ll-blink: ll-blink 1.15s steps(1) infinite;
+  --animate-ll-dots: ll-dots 1s ease-in-out infinite;
+  --animate-ll-pop: ll-pop 0.4s ease both;
+  --animate-ll-pulse: ll-pulse 2s ease-out infinite;
+  --animate-ll-sweep: ll-sweep 0.85s ease forwards;
+  --animate-ll-rise: ll-rise 0.28s ease;
+  --animate-ll-slide: ll-slide 0.3s ease;
+  --animate-ll-agentin: ll-agentin 0.3s ease;
+  --animate-ll-toast: ll-toast 2.6s ease forwards;
+  --animate-ll-toastbar: ll-toastbar 2.6s linear forwards;
+}
+
+/* ---------------------------------------------------------------------
+ * Palette values — copied verbatim from the handoff's `DARK` / `LIGHT`
+ * consts in Logline.dc.html (renderVals()). Dark is the default: it's what
+ * every fallback value in the handoff's raw markup (var(--x, #hex)) renders
+ * to, so it's the "as designed" look; light is the actual default state
+ * (`state.theme: 'light'` / the `defaultTheme` prop both default to
+ * 'light' in the handoff's own JS) — confirmed against the bundled
+ * Logline.html export. Both are fully supported and toggleable; light is
+ * just what renders on first load, matching the handoff.
+ * ------------------------------------------------------------------- */
+@layer base {
+  :root,
+  :root[data-theme="light"] {
+    --ll-bg: oklch(0.966 0.011 95);
+    --ll-surface: oklch(0.992 0.007 100);
+    --ll-surface-2: oklch(0.94 0.014 96);
+    --ll-border: oklch(0.875 0.016 100);
+    --ll-border-2: oklch(0.78 0.022 108);
+    --ll-text: oklch(0.235 0.026 150);
+    --ll-muted: oklch(0.44 0.028 152);
+    --ll-faint: oklch(0.58 0.026 148);
+    --ll-accent: oklch(0.49 0.108 156);
+    --ll-accent-ink: oklch(0.97 0.02 105);
+    --ll-accent-dim: oklch(0.49 0.108 156);
+    --ll-accent-soft: oklch(0.49 0.108 156 / 0.13);
+    --ll-danger: oklch(0.52 0.16 40);
+    --ll-danger-soft: oklch(0.52 0.16 40 / 0.12);
+    --ll-shadow: 0 18px 50px oklch(0.3 0.05 155 / 0.16);
+    --ll-sidebar-bg: oklch(0.215 0.022 158);
+    --ll-sidebar-surface: oklch(0.29 0.026 158);
+    --ll-sidebar-text: oklch(0.945 0.012 120);
+    --ll-sidebar-muted: oklch(0.68 0.02 150);
+    --ll-sidebar-border: oklch(0.325 0.024 158);
+  }
+
+  :root[data-theme="dark"] {
+    --ll-bg: oklch(0.165 0.008 260);
+    --ll-surface: oklch(0.205 0.009 260);
+    --ll-surface-2: oklch(0.25 0.011 260);
+    --ll-border: oklch(0.3 0.012 260);
+    --ll-border-2: oklch(0.4 0.014 260);
+    --ll-text: oklch(0.94 0.006 260);
+    --ll-muted: oklch(0.7 0.012 260);
+    --ll-faint: oklch(0.55 0.012 260);
+    --ll-accent: oklch(0.87 0.19 122);
+    --ll-accent-ink: oklch(0.24 0.05 122);
+    --ll-accent-dim: oklch(0.8 0.15 122);
+    --ll-accent-soft: oklch(0.87 0.19 122 / 0.16);
+    --ll-danger: oklch(0.7 0.17 25);
+    --ll-danger-soft: oklch(0.7 0.17 25 / 0.16);
+    --ll-shadow: 0 16px 48px oklch(0 0 0 / 0.55);
+    --ll-sidebar-bg: oklch(0.165 0.008 260);
+    --ll-sidebar-surface: oklch(0.25 0.011 260);
+    --ll-sidebar-text: oklch(0.94 0.006 260);
+    --ll-sidebar-muted: oklch(0.7 0.012 260);
+    --ll-sidebar-border: oklch(0.3 0.012 260);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    color-scheme: light dark;
+  }
+
+  ::selection {
+    background: var(--color-accent-soft);
+  }
+
+  /* Keyframes ported verbatim from the handoff's <style> block. */
+  @keyframes ll-blink {
+    0%,
+    49% {
+      opacity: 1;
+    }
+    50%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes ll-type {
+    from {
+      width: 0;
+    }
+    to {
+      width: var(--tw, 7ch);
+    }
+  }
+  @keyframes ll-sweep {
+    0% {
+      transform: translateX(-102%);
+    }
+    100% {
+      transform: translateX(102%);
+    }
+  }
+  @keyframes ll-pop {
+    0% {
+      transform: scale(0);
+      opacity: 0;
+    }
+    55% {
+      transform: scale(1.18);
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes ll-slide {
+    0% {
+      transform: translateX(28px);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes ll-rise {
+    0% {
+      transform: translateY(14px);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes ll-toast {
+    0% {
+      transform: translateY(12px);
+      opacity: 0;
+    }
+    12%,
+    86% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-8px);
+      opacity: 0;
+    }
+  }
+  @keyframes ll-toastbar {
+    0% {
+      width: 100%;
+    }
+    100% {
+      width: 0%;
+    }
+  }
+  @keyframes ll-pulse {
+    0% {
+      transform: scale(1);
+      opacity: 0.5;
+    }
+    70%,
+    100% {
+      transform: scale(2.6);
+      opacity: 0;
+    }
+  }
+  @keyframes ll-dots {
+    0%,
+    100% {
+      opacity: 0.25;
+      transform: translateY(0);
+    }
+    50% {
+      opacity: 1;
+      transform: translateY(-1px);
+    }
+  }
+  @keyframes ll-agentin {
+    0% {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
