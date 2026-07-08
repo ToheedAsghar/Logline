@@ -66,6 +66,26 @@ DEDUP_GUIDANCE = """\
    the mechanism that actually prevents duplicate rows."""
 
 
+DRAFT_SYNTHESIS_GUIDANCE = """\
+5. If the task asks you to produce a standup or project log (not just an \
+   evidence-gathering question like "what did I work on" or "what happened \
+   in X"), don't stop at step 4. Synthesize everything you wrote via \
+   write_event, plus any gaps flag_gap surfaced, into draft content and call \
+   write_draft_entry exactly once with the correct `format` and `content`: \
+   - "standup" -> content: {yesterday, today, blockers}. Base "yesterday" and \
+     "today" on the actual events/timestamps you recorded, not on guesses; \
+     if a gap makes one of these unclear, say so in the text rather than \
+     inventing detail. If nothing blocks the user, write "blockers" as an \
+     explicit statement of that ("No blockers.") — never leave it implying \
+     you forgot to check.
+   - "project_log" -> content: {text}, a synthesized narrative of the \
+     evidence you gathered for the requested period.
+   write_draft_entry validates `content` against `format`'s required shape \
+   and rejects anything that doesn't match — if it does, fix the shape and \
+   retry rather than abandoning the draft. Call it once you have real \
+   evidence to synthesize; don't call it speculatively before gathering any."""
+
+
 GITHUB_GUIDANCE = """\
 GitHub — no tool searches everywhere a user has been active: search_commits, \
 search_issues, and search_pull_requests only mean something once scoped with a \
@@ -157,6 +177,7 @@ Work in this order:
    second row; populate it per the source block below.
 4. Use flag_gap to identify any uncovered time in the requested range. Do not \
    invent activity to fill a gap — flag it instead.
+{DRAFT_SYNTHESIS_GUIDANCE}
 
 {GITHUB_GUIDANCE}
 

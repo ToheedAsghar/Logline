@@ -26,6 +26,7 @@ from mcp.client.stdio import stdio_client
 from app.agent.llm.base import ToolCall, ToolDefinition
 from app.agent.tools.flag_gap import FlagGapInput, flag_gap
 from app.agent.tools.get_existing_events import GetExistingEventsInput, get_existing_events
+from app.agent.tools.write_draft_entry import DraftEntryInput, write_draft_entry
 from app.agent.tools.write_event import WriteEventInput, write_event
 from app.db.session import SessionLocal
 from app.models.integration import Integration, IntegrationSource
@@ -181,6 +182,21 @@ CUSTOM_TOOLS: list[tuple[ToolDefinition, Callable[..., Any]]] = [
             input_schema=_schema_without_user_id(FlagGapInput),
         ),
         flag_gap,
+    ),
+    (
+        ToolDefinition(
+            name="write_draft_entry",
+            description=(
+                "Persist a synthesized standup or project log as a draft entry, once "
+                "you've gathered and written the underlying evidence via write_event "
+                "and checked flag_gap for uncovered time. `format` must be 'standup' "
+                "(content: {yesterday, today, blockers}) or 'project_log' (content: "
+                "{text}) — content is validated against that shape and the call is "
+                "rejected if it doesn't match."
+            ),
+            input_schema=_schema_without_user_id(DraftEntryInput),
+        ),
+        write_draft_entry,
     ),
 ]
 
