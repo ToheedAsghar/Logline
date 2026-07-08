@@ -1,8 +1,78 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Checkbox, ConfidenceTier, Input, Loading, Textarea, Tooltip } from "@/atoms";
+import {
+  ApprovalTransition,
+  EditableTimeField,
+  GapPrompt,
+  GenerateStandupTrigger,
+  IntegrationCard,
+  RefreshTimelineTrigger,
+  TimelineBlock,
+} from "@/molecules";
 import { CONFIDENCE_TIERS, type ConfidenceTier as Tier, type ThemeName } from "@/constants/tokens";
+import type { Entry, Event, Integration } from "@/repositories/types";
 
 const TIERS: Tier[] = ["proven", "estimated", "gap", "personal"];
+
+const MOCK_EVENTS: Event[] = [
+  {
+    id: 1,
+    source: "github",
+    type: "pull_request_merged",
+    timestamp: "2026-07-08T14:00:00.000Z",
+    event_metadata: {
+      title: "Merge PR #482: Add molecules layer",
+      summary: "Composed TimelineBlock, GapPrompt, and four more molecules from Phase 1's atoms.",
+      end_timestamp: "2026-07-08T15:30:00.000Z",
+    },
+    confidence: "proven",
+    created_at: "2026-07-08T15:30:05.000Z",
+  },
+  {
+    id: 2,
+    source: "calendar",
+    type: "focus_block",
+    timestamp: "2026-07-08T09:00:00.000Z",
+    event_metadata: { end_timestamp: "2026-07-08T10:30:00.000Z" },
+    confidence: "estimated",
+    created_at: "2026-07-08T10:30:05.000Z",
+  },
+  {
+    id: 3,
+    source: "personal",
+    type: "lunch",
+    timestamp: "2026-07-08T12:00:00.000Z",
+    event_metadata: { title: "Lunch", end_timestamp: "2026-07-08T13:00:00.000Z" },
+    confidence: "proven",
+    created_at: "2026-07-08T13:00:05.000Z",
+  },
+];
+
+const MOCK_INTEGRATIONS: Integration[] = [
+  { id: 1, source: "github", status: "connected", last_synced_at: "2026-07-08T14:31:00.000Z", created_at: "2026-01-01T00:00:00.000Z" },
+  { id: 2, source: "slack", status: "error", last_synced_at: "2026-07-07T09:00:00.000Z", created_at: "2026-01-01T00:00:00.000Z" },
+  { id: 3, source: "jira", status: "disconnected", last_synced_at: null, created_at: "2026-01-01T00:00:00.000Z" },
+];
+
+const MOCK_DRAFT_ENTRY: Entry = {
+  id: 101,
+  user_id: 1,
+  format: "standup",
+  content: { yesterday: "Shipped Phase 2 hooks.", today: "Building Phase 3 molecules.", blockers: "" },
+  status: "draft",
+  created_at: "2026-07-08T09:00:00.000Z",
+  approved_at: null,
+};
+
+const MOCK_APPROVED_ENTRY: Entry = {
+  id: 102,
+  user_id: 1,
+  format: "project_log",
+  content: { text: "Shipped the molecules layer." },
+  status: "approved",
+  created_at: "2026-07-07T09:00:00.000Z",
+  approved_at: "2026-07-07T16:00:00.000Z",
+};
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -42,9 +112,21 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeName>("light");
   const [working, setWorking] = useState(false);
   const [checked, setChecked] = useState(true);
+  const [timeRange, setTimeRange] = useState<{ start: string; end?: string | null }>({
+    start: "2026-07-08T09:00:00.000Z",
+    end: "2026-07-08T10:30:00.000Z",
+  });
+  const [unrelatedFlag, setUnrelatedFlag] = useState(true);
+
+  // index.css's palette variables are scoped to `:root[data-theme=...]` (the
+  // `<html>` element), not an arbitrary descendant — the toggle has to set the
+  // attribute there, not just on this component's wrapper div.
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
   return (
-    <div data-theme={theme} className="min-h-screen bg-bg font-sans text-text transition-colors">
+    <div className="min-h-screen bg-bg font-sans text-text transition-colors">
       <div className="mx-auto flex max-w-4xl flex-col gap-12 px-8 py-12">
         <header className="flex items-center justify-between gap-4">
           <div>
@@ -205,6 +287,61 @@ export default function App() {
                 +
               </Button>
             </Tooltip>
+          </div>
+        </Section>
+
+        <div className="flex flex-col gap-1">
+          <h2 className="text-xl font-semibold tracking-tight">Phase 3 — Molecules</h2>
+          <p className="max-w-prose text-sm text-muted">Composed from the Phase 1 atoms above, wired to the Phase 2 hooks.</p>
+        </div>
+
+        <Section title="TimelineBlock">
+          <div className="flex flex-col gap-2.5">
+            {MOCK_EVENTS.map((event) => (
+              <TimelineBlock key={event.id} event={event} onSelect={(e) => console.log("open entry detail (stub)", e.id)} />
+            ))}
+          </div>
+        </Section>
+
+        <Section title="GapPrompt">
+          <GapPrompt start="2026-07-08T10:30:00.000Z" end="2026-07-08T12:00:00.000Z" />
+        </Section>
+
+        <Section title="EditableTimeField">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-3 rounded-md border border-border bg-surface px-3 py-2.5">
+              <span className="text-sm text-muted">Focus block</span>
+              <EditableTimeField start={timeRange.start} end={timeRange.end} onConfirm={setTimeRange} />
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                label="Unrelated flag (should survive editing the time above)"
+                checked={unrelatedFlag}
+                onChange={(e) => setUnrelatedFlag(e.target.checked)}
+              />
+            </div>
+          </div>
+        </Section>
+
+        <Section title="IntegrationCard">
+          <div className="flex flex-col gap-2.5">
+            {MOCK_INTEGRATIONS.map((integration) => (
+              <IntegrationCard key={integration.id} integration={integration} />
+            ))}
+          </div>
+        </Section>
+
+        <Section title="AgentTriggerButton">
+          <div className="flex flex-wrap items-center gap-4">
+            <GenerateStandupTrigger />
+            <RefreshTimelineTrigger />
+          </div>
+        </Section>
+
+        <Section title="ApprovalTransition">
+          <div className="flex flex-wrap items-center gap-4">
+            <ApprovalTransition entry={MOCK_DRAFT_ENTRY} />
+            <ApprovalTransition entry={MOCK_APPROVED_ENTRY} />
           </div>
         </Section>
       </div>
