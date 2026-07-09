@@ -137,6 +137,23 @@ MCP_SERVER_BUILDERS: dict[str, Callable[[], StdioServerParameters]] = {
     "jira": _jira_server_params,
 }
 
+WRITE_DRAFT_ENTRY_TOOL_NAME = "write_draft_entry"
+
+# Sources that must each have at least one MCP tool call attempted (success
+# or failure both count -- this requires an attempt, not a finding) before
+# write_draft_entry may succeed. flag_gap only answers "is there uncovered
+# time in the events table", which is a different question from "did I check
+# every connected source" -- a model can (and in live testing, did) conflate
+# the two and write a draft having never touched github/slack/jira/calendar.
+# A prompt-only fix isn't enough on its own (see DATE_GROUNDING's history of
+# the same problem), so this is checked in code in Toolbelt.dispatch below.
+#
+# Scoped to whichever of these actually connected this run (self._sessions),
+# not unconditionally all four: a source that failed to connect (e.g. a
+# missing credential in a dev environment) registers no tool the model could
+# possibly call, so requiring it would deadlock the agent forever.
+DRAFT_ENTRY_REQUIRED_SOURCES = frozenset(MCP_SERVER_BUILDERS.keys())
+
 
 def _schema_without_user_id(model: type) -> dict[str, Any]:
     schema = model.model_json_schema()
@@ -359,6 +376,7 @@ class Toolbelt:
         }
         self._slack_allowed_channel_id: Optional[str] = None
         self._current_time_established = False
+        self._attempted_sources: set[str] = set()
 
     async def __aenter__(self) -> "Toolbelt":
         for source, build_params in MCP_SERVER_BUILDERS.items():
@@ -419,6 +437,19 @@ class Toolbelt:
             return {"channels": await _list_member_slack_channels(self._sessions["slack"])}
 
         if tool_call.name in self._custom_handlers:
+            if tool_call.name == WRITE_DRAFT_ENTRY_TOOL_NAME:
+                missing = (DRAFT_ENTRY_REQUIRED_SOURCES & self._sessions.keys()) - self._attempted_sources
+                if missing:
+                    return {
+                        "error": (
+                            "Refused: write_draft_entry requires at least one tool call "
+                            "attempted against every connected source first (finding "
+                            "nothing is fine, skipping the attempt is not). Not yet "
+                            f"attempted this run: {sorted(missing)}. Go check those "
+                            "sources and then call write_draft_entry again."
+                        )
+                    }
+
             handler = self._custom_handlers[tool_call.name]
             try:
                 return handler(user_id=self.user_id, **tool_call.arguments)
@@ -427,6 +458,7 @@ class Toolbelt:
 
         if tool_call.name in self._mcp_tool_index:
             source, native_name = self._mcp_tool_index[tool_call.name]
+            self._attempted_sources.add(source)
 
             if source == "slack" and native_name in SLACK_WRITE_TOOLS:
                 channel = tool_call.arguments.get("channel_id") or tool_call.arguments.get("channel")

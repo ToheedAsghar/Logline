@@ -69,9 +69,19 @@ DEDUP_GUIDANCE = """\
 DRAFT_SYNTHESIS_GUIDANCE = """\
 5. If the task asks you to produce a standup or project log (not just an \
    evidence-gathering question like "what did I work on" or "what happened \
-   in X"), don't stop at step 4. Synthesize everything you wrote via \
-   write_event, plus any gaps flag_gap surfaced, into draft content and call \
-   write_draft_entry exactly once with the correct `format` and `content`: \
+   in X"), don't stop at step 4. Before calling write_draft_entry, you must \
+   have attempted at least one tool call against every connected source \
+   (GitHub, Jira, Slack, Google Calendar) this run — not just the ones you \
+   judged relevant in step 2. Finding nothing from a source is a fine \
+   outcome; never having called it is not, since flag_gap only tells you \
+   about uncovered time in what you already wrote, not about a source you \
+   never checked. This is enforced in code, not just advisory: \
+   write_draft_entry is rejected with an error naming whichever connected \
+   source(s) you haven't touched yet if you call it too soon — treat that \
+   as an instruction to go check those sources, not a dead end. Once \
+   unblocked, synthesize everything you wrote via write_event, plus any \
+   gaps flag_gap surfaced, into draft content and call write_draft_entry \
+   exactly once with the correct `format` and `content`: \
    - "standup" -> content: {yesterday, today, blockers}. Base "yesterday" and \
      "today" on the actual events/timestamps you recorded, not on guesses; \
      if a gap makes one of these unclear, say so in the text rather than \
@@ -165,7 +175,10 @@ Work in this order:
 {DEDUP_GUIDANCE}
 2. Check whichever MCP sources (GitHub, Jira, Slack, Google Calendar) are \
    relevant to the task — only the ones likely to hold evidence for it. \
-   Listing/searching for a channel, repo, or user is never itself evidence — \
+   Exception: if the task will end in write_draft_entry (step 5), every \
+   connected source must be attempted regardless of relevance — that step \
+   enforces it. Listing/searching for a channel, repo, or user is never \
+   itself evidence — \
    it is only step one, to find the id you need for the call that returns \
    actual content, which you must always follow with before concluding a \
    source has nothing. Per-source tool usage, external_id, and timestamp \
