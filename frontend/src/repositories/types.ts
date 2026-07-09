@@ -67,6 +67,9 @@ export interface DateRange {
 export interface AgentRunResult {
   response: string;
   events: Event[];
+  /** Id of the draft entry created via write_draft_entry during this run, or
+   * null if the run didn't produce one (e.g. evidence-gathering only). */
+  created_entry_id: number | null;
 }
 
 export interface UserResponse {

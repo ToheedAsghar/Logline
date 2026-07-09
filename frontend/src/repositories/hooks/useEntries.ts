@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { approveEntry, getEntry, listEntries, updateEntry, type ListEntriesParams } from "../api/entries";
 import type { EntryUpdate } from "../types";
 
-const ENTRIES_KEY = "entries";
+export const ENTRIES_KEY = "entries";
 
 export function useEntries(params: ListEntriesParams = {}) {
   return useQuery({
@@ -11,10 +11,11 @@ export function useEntries(params: ListEntriesParams = {}) {
   });
 }
 
-export function useEntry(id: number) {
+export function useEntry(id: number | null) {
   return useQuery({
     queryKey: [ENTRIES_KEY, id],
-    queryFn: () => getEntry(id),
+    queryFn: () => getEntry(id as number),
+    enabled: id !== null,
   });
 }
 
