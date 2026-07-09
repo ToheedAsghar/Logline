@@ -98,7 +98,14 @@ LLM API:
   `backend/scripts/manual_test_slack_mcp.py`. Write tools
   (`slack_post_message`, `slack_reply_to_thread`, `slack_add_reaction`) are
   hard-restricted in code via `call_tool_restricted` to only ever target the
-  `#logline_mcp_test` channel.
+  `#logline_mcp_test` channel. Reads go through one composite custom tool,
+  `get_slack_channel_activity(name)` (in `toolbelt.py`), which resolves the
+  channel and reads its history in one call, falling back to listing the
+  bot's real accessible channels if the name doesn't resolve. This replaced
+  a two-tool `slack_find_channel` + `slack_list_my_channels` flow that burned
+  an extra round trip and — because neither tool marked "slack" as attempted
+  — could let `write_draft_entry`'s source-check (below) pass without Slack
+  ever really being checked.
 - **Google Calendar** — `@cocal/google-calendar-mcp` (npx), tested via
   `backend/scripts/manual_test_calendar_mcp.py`. Requires a one-time browser
   auth step, already completed; credentials live at
@@ -117,9 +124,24 @@ LLM API:
 
 ## Agent tools progress
 
-`write_event`, `get_existing_events`, and `flag_gap` (all in
-`app/agent/tools/`) are built and tested. `flag_gap` computes gaps
+`write_event`, `get_existing_events`, `flag_gap`, and `write_draft_entry`
+(all in `app/agent/tools/`) are built and tested. `flag_gap` computes gaps
 dynamically from the `events` table — it never writes a row.
+
+### `write_draft_entry` requires every connected source to have been checked
+
+`flag_gap` only answers "is there uncovered time in the events table" —
+a different question from "did the agent actually check every connected
+source." Live testing showed the model could conflate the two and
+synthesize a draft having silently skipped GitHub/Slack entirely. A
+prompt-only fix wasn't enough, so this is now enforced in code:
+`Toolbelt` (in `toolbelt.py`) tracks which sources (github/slack/jira/
+calendar) have had at least one tool call attempted this run in
+`self._attempted_sources`, and `write_draft_entry` is refused with an
+error naming the missing sources until each connected source has at least
+one attempt (success or failure both count). Scoped to whichever sources
+actually connected this run, not unconditionally all four, so a source
+that failed to connect can't deadlock the agent.
 
 ## Agent runner (`app/agent/runner.py`, `app/agent/toolbelt.py`)
 
@@ -150,6 +172,9 @@ Wired into `app/main.py` with prefixes `/auth`, `/integrations`, `/entries`,
   not session cookies. `app/api/deps.py::get_current_user` decodes the
   `Authorization: Bearer <token>` header and is the DI dependency every other
   router uses to scope queries to the current user.
+- `GET /auth/me` (`app/api/auth.py`) returns the current user via
+  `get_current_user`. Used by the frontend's Account & Settings modal to
+  populate profile fields on open.
 - `POST /integrations/{source}/connect` is a placeholder returning 501 — real
   per-source OAuth flows aren't built yet.
 - There's intentionally no `POST /entries` — entries are created by the agent
@@ -162,6 +187,14 @@ Wired into `app/main.py` with prefixes `/auth`, `/integrations`, `/entries`,
   Scope ownership checks in the query itself (`.filter(Entry.id == id,
   Entry.user_id == current_user.id)`), not as a separate check after
   fetching — see `_get_owned_entry` in `app/api/entries.py`.
+
+## Frontend known gaps
+
+The Entry Detail slide-over panel (view/edit a single event's summary, time,
+and raw evidence; delete an entry) was never built — `TimelineBlock`'s click
+handler (`frontend/src/molecules/TimelineBlock.tsx`) is currently a no-op
+stub. This is a real missing page/component from the original Phase 4 scope,
+not a minor bug.
 
 ## Local dev
 
