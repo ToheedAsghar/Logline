@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 class UserSignup(BaseModel):
     email: EmailStr
     password: str
+    name: str | None = None
 
 
 class UserLogin(BaseModel):
@@ -18,6 +19,7 @@ class UserResponse(BaseModel):
 
     id: int
     email: str
+    name: str | None = None
     default_channel: str | None = None
     created_at: datetime
 

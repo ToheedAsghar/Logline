@@ -12,7 +12,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def signup(payload: UserSignup, db: Session = Depends(get_db)):
-    user = User(email=payload.email, hashed_password=hash_password(payload.password))
+    user = User(email=payload.email, hashed_password=hash_password(payload.password), name=payload.name)
     db.add(user)
     try:
         db.commit()
