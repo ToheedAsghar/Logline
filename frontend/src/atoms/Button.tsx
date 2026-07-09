@@ -28,7 +28,7 @@ const BASE =
   "inline-flex items-center justify-center gap-2 font-sans font-semibold whitespace-nowrap " +
   "transition-[transform,filter,background-color,border-color,box-shadow] duration-150 ease-out " +
   "disabled:cursor-not-allowed disabled:opacity-60 " +
-  "outline-none focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2";
+  "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2";
 
 const VARIANT: Record<ButtonVariant, string> = {
   primary:

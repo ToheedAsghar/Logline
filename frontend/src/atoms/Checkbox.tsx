@@ -32,7 +32,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
           id={id}
           type="checkbox"
           disabled={disabled}
-          className="peer absolute inset-0 h-full w-full cursor-pointer appearance-none rounded-xs border border-border-2 bg-bg outline-none transition-colors checked:border-accent checked:bg-accent focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 disabled:cursor-not-allowed"
+          className="peer absolute inset-0 h-full w-full cursor-pointer appearance-none rounded-xs border border-border-2 bg-bg transition-colors checked:border-accent checked:bg-accent focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 disabled:cursor-not-allowed"
           {...props}
         />
         <svg

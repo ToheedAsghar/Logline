@@ -59,7 +59,7 @@ export function EditableTimeField({ start, end, onConfirm, className }: Editable
         onClick={beginEditing}
         className={cn(
           "rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-faint transition-colors",
-          "hover:bg-surface-2 hover:text-text outline-none focus-visible:outline-2 focus-visible:outline-accent",
+          "hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-accent",
           className,
         )}
       >
@@ -74,14 +74,14 @@ export function EditableTimeField({ start, end, onConfirm, className }: Editable
         type="time"
         value={draftStart}
         onChange={(e) => setDraftStart(e.target.value)}
-        className="rounded-xs border border-border bg-bg px-1 py-0.5 text-text outline-none focus:border-transparent focus:outline focus:outline-2 focus:outline-accent"
+        className="rounded-xs border border-border bg-bg px-1 py-0.5 text-text focus:border-transparent focus:outline focus:outline-2 focus:outline-accent"
       />
       <span className="text-faint">–</span>
       <input
         type="time"
         value={draftEnd}
         onChange={(e) => setDraftEnd(e.target.value)}
-        className="rounded-xs border border-border bg-bg px-1 py-0.5 text-text outline-none focus:border-transparent focus:outline focus:outline-2 focus:outline-accent"
+        className="rounded-xs border border-border bg-bg px-1 py-0.5 text-text focus:border-transparent focus:outline focus:outline-2 focus:outline-accent"
       />
       <button
         type="button"

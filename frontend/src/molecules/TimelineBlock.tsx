@@ -54,7 +54,7 @@ export function TimelineBlock({ event, onSelect, className }: TimelineBlockProps
       className={cn(
         "flex flex-col gap-1.5 rounded-md border-[1.5px] bg-surface px-3.5 py-3 text-left",
         "cursor-pointer transition-colors hover:bg-surface-2",
-        "outline-none focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
+        "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
         cfg.borderStyle === "solid" && "border-solid",
         cfg.borderStyle === "dashed" && "border-dashed",
         cfg.borderStyle === "dotted" && "border-dotted",

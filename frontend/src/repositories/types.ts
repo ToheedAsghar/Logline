@@ -72,6 +72,7 @@ export interface AgentRunResult {
 export interface UserResponse {
   id: number;
   email: string;
+  name: string | null;
   default_channel: string | null;
   created_at: string;
 }

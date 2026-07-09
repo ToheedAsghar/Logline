@@ -13,7 +13,7 @@ interface SessionContextValue {
   user: SessionUser | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -71,8 +71,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const signup = useCallback(
-    async (email: string, password: string) => {
-      await signupRequest({ email, password });
+    async (email: string, password: string, name?: string) => {
+      await signupRequest({ email, password, name });
       await login(email, password);
     },
     [login],

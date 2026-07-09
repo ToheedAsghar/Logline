@@ -6,13 +6,17 @@ export interface Credentials {
   password: string;
 }
 
+export interface SignupPayload extends Credentials {
+  name?: string;
+}
+
 export interface TokenResponse {
   access_token: string;
   token_type: string;
 }
 
-export function signup(credentials: Credentials): Promise<UserResponse> {
-  return apiRequest<UserResponse>("/auth/signup", { method: "POST", body: credentials, skipAuth: true });
+export function signup(payload: SignupPayload): Promise<UserResponse> {
+  return apiRequest<UserResponse>("/auth/signup", { method: "POST", body: payload, skipAuth: true });
 }
 
 export function login(credentials: Credentials): Promise<TokenResponse> {

@@ -10,7 +10,7 @@ import { cn } from "@/common/utils";
 const FIELD_BASE =
   "w-full bg-bg border border-border rounded-md px-[13px] py-[11px] " +
   "font-sans text-sm text-text placeholder:text-faint " +
-  "outline-none focus:border-transparent focus:outline focus:outline-2 focus:outline-accent focus:outline-offset-1 " +
+  "focus:border-transparent focus:outline focus:outline-2 focus:outline-accent focus:outline-offset-1 " +
   "disabled:opacity-60 disabled:cursor-not-allowed";
 
 export type InputProps = InputHTMLAttributes<HTMLInputElement>;
