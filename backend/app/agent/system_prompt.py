@@ -114,15 +114,14 @@ external_id: the commit SHA, or the PR/issue number/id, from the tool result."""
 
 
 SLACK_GUIDANCE = """\
-Slack — use slack_find_channel(name) to get the channel id; this workspace can \
-have far more channels than one slack_list_channels page, so don't call \
-slack_list_channels yourself to hunt for a channel by name. Once you have the \
-id, call slack_get_channel_history (and slack_get_thread_replies for threads); \
-finding the channel without reading its history counts as not having checked \
-Slack. If slack_get_channel_history returns 'not_in_channel', that name was a \
-guess you don't actually have access to — call slack_list_my_channels to see \
-the real channels available to you and read history from one of those instead \
-of giving up on Slack.
+Slack — call get_slack_channel_activity(name) with the channel name (no leading \
+'#'); it finds the channel id and reads its history in one call, so you never \
+need a separate lookup step first, and calling it counts as having checked \
+Slack regardless of outcome. If the name doesn't match a channel, or you \
+aren't actually a member of it, the result comes back with `found: false` and \
+a `member_channels` list of channels you actually have access to instead of a \
+dead end — pick a real name from that list and call get_slack_channel_activity \
+again rather than guessing blind. Use slack_get_thread_replies for threads.
 external_id: "<channel_id>:<ts>", using the raw `ts` string exactly as the tool \
 returned it. For the event timestamp, convert that raw Unix `ts` to ISO 8601 — \
 e.g. datetime.fromtimestamp(1783404909.697459, tz=timezone.utc) → \

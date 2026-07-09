@@ -1,28 +1,23 @@
 """
-Regression tests for Slack channel-lookup behavior currently only verified by
-running `scripts/manual_test_agent_runner.py` by hand:
+Regression tests for `get_slack_channel_activity`, the composite Slack tool in
+app/agent/toolbelt.py that replaced a three-step flow
+(slack_find_channel -> slack_list_my_channels fallback ->
+slack__slack_get_channel_history).
 
-1. `slack_find_channel` (Toolbelt.dispatch's wrapper around the raw
-   `slack_list_channels` MCP tool) must paginate through the *entire* channel
-   list to find a channel by name, and report a clean "not found" once pages
-   are exhausted -- never raise or hang.
-2. When `slack_get_channel_history` returns `'not_in_channel'` for a guessed
-   channel, the agent should fall back to `slack_list_my_channels` instead of
-   treating Slack as a dead end.
+Root cause this replaced: Toolbelt.dispatch only marked a source "attempted"
+(self._attempted_sources) from its generic MCP-tool-index branch, which only
+step 3 of the old flow (the native slack_get_channel_history call) went
+through. Steps 1/2 (slack_find_channel, slack_list_my_channels) were separate
+early-return branches that never reached that code. If the agent's Slack
+exploration only went through steps 1/2 -- e.g. channel search came back
+empty -- Slack never got marked attempted, and write_draft_entry kept
+rejecting indefinitely until MAX_TOOL_ROUNDS ran out with no draft produced.
+Confirmed as the root cause of a failed live "Generate Standup" test.
 
-Note on adaptation, mirroring test_github_search_scoping.py: per
-backend/CLAUDE.md ("no hardcoded pipeline"), `Toolbelt.dispatch` has no
-`if result == 'not_in_channel': retry` branch -- deciding to retry with
-slack_list_my_channels is left entirely to the agent's own reasoning
-(SYSTEM_PROMPT + the SLACK_LIST_MY_CHANNELS_TOOL description it reads), not
-scripted in Python. So behavior #2 is tested by pinning that prompt/tool-
-description contract, plus a dispatch-level test proving the fallback tool
-itself works correctly when called -- i.e. it is not a dead end -- and a test
-pinning that dispatch passes a `not_in_channel` result through unmodified
-(no silent Python-side handling to mask). Behavior #1 (pagination) is real
-code in `_iter_all_slack_channels` / `_find_slack_channel_id`, dispatched via
-the `slack_find_channel` tool name, so it's tested directly against mocked
-`slack_list_channels` pages.
+Collapsing to one composite tool call fixes this structurally (one call site
+marks "slack" attempted, unconditionally, regardless of outcome) and also
+saves round trips: each round costs a full LLM inference cycle on top of the
+actual Slack API call.
 
 These tests mock the Slack MCP session the same way
 test_github_search_scoping.py mocks the GitHub one -- no real Slack calls, no
@@ -33,12 +28,10 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from app.agent.llm.base import AgentResponse, LLMProvider, ToolCall
 from app.agent.runner import run_agent
 from app.agent.system_prompt import SYSTEM_PROMPT
-from app.agent.toolbelt import SLACK_LIST_MY_CHANNELS_TOOL, Toolbelt
+from app.agent.toolbelt import GET_SLACK_CHANNEL_ACTIVITY_TOOL, Toolbelt
 import app.agent.runner as runner_module
 
 
@@ -53,6 +46,18 @@ def _slack_page_result(channels: list[dict], next_cursor: str | None = None) -> 
     return result
 
 
+def _slack_history_result(messages: list[dict]) -> MagicMock:
+    result = MagicMock()
+    result.content = [MagicMock(text=json.dumps({"ok": True, "messages": messages}))]
+    return result
+
+
+def _not_in_channel_result() -> MagicMock:
+    result = MagicMock()
+    result.content = [MagicMock(text=json.dumps({"ok": False, "error": "not_in_channel"}))]
+    return result
+
+
 def _slack_toolbelt() -> tuple[Toolbelt, AsyncMock]:
     toolbelt = Toolbelt(user_id=1)
     mock_session = AsyncMock()
@@ -60,151 +65,181 @@ def _slack_toolbelt() -> tuple[Toolbelt, AsyncMock]:
     return toolbelt, mock_session
 
 
-class TestSlackFindChannelPagination:
-    """slack_find_channel must page through slack_list_channels, not just check page one."""
+def _activity_call(name: str) -> ToolCall:
+    return ToolCall(id="1", name="get_slack_channel_activity", arguments={"name": name})
 
-    def test_finds_channel_on_first_page(self):
+
+class TestChannelFoundAndReadInOneCall:
+    def test_finds_channel_on_first_page_and_reads_history(self):
         toolbelt, mock_session = _slack_toolbelt()
-        mock_session.call_tool.return_value = _slack_page_result(
-            [{"id": "C1", "name": "general", "is_member": True}]
-        )
-        tool_call = ToolCall(id="1", name="slack_find_channel", arguments={"name": "general"})
+        mock_session.call_tool.side_effect = [
+            _slack_page_result([{"id": "C1", "name": "general", "is_member": True}]),
+            _slack_history_result([{"ts": "111.222", "text": "hello"}]),
+        ]
 
-        result = asyncio.run(toolbelt.dispatch(tool_call))
+        result = asyncio.run(toolbelt.dispatch(_activity_call("general")))
 
-        assert result == {"found": True, "channel_id": "C1"}
+        assert result == {
+            "found": True,
+            "channel_id": "C1",
+            "history": {"ok": True, "messages": [{"ts": "111.222", "text": "hello"}]},
+        }
+        called_names = [call.args[0] for call in mock_session.call_tool.call_args_list]
+        assert called_names == ["slack_list_channels", "slack_get_channel_history"]
+        history_args = mock_session.call_tool.call_args_list[1].kwargs["arguments"]
+        assert history_args == {"channel_id": "C1"}
+        assert toolbelt._attempted_sources == {"slack"}
 
-    def test_paginates_through_multiple_pages_to_find_channel(self):
+    def test_finds_channel_via_pagination_and_reads_history(self):
         toolbelt, mock_session = _slack_toolbelt()
         page_1 = _slack_page_result(
             [{"id": "C1", "name": "random", "is_member": False}], next_cursor="cursor-2"
         )
         page_2 = _slack_page_result([{"id": "C2", "name": "logline_mcp_test", "is_member": True}])
-        mock_session.call_tool.side_effect = [page_1, page_2]
-        tool_call = ToolCall(id="1", name="slack_find_channel", arguments={"name": "logline_mcp_test"})
+        mock_session.call_tool.side_effect = [
+            page_1,
+            page_2,
+            _slack_history_result([{"ts": "999.001", "text": "hi"}]),
+        ]
 
-        result = asyncio.run(toolbelt.dispatch(tool_call))
+        result = asyncio.run(toolbelt.dispatch(_activity_call("logline_mcp_test")))
 
-        assert result == {"found": True, "channel_id": "C2"}
-        assert mock_session.call_tool.call_count == 2
-        first_args = mock_session.call_tool.call_args_list[0].kwargs["arguments"]
-        second_args = mock_session.call_tool.call_args_list[1].kwargs["arguments"]
-        assert "cursor" not in first_args
-        assert second_args["cursor"] == "cursor-2"
+        assert result["found"] is True
+        assert result["channel_id"] == "C2"
+        assert mock_session.call_tool.call_count == 3
+        assert toolbelt._attempted_sources == {"slack"}
 
-    def test_returns_not_found_after_exhausting_all_pages(self):
+
+class TestChannelNotFoundFallsBackToMemberChannels:
+    def test_channel_not_found_by_name_but_bot_has_other_channels(self):
         toolbelt, mock_session = _slack_toolbelt()
-        page_1 = _slack_page_result(
-            [{"id": "C1", "name": "random", "is_member": False}], next_cursor="cursor-2"
-        )
-        page_2 = _slack_page_result([{"id": "C2", "name": "other", "is_member": True}])  # no next_cursor
-        mock_session.call_tool.side_effect = [page_1, page_2]
-        tool_call = ToolCall(id="1", name="slack_find_channel", arguments={"name": "does-not-exist"})
-
-        result = asyncio.run(toolbelt.dispatch(tool_call))
-
-        assert result == {"found": False}
-        assert mock_session.call_tool.call_count == 2
-
-    def test_missing_slack_session_reports_error_instead_of_crashing(self):
-        toolbelt = Toolbelt(user_id=1)  # no "slack" session connected
-        tool_call = ToolCall(id="1", name="slack_find_channel", arguments={"name": "general"})
-
-        result = asyncio.run(toolbelt.dispatch(tool_call))
-
-        assert result == {"error": "Slack MCP server is not connected."}
-
-
-class TestSlackNotInChannelFallback:
-    """
-    slack_get_channel_history returning 'not_in_channel' must not be a dead
-    end. There's no Python branch that intercepts this and auto-retries (see
-    module docstring) -- the retry decision is the agent's, driven by
-    SYSTEM_PROMPT and the SLACK_LIST_MY_CHANNELS_TOOL description. So this
-    pins: (a) that contract text, (b) that dispatch passes the raw
-    'not_in_channel' result through unmodified rather than swallowing it, and
-    (c) that the fallback tool the agent is told to call actually works.
-    """
-
-    def test_system_prompt_instructs_fallback_on_not_in_channel(self):
-        assert "slack_get_channel_history returns 'not_in_channel'" in SYSTEM_PROMPT
-        assert "slack_list_my_channels to see the real channels available to you" in SYSTEM_PROMPT
-        assert "instead of giving up on Slack" in SYSTEM_PROMPT
-
-    def test_tool_description_instructs_fallback_on_not_in_channel(self):
-        assert (
-            "Call this if slack_get_channel_history returns 'not_in_channel' for a "
-            "channel you guessed or found by name" in SLACK_LIST_MY_CHANNELS_TOOL.description
-        )
-
-    def test_dispatch_passes_not_in_channel_result_through_unmodified(self, monkeypatch):
-        """Pins that dispatch doesn't hide or retry the error itself -- the agent must."""
-        toolbelt, mock_session = _slack_toolbelt()
-        toolbelt._mcp_tool_index["slack__slack_get_channel_history"] = ("slack", "slack_get_channel_history")
-        not_in_channel_result = MagicMock()
-        not_in_channel_result.content = [MagicMock(text=json.dumps({"ok": False, "error": "not_in_channel"}))]
-        mock_session.call_tool.return_value = not_in_channel_result
-        tool_call = ToolCall(
-            id="1",
-            name="slack__slack_get_channel_history",
-            arguments={"channel_id": "C_GUESSED"},
-        )
-
-        result = asyncio.run(toolbelt.dispatch(tool_call))
-
-        assert result == {"ok": False, "error": "not_in_channel"}
-
-    def test_dispatch_slack_list_my_channels_returns_real_member_channels(self):
-        """When the agent does fall back, the wrapper must return usable channels, not another error."""
-        toolbelt, mock_session = _slack_toolbelt()
+        # Same channel list is returned for both the (failed) name search and
+        # the fallback member-channel listing -- get_slack_channel_activity
+        # re-pages internally for the fallback, it doesn't reuse results.
         mock_session.call_tool.return_value = _slack_page_result(
             [
                 {"id": "C1", "name": "random", "is_member": False},
                 {"id": "C2", "name": "logline_mcp_test", "is_member": True},
             ]
         )
-        tool_call = ToolCall(id="1", name="slack_list_my_channels", arguments={})
 
-        result = asyncio.run(toolbelt.dispatch(tool_call))
+        result = asyncio.run(toolbelt.dispatch(_activity_call("does-not-exist")))
 
-        assert result == {"channels": [{"id": "C2", "name": "logline_mcp_test"}]}
+        assert result["found"] is False
+        assert result["requested_name"] == "does-not-exist"
+        assert result["member_channels"] == [{"id": "C2", "name": "logline_mcp_test"}]
+        assert "does-not-exist" in result["message"]
+        # slack_get_channel_history is never reached -- no channel id was found.
+        called_names = [call.args[0] for call in mock_session.call_tool.call_args_list]
+        assert "slack_get_channel_history" not in called_names
+        assert toolbelt._attempted_sources == {"slack"}
+
+    def test_channel_genuinely_not_found_at_all(self):
+        """Bot has zero accessible channels -- fallback list is simply empty,
+        not an error, so the agent can still act on the result."""
+        toolbelt, mock_session = _slack_toolbelt()
+        mock_session.call_tool.return_value = _slack_page_result(
+            [{"id": "C1", "name": "random", "is_member": False}]
+        )
+
+        result = asyncio.run(toolbelt.dispatch(_activity_call("does-not-exist")))
+
+        assert result == {
+            "found": False,
+            "requested_name": "does-not-exist",
+            "member_channels": [],
+            "message": (
+                "No accessible channel named 'does-not-exist' found. Pick a real "
+                "channel from member_channels and call get_slack_channel_activity "
+                "again with its name."
+            ),
+        }
+        assert toolbelt._attempted_sources == {"slack"}
+
+    def test_channel_found_by_name_but_bot_not_a_member_falls_back(self):
+        """A name can match a real channel the pagination sees, but the bot
+        might not actually be a member of it -- slack_get_channel_history then
+        returns not_in_channel, which must also trigger the member_channels
+        fallback rather than surfacing a bare error."""
+        toolbelt, mock_session = _slack_toolbelt()
+
+        async def fake_call_tool(name, arguments=None, **_kwargs):
+            if name == "slack_list_channels":
+                return _slack_page_result(
+                    [
+                        {"id": "C1", "name": "private-guess", "is_member": False},
+                        {"id": "C2", "name": "logline_mcp_test", "is_member": True},
+                    ]
+                )
+            if name == "slack_get_channel_history":
+                return _not_in_channel_result()
+            raise AssertionError(f"unexpected slack tool call: {name}")
+
+        mock_session.call_tool.side_effect = fake_call_tool
+
+        result = asyncio.run(toolbelt.dispatch(_activity_call("private-guess")))
+
+        assert result["found"] is False
+        assert result["member_channels"] == [{"id": "C2", "name": "logline_mcp_test"}]
+        assert toolbelt._attempted_sources == {"slack"}
+
+
+class TestMissingSlackSession:
+    def test_missing_slack_session_reports_error_but_still_marks_attempted(self):
+        toolbelt = Toolbelt(user_id=1)  # no "slack" session connected
+
+        result = asyncio.run(toolbelt.dispatch(_activity_call("general")))
+
+        assert result == {"error": "Slack MCP server is not connected."}
+        # Marked unconditionally from this single call site regardless of
+        # outcome -- see the tracking-bug fix this test file documents above.
+        assert toolbelt._attempted_sources == {"slack"}
+
+
+class TestToolDefinitionAndPromptDescribeSingleToolFlow:
+    def test_tool_description_documents_fallback_and_attempted_semantics(self):
+        assert GET_SLACK_CHANNEL_ACTIVITY_TOOL.name == "get_slack_channel_activity"
+        assert "member_channels" in GET_SLACK_CHANNEL_ACTIVITY_TOOL.description
+        assert "not_in_channel" in GET_SLACK_CHANNEL_ACTIVITY_TOOL.description
+
+    def test_system_prompt_describes_single_tool_flow(self):
+        assert "get_slack_channel_activity" in SYSTEM_PROMPT
+        assert "member_channels" in SYSTEM_PROMPT
+        assert "slack_find_channel" not in SYSTEM_PROMPT
+        assert "slack_list_my_channels" not in SYSTEM_PROMPT
 
 
 class _ScriptedSlackFallbackProvider(LLMProvider):
-    """Stands in for an LLM that follows SYSTEM_PROMPT's not_in_channel
+    """Stands in for an LLM that follows SYSTEM_PROMPT's member_channels
     fallback instruction. It is *reactive* -- it inspects the actual tool
     result content in `messages` to decide its next move, rather than
     replaying a fixed call sequence blind to input -- so a test built on top
     of it actually exercises `run_agent`'s message-threading (does the tool
-    result really make it back to the "model" in a form it can act on),
-    not just a hardcoded list of expected calls.
+    result really make it back to the "model" in a form it can act on), not
+    just a hardcoded list of expected calls.
 
     This cannot prove a *real* LLM will choose to fall back -- that's
     inherently untestable offline. What it proves is that the real
     `runner.py` + `toolbelt.py` code, unmodified, correctly turns "the model
-    asked for slack_list_my_channels" into an actual dispatched call and a
-    result the loop can continue from -- closing the gap left by
-    TestSlackNotInChannelFallback's prompt-text-only assertions above.
+    asked for get_slack_channel_activity" into an actual dispatched call and
+    a result the loop can continue from.
     """
 
     def __init__(self) -> None:
-        self.requested_tool_names: list[str] = []
+        self.requested_names: list[str] = []
 
     async def run_turn(self, messages, tools) -> AgentResponse:
         last = messages[-1]
 
         if last.role == "user":
-            call = ToolCall(
-                id="1",
-                name="slack__slack_get_channel_history",
-                arguments={"channel_id": "C_GUESSED"},
-            )
-            self.requested_tool_names.append(call.name)
+            self.requested_names.append("wrong-guess")
+            call = ToolCall(id="1", name="get_slack_channel_activity", arguments={"name": "wrong-guess"})
             return AgentResponse(text=None, tool_calls=[call], is_final=False)
 
-        if last.role == "tool" and "not_in_channel" in (last.content or ""):
-            call = ToolCall(id="2", name="slack_list_my_channels", arguments={})
-            self.requested_tool_names.append(call.name)
+        if last.role == "tool" and "\"found\": false" in (last.content or ""):
+            real_name = json.loads(last.content)["member_channels"][0]["name"]
+            self.requested_names.append(real_name)
+            call = ToolCall(id="2", name="get_slack_channel_activity", arguments={"name": real_name})
             return AgentResponse(text=None, tool_calls=[call], is_final=False)
 
         return AgentResponse(
@@ -214,31 +249,32 @@ class _ScriptedSlackFallbackProvider(LLMProvider):
         )
 
 
-class TestFullAgentRunNotInChannelFallback:
-    """
-    Full-loop behavioral test: mocks the LLM (reactively, see
+class TestFullAgentRunMemberChannelsFallback:
+    """Full-loop behavioral test: mocks the LLM (reactively, see
     `_ScriptedSlackFallbackProvider`) and the Slack MCP session, then drives
     the actual `run_agent` loop end to end -- not an isolated
-    `Toolbelt.dispatch` call -- to prove the not_in_channel ->
-    slack_list_my_channels fallback really happens in the assembled agent,
-    not just as prompt text asserted in isolation.
+    `Toolbelt.dispatch` call -- to prove the not-found -> member_channels
+    fallback really happens in the assembled agent, and that it costs exactly
+    one dispatched tool call per attempt (no separate find/list round trips).
     """
 
-    def test_not_in_channel_result_leads_to_slack_list_my_channels_call(self, monkeypatch):
+    def test_not_found_result_leads_to_retry_with_a_real_channel_name(self, monkeypatch):
         mock_session = AsyncMock()
 
         async def fake_call_tool(name, arguments=None, **_kwargs):
             if name == "slack_list_channels":
                 return _slack_page_result(
                     [
-                        {"id": "C1", "name": "random", "is_member": False},
+                        {"id": "C1", "name": "wrong-guess", "is_member": False},
                         {"id": "C2", "name": "logline_mcp_test", "is_member": True},
                     ]
                 )
             if name == "slack_get_channel_history":
-                result = MagicMock()
-                result.content = [MagicMock(text=json.dumps({"ok": False, "error": "not_in_channel"}))]
-                return result
+                # "wrong-guess" (C1) resolves to a real channel id, but the
+                # bot isn't a member of it; "logline_mcp_test" (C2) succeeds.
+                if arguments["channel_id"] == "C1":
+                    return _not_in_channel_result()
+                return _slack_history_result([{"ts": "1.0", "text": "hi"}])
             raise AssertionError(f"unexpected slack tool call: {name}")
 
         mock_session.call_tool.side_effect = fake_call_tool
@@ -246,10 +282,6 @@ class TestFullAgentRunNotInChannelFallback:
         async def fake_connect_mcp_source(self, source, build_params):
             if source == "slack":
                 self._sessions["slack"] = mock_session
-                self._mcp_tool_index["slack__slack_get_channel_history"] = (
-                    "slack",
-                    "slack_get_channel_history",
-                )
             # github/calendar/jira intentionally left unconnected -- this test
             # only exercises the Slack fallback path, and real connections
             # would require real credentials/subprocesses.
@@ -261,15 +293,6 @@ class TestFullAgentRunNotInChannelFallback:
 
         result = asyncio.run(run_agent(user_id=1, task="Summarize my Slack activity today."))
 
-        assert provider.requested_tool_names == [
-            "slack__slack_get_channel_history",
-            "slack_list_my_channels",
-        ]
-        called_native_names = [call.args[0] for call in mock_session.call_tool.call_args_list]
-        assert called_native_names == [
-            "slack_list_channels",  # __aenter__ resolving the write-restricted allowed channel
-            "slack_get_channel_history",  # round 1: the guessed channel, returns not_in_channel
-            "slack_list_channels",  # round 2: the fallback, triggered by the not_in_channel result
-        ]
+        assert provider.requested_names == ["wrong-guess", "logline_mcp_test"]
         assert result.response_text == "Checked Slack via the real channel from the fallback list."
         assert result.created_entry_id is None

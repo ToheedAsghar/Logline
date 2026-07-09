@@ -295,31 +295,26 @@ def _contains_literal_date(arguments: dict[str, Any]) -> bool:
     return bool(_LITERAL_DATE_RE.search(json.dumps(arguments, default=str)))
 
 
-SLACK_FIND_CHANNEL_TOOL = ToolDefinition(
-    name="slack_find_channel",
+SLACK_NOT_IN_CHANNEL_ERROR = "not_in_channel"
+
+GET_SLACK_CHANNEL_ACTIVITY_TOOL = ToolDefinition(
+    name="get_slack_channel_activity",
     description=(
-        "Find a Slack channel's id by exact name (no leading '#'). Paginates through "
-        "the full channel list internally — use this instead of calling "
-        "slack__slack_list_channels yourself and trying to page through cursors, "
-        "since a workspace can have many more channels than fit on one page."
+        "Find a Slack channel by exact name (no leading '#') and read its message "
+        "history, in one call. Paginates internally through the full channel list to "
+        "resolve the name to an id, then calls slack_get_channel_history — you never "
+        "need a separate lookup call first. If the name doesn't match any channel, or "
+        "the bot isn't a member of it (native 'not_in_channel' result), this returns "
+        "the channels the bot actually has access to as `member_channels` instead of "
+        "just failing — pick a real name from that list and call this again rather "
+        "than guessing another name blind. Calling this counts as having checked "
+        "Slack regardless of outcome."
     ),
     input_schema={
         "type": "object",
         "properties": {"name": {"type": "string", "description": "Channel name, without '#'."}},
         "required": ["name"],
     },
-)
-
-
-SLACK_LIST_MY_CHANNELS_TOOL = ToolDefinition(
-    name="slack_list_my_channels",
-    description=(
-        "List Slack channels the bot actually has access to (paginates internally). "
-        "Call this if slack_get_channel_history returns 'not_in_channel' for a "
-        "channel you guessed or found by name — pick a real channel from this list "
-        "instead of guessing another name blind."
-    ),
-    input_schema={"type": "object", "properties": {}},
 )
 
 
@@ -355,6 +350,43 @@ async def _list_member_slack_channels(session: ClientSession) -> list[dict[str, 
     ]
 
 
+def _is_not_in_channel_result(payload: Any) -> bool:
+    return (
+        isinstance(payload, dict)
+        and payload.get("ok") is False
+        and payload.get("error") == SLACK_NOT_IN_CHANNEL_ERROR
+    )
+
+
+async def _get_slack_channel_activity(session: ClientSession, name: str) -> dict[str, Any]:
+    """Resolve `name` to a channel id and read its history in one round trip.
+
+    Falls back to the bot's actual member channels (rather than a bare
+    not-found error) both when the name matches nothing and when it matches a
+    channel the bot isn't a member of -- either way the agent needs the same
+    next step: pick a real name and retry.
+    """
+    channel_id = await _find_slack_channel_id(session, name)
+    if channel_id is not None:
+        history_result = await session.call_tool(
+            "slack_get_channel_history", arguments={"channel_id": channel_id}
+        )
+        history_payload = _mcp_result_to_json(history_result)
+        if not _is_not_in_channel_result(history_payload):
+            return {"found": True, "channel_id": channel_id, "history": history_payload}
+
+    member_channels = await _list_member_slack_channels(session)
+    return {
+        "found": False,
+        "requested_name": name,
+        "member_channels": member_channels,
+        "message": (
+            f"No accessible channel named '{name}' found. Pick a real channel from "
+            "member_channels and call get_slack_channel_activity again with its name."
+        ),
+    }
+
+
 class Toolbelt:
     """The full set of tools available to one agent run, plus a dispatcher.
 
@@ -386,8 +418,7 @@ class Toolbelt:
             self._slack_allowed_channel_id = await _find_slack_channel_id(
                 self._sessions["slack"], SLACK_ALLOWED_CHANNEL_NAME
             )
-            self.tool_definitions.append(SLACK_FIND_CHANNEL_TOOL)
-            self.tool_definitions.append(SLACK_LIST_MY_CHANNELS_TOOL)
+            self.tool_definitions.append(GET_SLACK_CHANNEL_ACTIVITY_TOOL)
 
         self.tool_definitions.extend(definition for definition, _handler in CUSTOM_TOOLS)
         return self
@@ -421,20 +452,17 @@ class Toolbelt:
             )
 
     async def dispatch(self, tool_call: ToolCall) -> Any:
-        if tool_call.name == "slack_find_channel":
+        if tool_call.name == "get_slack_channel_activity":
+            # Marked unconditionally, in this single call site, regardless of
+            # outcome -- this is what fixes the tracking bug where the old
+            # three-step flow's find/list steps never reached the generic
+            # MCP-tool-index branch below and so never counted as "attempted".
+            self._attempted_sources.add("slack")
             if "slack" not in self._sessions:
                 return {"error": "Slack MCP server is not connected."}
-            channel_id = await _find_slack_channel_id(
+            return await _get_slack_channel_activity(
                 self._sessions["slack"], tool_call.arguments["name"]
             )
-            if channel_id is None:
-                return {"found": False}
-            return {"found": True, "channel_id": channel_id}
-
-        if tool_call.name == "slack_list_my_channels":
-            if "slack" not in self._sessions:
-                return {"error": "Slack MCP server is not connected."}
-            return {"channels": await _list_member_slack_channels(self._sessions["slack"])}
 
         if tool_call.name in self._custom_handlers:
             if tool_call.name == WRITE_DRAFT_ENTRY_TOOL_NAME:
