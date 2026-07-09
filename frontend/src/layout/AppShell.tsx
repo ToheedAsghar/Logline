@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { cn } from "@/common/utils";
 import { Button, Tooltip } from "@/atoms";
+import { AccountSettingsModal } from "@/molecules";
 import { SelfCaptureModal } from "@/pages/SelfCapture";
-import { useSession } from "@/context/SessionContext";
 
 const NAV_ITEMS = [
   { to: "/", label: "Timeline", end: true },
@@ -26,8 +26,8 @@ function isTypingTarget(target: EventTarget | null): boolean {
  * `SelfCaptureModal`'s open state survives navigation between pages.
  */
 export function AppShell() {
-  const { logout } = useSession();
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -69,9 +69,22 @@ export function AppShell() {
             ))}
           </nav>
 
-          <Button variant="ghost" size="sm" onClick={logout}>
-            Log out
-          </Button>
+          <Tooltip content="Account & settings" side="bottom">
+            <Button
+              variant="secondary"
+              iconOnly
+              size="sm"
+              aria-label="Account & settings"
+              className="rounded-full"
+              onClick={() => setAccountOpen(true)}
+              icon={
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              }
+            />
+          </Tooltip>
         </div>
       </header>
 
@@ -88,13 +101,13 @@ export function AppShell() {
             aria-label="Quick capture"
             className="rounded-full shadow-elevated"
             onClick={() => setCaptureOpen(true)}
-          >
-            <span className="text-xl leading-none">+</span>
-          </Button>
+            icon={<span className="text-xl leading-none">+</span>}
+          />
         </Tooltip>
       </div>
 
       <SelfCaptureModal open={captureOpen} onClose={() => setCaptureOpen(false)} />
+      <AccountSettingsModal open={accountOpen} onClose={() => setAccountOpen(false)} />
     </div>
   );
 }
