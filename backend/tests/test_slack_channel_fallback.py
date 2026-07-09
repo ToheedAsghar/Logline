@@ -259,7 +259,7 @@ class TestFullAgentRunNotInChannelFallback:
         provider = _ScriptedSlackFallbackProvider()
         monkeypatch.setattr(runner_module, "get_llm_provider", lambda: provider)
 
-        final_text = asyncio.run(run_agent(user_id=1, task="Summarize my Slack activity today."))
+        result = asyncio.run(run_agent(user_id=1, task="Summarize my Slack activity today."))
 
         assert provider.requested_tool_names == [
             "slack__slack_get_channel_history",
@@ -271,4 +271,5 @@ class TestFullAgentRunNotInChannelFallback:
             "slack_get_channel_history",  # round 1: the guessed channel, returns not_in_channel
             "slack_list_channels",  # round 2: the fallback, triggered by the not_in_channel result
         ]
-        assert final_text == "Checked Slack via the real channel from the fallback list."
+        assert result.response_text == "Checked Slack via the real channel from the fallback list."
+        assert result.created_entry_id is None

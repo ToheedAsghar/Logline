@@ -47,10 +47,11 @@ async def main() -> None:
     user_id = get_or_create_test_user()
     print(f"\n[task] user_id={user_id} task={TASK!r}\n")
 
-    final_response = await run_agent(user_id=user_id, task=TASK)
+    result = await run_agent(user_id=user_id, task=TASK)
 
     print("\n=== FINAL AGENT RESPONSE ===")
-    print(final_response)
+    print(result.response_text)
+    print(f"\n=== created_entry_id={result.created_entry_id!r} ===")
 
 
 if __name__ == "__main__":

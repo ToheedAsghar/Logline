@@ -36,5 +36,11 @@ class Settings:
     jira_client_secret: str = os.getenv("JIRA_CLIENT_SECRET", "")
     jira_redirect_uri: str = os.getenv("JIRA_REDIRECT_URI", "")
 
+    cors_origins: list[str] = [
+        origin.strip()
+        for origin in os.getenv("CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+
 
 settings = Settings()

@@ -278,7 +278,7 @@ class TestFullAgentRunCalendarLocationExclusion:
         provider = _ScriptedCalendarExclusionProvider()
         monkeypatch.setattr(runner_module, "get_llm_provider", lambda: provider)
 
-        final_text = asyncio.run(run_agent(user_id=1, task="Log today's calendar activity."))
+        result = asyncio.run(run_agent(user_id=1, task="Log today's calendar activity."))
 
         assert provider.requested_tool_names == ["calendar__list-events", "write_event", "flag_gap"]
         assert mock_session.call_tool.call_count == 1
@@ -288,4 +288,5 @@ class TestFullAgentRunCalendarLocationExclusion:
         assert written_event.event_metadata["summary"] == "Team Standup"
         assert "Home" not in json.dumps(written_event.event_metadata)
 
-        assert final_text == "Recorded today's real meeting; no gap found."
+        assert result.response_text == "Recorded today's real meeting; no gap found."
+        assert result.created_entry_id is None

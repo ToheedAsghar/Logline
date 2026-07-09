@@ -214,7 +214,8 @@ async def main() -> None:
          patch.object(flag_gap_module, "SessionLocal", lambda: fake_gap_session_cm):
 
         print(f"[task] user_id={TEST_USER_ID} task={TASK!r}\n")
-        final_response = await run_agent(user_id=TEST_USER_ID, task=TASK)
+        result = await run_agent(user_id=TEST_USER_ID, task=TASK)
+        final_response = result.response_text
 
     print("=== FULL TOOL-CALL TRACE ===")
     for i, step in enumerate(trace, start=1):

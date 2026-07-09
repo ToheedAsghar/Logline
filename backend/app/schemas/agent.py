@@ -18,3 +18,4 @@ class AgentRunRequest(BaseModel):
 class AgentRunResponse(BaseModel):
     response: str
     events: list[EventResponse]
+    created_entry_id: int | None = None

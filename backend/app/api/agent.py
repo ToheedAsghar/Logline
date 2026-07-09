@@ -34,7 +34,7 @@ async def run_agent_endpoint(
     # is no timeout wrapper around run_agent() -- an aggressive one would kill
     # slow-but-healthy runs mid-flight.
     run_started_at = datetime.now(timezone.utc)
-    response_text = await run_agent(user_id=current_user.id, task=_describe_task(payload))
+    result = await run_agent(user_id=current_user.id, task=_describe_task(payload))
 
     with SessionLocal() as db:
         events = (
@@ -43,4 +43,6 @@ async def run_agent_endpoint(
             .order_by(Event.created_at.asc())
             .all()
         )
-        return AgentRunResponse(response=response_text, events=events)
+        return AgentRunResponse(
+            response=result.response_text, events=events, created_entry_id=result.created_entry_id
+        )
