@@ -22,3 +22,7 @@ export function signup(payload: SignupPayload): Promise<UserResponse> {
 export function login(credentials: Credentials): Promise<TokenResponse> {
   return apiRequest<TokenResponse>("/auth/login", { method: "POST", body: credentials, skipAuth: true });
 }
+
+export function me(): Promise<UserResponse> {
+  return apiRequest<UserResponse>("/auth/me");
+}
