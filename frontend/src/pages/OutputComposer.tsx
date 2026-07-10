@@ -13,12 +13,6 @@ const FORMAT_LABEL: Record<Format, string> = {
   project_log: "Project Log",
 };
 
-/**
- * Local editable draft of an entry's content, seeded from the entry only
- * when its `id` changes — a background refetch (e.g. after Approve) must
- * never clobber text the user is mid-edit on. Same pattern as
- * `EditableTimeField`'s draft state.
- */
 function useEditableContent(entry: Entry | undefined) {
   const [standup, setStandup] = useState<StandupContent>({ yesterday: "", today: "", blockers: "" });
   const [projectLog, setProjectLog] = useState<ProjectLogContent>({ text: "" });
@@ -39,16 +33,9 @@ function useEditableContent(entry: Entry | undefined) {
 
 export default function OutputComposer() {
   const [format, setFormat] = useState<Format>("standup");
-  // Whether the most recent Generate click reported no draft, so the "no
-  // draft" message can be worded as a run outcome rather than plain idle
-  // state. Purely cosmetic -- fine to lose on navigation.
   const [justRanWithNoDraft, setJustRanWithNoDraft] = useState(false);
   const queryClient = useQueryClient();
 
-  // Source of truth for "is there a draft to show" is the database, not a
-  // run result held in local state -- recovers a completed draft on mount
-  // (nav away/back, full reload, whatever) instead of only within the
-  // session that triggered the run. Most recent first, so [0] is current.
   const draftsQuery = useEntries({ status: "draft", format });
   const draft = draftsQuery.data?.[0];
 
