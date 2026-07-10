@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { cn, getEventEnd } from "@/common/utils";
 import { Loading } from "@/atoms";
-import { RefreshTimelineTrigger, TimelineBlock } from "@/molecules";
+import { EntryDetailPanel, RefreshTimelineTrigger, TimelineBlock } from "@/molecules";
 import { useTimeline } from "@/repositories/hooks";
 import {
   DISPLAY_DAY_END_HOUR,
@@ -40,7 +40,7 @@ function formatHourLabel(hour: number): string {
 /** Vertical, time-proportional column for a single day: each event is
  * positioned/sized by its actual timestamp span rather than listed flatly,
  * so the empty stretches between events read as visual gaps. */
-function DayColumn({ date, events }: { date: Date; events: Event[] }) {
+function DayColumn({ date, events, onSelect }: { date: Date; events: Event[]; onSelect: (event: Event) => void }) {
   const dayStart = atHour(date, DISPLAY_DAY_START_HOUR);
   const totalMinutes = (DISPLAY_DAY_END_HOUR - DISPLAY_DAY_START_HOUR) * 60;
   const hours = Array.from(
@@ -88,7 +88,7 @@ function DayColumn({ date, events }: { date: Date; events: Event[] }) {
         ))}
         {positioned.map(({ event, top, height }) => (
           <div key={event.id} className="absolute inset-x-2" style={{ top, height }}>
-            <TimelineBlock event={event} className="h-full" />
+            <TimelineBlock event={event} onSelect={onSelect} className="h-full" />
           </div>
         ))}
         {events.length === 0 && (
@@ -102,6 +102,7 @@ function DayColumn({ date, events }: { date: Date; events: Event[] }) {
 export default function Timeline() {
   const [viewMode, setViewMode] = useState<ViewMode>("day");
   const [anchorDate, setAnchorDate] = useState(() => new Date());
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
 
   const dateRange = viewMode === "day" ? dayDisplayRange(anchorDate) : weekRange(anchorDate);
   const timeline = useTimeline(dateRange);
@@ -110,6 +111,8 @@ export default function Timeline() {
     () => [...(timeline.data ?? [])].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
     [timeline.data],
   );
+
+  const selectedEvent = sortedEvents.find((event) => event.id === selectedEventId) ?? null;
 
   const weekDays = useMemo(() => {
     const monday = startOfWeek(anchorDate);
@@ -177,7 +180,9 @@ export default function Timeline() {
       {timeline.isLoading && <Loading label="Loading timeline…" />}
       {timeline.isError && <p className="font-mono text-[11px] text-danger">Couldn&apos;t load the timeline — try again.</p>}
 
-      {!timeline.isLoading && !timeline.isError && viewMode === "day" && <DayColumn date={anchorDate} events={sortedEvents} />}
+      {!timeline.isLoading && !timeline.isError && viewMode === "day" && (
+        <DayColumn date={anchorDate} events={sortedEvents} onSelect={(event) => setSelectedEventId(event.id)} />
+      )}
 
       {!timeline.isLoading && !timeline.isError && viewMode === "week" && (
         <div className="flex flex-col gap-5">
@@ -191,7 +196,7 @@ export default function Timeline() {
                 ) : (
                   <div className="flex flex-col gap-2">
                     {dayEvents.map((event) => (
-                      <TimelineBlock key={event.id} event={event} />
+                      <TimelineBlock key={event.id} event={event} onSelect={(e) => setSelectedEventId(e.id)} />
                     ))}
                   </div>
                 )}
@@ -200,6 +205,8 @@ export default function Timeline() {
           })}
         </div>
       )}
+
+      {selectedEvent && <EntryDetailPanel event={selectedEvent} onClose={() => setSelectedEventId(null)} />}
     </div>
   );
 }

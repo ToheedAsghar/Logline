@@ -10,3 +10,4 @@ export {
 } from "./AgentTriggerButton";
 export { ApprovalTransition, type ApprovalTransitionProps } from "./ApprovalTransition";
 export { AccountSettingsModal, type AccountSettingsModalProps } from "./AccountSettingsModal";
+export { EntryDetailPanel, type EntryDetailPanelProps } from "./EntryDetailPanel";

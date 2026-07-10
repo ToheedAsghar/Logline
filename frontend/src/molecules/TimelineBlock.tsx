@@ -28,7 +28,7 @@ function fallbackTitle(type: string): string {
 
 export interface TimelineBlockProps {
   event: Event;
-  /** Opens the (Phase 4) entry detail panel — stubbed here. */
+  /** Opens the entry detail panel (`EntryDetailPanel`) for this event. */
   onSelect?: (event: Event) => void;
   className?: string;
 }
