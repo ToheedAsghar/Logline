@@ -47,16 +47,37 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setAuthToken(next);
   }, []);
 
-  // Keep the api/client.ts module in sync even on first mount / hot reload,
-  // not just on subsequent applyToken calls.
-  useEffect(() => {
-    setAuthToken(token);
-  }, [token]);
-
   const logout = useCallback(() => {
     applyToken(null);
   }, [applyToken]);
 
+  // `client.ts` holds `authToken`/the 401 handler as plain module state (not
+  // React state), which is exactly why syncing them from a `useEffect` is
+  // unsafe: React commits effects child-first on mount, so a child that
+  // fires a query on mount (e.g. `useTimeline`) can run *before* an effect
+  // declared here. With a valid token already in `localStorage`, the
+  // `useState` initializer above makes `isAuthenticated` true from this
+  // component's very first render, so `RequireAuth` lets authenticated
+  // children through immediately -- if the module sync only happened in an
+  // effect, that child's first request went out with no `Authorization`
+  // header, got a 401, and `logout()` wiped an otherwise-valid session
+  // (reproduced by reloading with a valid stored token and watching the
+  // first /timeline request race the sync). Calling these plain functions
+  // directly in the render body -- not in an effect -- guarantees they're
+  // correct before any child even starts rendering, closing the race
+  // entirely rather than just narrowing it.
+  setAuthToken(token);
+  setUnauthorizedHandler(logout);
+
+  // Also register/cleanup through a real effect (not just the synchronous
+  // calls above). Reason: React 18 StrictMode's dev-only mount -> cleanup ->
+  // mount dance double-invokes effects, and a *cleanup-only* effect (no-op
+  // setup) would run: no-op setup, then this cleanup (nulling the handler),
+  // then the no-op setup again -- leaving the handler stuck at `null` for
+  // the rest of the component's life, with nothing left to restore it. Since
+  // this effect's setup re-registers `logout`, the dance instead ends on
+  // "logout registered", exactly like a single real mount would, while still
+  // correctly clearing it on a genuine unmount.
   useEffect(() => {
     setUnauthorizedHandler(logout);
     return () => setUnauthorizedHandler(null);
