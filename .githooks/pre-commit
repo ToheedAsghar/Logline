@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+jwt_pattern='eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
+
+hits=$(git diff --cached -U0 --diff-filter=ACM -- ':!.githooks/pre-commit' \
+  | grep -E '^\+' \
+  | grep -Ev '^\+\+\+' \
+  | grep -E "$jwt_pattern" || true)
+
+if [ -n "$hits" ]; then
+  echo "" >&2
+  echo "pre-commit: blocked -- staged changes contain a JWT-shaped string" >&2
+  echo "" >&2
+  echo "$hits" >&2
+  echo "" >&2
+  echo "This is exactly how a real bearer token once ended up committed in" >&2
+  echo ".claude/settings.json's Bash permission allowlist: a curl command with" >&2
+  echo "'Authorization: Bearer <token>' typed literally got approved, and the" >&2
+  echo "exact command text -- token included -- was captured into that" >&2
+  echo "tracked, committed file." >&2
+  echo "" >&2
+  echo "Fix: unstage the file and use an env var instead, e.g.:" >&2
+  echo "  export TOKEN=..." >&2
+  echo "  curl -H \"Authorization: Bearer \$TOKEN\" ..." >&2
+  echo "" >&2
+  echo "If this really isn't a live credential, bypass with:" >&2
+  echo "  git commit --no-verify" >&2
+  exit 1
+fi
+
+exit 0
