@@ -31,9 +31,11 @@ describe("IntegrationCard", () => {
     vi.mocked(useDisconnectIntegration).mockReturnValue({ mutate: vi.fn(), isPending: false } as any);
 
     render(<IntegrationCard integration={mockIntegration({ status: "disconnected" })} />);
-    
-    expect(screen.getByText(/Disconnected/)).toBeInTheDocument();
+
+    expect(screen.getByText("Disconnected")).toBeInTheDocument();
+    expect(screen.getByText("Not connected yet.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reconnect" })).not.toBeInTheDocument();
   });
 
   it("renders connected status correctly", () => {
@@ -41,19 +43,39 @@ describe("IntegrationCard", () => {
     vi.mocked(useDisconnectIntegration).mockReturnValue({ mutate: vi.fn(), isPending: false } as any);
 
     render(<IntegrationCard integration={mockIntegration({ status: "connected" })} />);
-    
-    expect(screen.getByText(/Connected/)).toBeInTheDocument();
+
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText(/Synced/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reconnect" })).not.toBeInTheDocument();
   });
 
-  it("renders error status correctly", () => {
+  it("renders error status with a badge, message, and both reconnect/disconnect actions", () => {
     vi.mocked(useConnectIntegration).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false, error: null } as any);
     vi.mocked(useDisconnectIntegration).mockReturnValue({ mutate: vi.fn(), isPending: false } as any);
 
     render(<IntegrationCard integration={mockIntegration({ status: "error" })} />);
-    
-    expect(screen.getByText(/Error/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+
+    expect(screen.getByText("Attention")).toBeInTheDocument();
+    expect(screen.getByText(/Needs attention — reconnect to resume syncing\./)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
+  });
+
+  it("wires Reconnect to the same connect mutation as Connect", () => {
+    const connectMutate = vi.fn();
+    vi.mocked(useConnectIntegration).mockReturnValue({
+      mutate: connectMutate,
+      isPending: false,
+      isError: false,
+      error: null,
+    } as any);
+    vi.mocked(useDisconnectIntegration).mockReturnValue({ mutate: vi.fn(), isPending: false } as any);
+
+    render(<IntegrationCard integration={mockIntegration({ source: "calendar", status: "error" })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+    expect(connectMutate).toHaveBeenCalledWith("calendar");
   });
 
   it("handles Connect button click gracefully with a mocked 501 response", async () => {
