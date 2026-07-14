@@ -31,9 +31,12 @@ export interface TimelineBlockProps {
   /** Opens the entry detail panel (`EntryDetailPanel`) for this event. */
   onSelect?: (event: Event) => void;
   className?: string;
+  /** Dimmed by the timeline's source filter (spec 1d) — opacity only, no
+   * reflow. Dimmed blocks are removed from tab order and hit-testing. */
+  dimmed?: boolean;
 }
 
-export function TimelineBlock({ event, onSelect, className }: TimelineBlockProps) {
+export function TimelineBlock({ event, onSelect, className, dimmed }: TimelineBlockProps) {
   const tier = resolveTier(event);
   const cfg = CONFIDENCE_TIERS[tier];
   const title = metadataString(event.event_metadata, "title") ?? fallbackTitle(event.type);
@@ -43,26 +46,28 @@ export function TimelineBlock({ event, onSelect, className }: TimelineBlockProps
   return (
     <article
       role="button"
-      tabIndex={0}
-      onClick={() => onSelect?.(event)}
+      tabIndex={dimmed ? -1 : 0}
+      aria-hidden={dimmed || undefined}
+      onClick={() => !dimmed && onSelect?.(event)}
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
+        if (!dimmed && (e.key === "Enter" || e.key === " ")) {
           e.preventDefault();
           onSelect?.(event);
         }
       }}
       className={cn(
         "flex flex-col gap-1.5 rounded-md border-[1.5px] bg-surface px-3.5 py-3 text-left",
-        "cursor-pointer transition-colors hover:bg-surface-2",
+        "cursor-pointer transition-[color,background-color,opacity] hover:bg-surface-2",
         "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
         cfg.borderStyle === "solid" && "border-solid",
         cfg.borderStyle === "dashed" && "border-dashed",
         cfg.borderStyle === "dotted" && "border-dotted",
         "border-border-2",
         cfg.hasLeftAccent && (tier === "proven" ? "border-l-[3px] border-l-accent" : "border-l-[3px] border-l-accent-dim"),
+        dimmed && "pointer-events-none",
         className,
       )}
-      style={{ opacity: cfg.opacity }}
+      style={{ opacity: dimmed ? 0.32 : cfg.opacity }}
     >
       <div className="flex items-center gap-2">
         <ConfidenceTier tier={tier} shape="dot" />
@@ -72,5 +77,49 @@ export function TimelineBlock({ event, onSelect, className }: TimelineBlockProps
       <h3 className="font-sans text-sm font-medium text-text">{title}</h3>
       {summary && <p className="line-clamp-2 font-sans text-xs text-muted">{summary}</p>}
     </article>
+  );
+}
+
+export interface TimelineClusterRowProps {
+  event: Event;
+  onSelect?: (event: Event) => void;
+  /** Dimmed by the timeline's source filter (spec 1d). */
+  dimmed?: boolean;
+}
+
+/** The slim, fixed-height row a colliding event collapses into inside a
+ * cluster (spec 1a) — same confidence-tier border/dot vocabulary as
+ * `TimelineBlock`, just laid out as a single line since height no longer
+ * encodes duration (the time-range label carries that instead). */
+export function TimelineClusterRow({ event, onSelect, dimmed }: TimelineClusterRowProps) {
+  const tier = resolveTier(event);
+  const cfg = CONFIDENCE_TIERS[tier];
+  const title = metadataString(event.event_metadata, "title") ?? fallbackTitle(event.type);
+  const endTimestamp = metadataString(event.event_metadata, "end_timestamp");
+
+  return (
+    <button
+      type="button"
+      tabIndex={dimmed ? -1 : 0}
+      aria-hidden={dimmed || undefined}
+      onClick={() => !dimmed && onSelect?.(event)}
+      className={cn(
+        "flex h-[34px] items-center gap-2 rounded-md border-[1.5px] bg-surface px-2.5 text-left",
+        "cursor-pointer transition-[color,background-color,opacity] hover:bg-surface-2",
+        "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[-1px]",
+        cfg.borderStyle === "solid" && "border-solid",
+        cfg.borderStyle === "dashed" && "border-dashed",
+        cfg.borderStyle === "dotted" && "border-dotted",
+        "border-border-2",
+        cfg.hasLeftAccent && (tier === "proven" ? "border-l-[3px] border-l-accent" : "border-l-[3px] border-l-accent-dim"),
+        dimmed && "pointer-events-none",
+      )}
+      style={{ opacity: dimmed ? 0.32 : cfg.opacity }}
+    >
+      <span className="w-[76px] flex-none font-mono text-[10.5px] text-muted">{formatTimeRange(event.timestamp, endTimestamp)}</span>
+      <span className="flex-none font-mono text-[10px] uppercase tracking-wider text-faint">{event.source}</span>
+      <span className="flex-1 truncate font-sans text-xs font-medium text-text">{title}</span>
+      <ConfidenceTier tier={tier} shape="dot" />
+    </button>
   );
 }
