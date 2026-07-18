@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from app.db.session import SessionLocal
-from app.models.entry import Entry, EntryFormat, EntryStatus
-from app.schemas.entry import parse_entry_content
+from app.entries.models import Entry, EntryFormat, EntryStatus
+from app.entries.schemas import parse_entry_content
 
 
 class DraftEntryInput(BaseModel):
@@ -42,7 +42,7 @@ def write_draft_entry(**kwargs) -> dict:
     """Validate `kwargs` and insert a new draft row into the `entries` table.
 
     `content` is validated against `format`'s required shape using the same
-    `parse_entry_content` validator the REST API uses (app/schemas/entry.py),
+    `parse_entry_content` validator the REST API uses (app/entries/schemas.py),
     so the agent and the API can never disagree on what counts as valid content.
 
     Returns:
