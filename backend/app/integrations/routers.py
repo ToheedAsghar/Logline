@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.auth.deps import get_current_user
+from app.auth.models import User
 from app.db.session import get_db
-from app.models.integration import Integration, IntegrationSource
-from app.models.user import User
-from app.schemas.integration import IntegrationResponse
+from app.integrations import crud
+from app.integrations.models import IntegrationSource
+from app.integrations.schemas import IntegrationResponse
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -15,7 +16,7 @@ def list_integrations(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return db.query(Integration).filter(Integration.user_id == current_user.id).all()
+    return crud.list_integrations_for_user(db, current_user.id)
 
 
 @router.post("/{source}/connect", status_code=status.HTTP_501_NOT_IMPLEMENTED)
@@ -29,13 +30,8 @@ def disconnect_integration(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    integration = (
-        db.query(Integration)
-        .filter(Integration.user_id == current_user.id, Integration.source == source)
-        .first()
-    )
+    integration = crud.get_integration_by_source(db, current_user.id, source)
     if integration is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Integration not found")
 
-    db.delete(integration)  # cascades to oauth_tokens
-    db.commit()
+    crud.delete_integration(db, integration)

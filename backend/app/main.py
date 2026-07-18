@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import agent, auth, integrations
+from app.api import agent, auth
 from app.config import settings
 from app.entries import routers as entries
+from app.integrations import routers as integrations
 from app.self_captures import routers as self_captures
 from app.timeline import routers as timeline
 
