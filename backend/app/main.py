@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import agent, auth
+from app.api import agent
+from app.auth import routers as auth
 from app.config import settings
 # Registers every domain's models on Base.metadata before any request can
 # trigger SQLAlchemy's configure_mappers() -- without this, a domain with no

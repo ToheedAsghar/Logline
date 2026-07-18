@@ -19,8 +19,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.agent.runner import run_agent
+from app.auth.models import User
+from app.db import base  # noqa: F401 -- registers every domain's models before any User query
 from app.db.session import SessionLocal
-from app.models.user import User
 
 TEST_EMAIL = "agent-runner-test@example.com"
 TASK = "What did I work on today?"

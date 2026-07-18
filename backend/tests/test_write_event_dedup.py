@@ -32,9 +32,9 @@ import app.agent.tools.write_event as write_event_module
 from app.agent.tools.write_event import (
     WriteEventDatabaseError, WriteEventValidationError, _normalize_slack_timestamp, write_event,
 )
+from app.auth.models import User
 from app.db.session import SessionLocal
-from app.models.event import ConfidenceLevel, Event
-from app.models.user import User
+from app.timeline.models import ConfidenceLevel, Event
 
 
 def _fake_session_cm(fake_db: MagicMock) -> MagicMock:
