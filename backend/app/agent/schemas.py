@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.schemas.event import EventResponse
+from app.timeline.schemas import EventResponse
 
 
 class AgentRunDateRange(BaseModel):
