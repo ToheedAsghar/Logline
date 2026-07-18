@@ -3,12 +3,3 @@ exclude = .git,__pycache__,__init__.py,local.py,docs/,old/,build/,dist/,static/,
 max-line-length = 120
 ignore = E203, E266, E501, W503, F403
 max-complexity = 18
-
-[isort]
-line_length = 120
-known_first_party = myapp
-default_section = THIRDPARTY
-multi_line_output = 3
-include_trailing_comma = True
-force_grid_wrap = 0
-combine_as_imports = True

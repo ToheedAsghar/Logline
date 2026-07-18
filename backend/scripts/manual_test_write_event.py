@@ -9,10 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.agent.tools.write_event import (
-    WriteEventValidationError,
-    write_event,
-)
+from app.agent.tools.write_event import WriteEventValidationError, write_event
 from app.db.session import SessionLocal
 from app.models.event import Event
 from app.models.user import User

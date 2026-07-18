@@ -30,10 +30,7 @@ from sqlalchemy.exc import IntegrityError
 
 import app.agent.tools.write_event as write_event_module
 from app.agent.tools.write_event import (
-    WriteEventDatabaseError,
-    WriteEventValidationError,
-    _normalize_slack_timestamp,
-    write_event,
+    WriteEventDatabaseError, WriteEventValidationError, _normalize_slack_timestamp, write_event,
 )
 from app.db.session import SessionLocal
 from app.models.event import ConfidenceLevel, Event

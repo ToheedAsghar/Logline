@@ -37,15 +37,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import app.agent.toolbelt as toolbelt_module
 from app.agent.llm.base import ToolCall
 from app.agent.system_prompt import SYSTEM_PROMPT
-from app.agent.toolbelt import (
-    Toolbelt,
-    _query_has_repo_scope,
-    _validate_github_date_syntax,
-    get_user_github_repos,
-)
-import app.agent.toolbelt as toolbelt_module
+from app.agent.toolbelt import Toolbelt, _query_has_repo_scope, _validate_github_date_syntax, get_user_github_repos
 
 
 def _mock_call_tool_result() -> MagicMock:
