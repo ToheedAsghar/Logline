@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from app.db.session import SessionLocal
-from app.models.event import ConfidenceLevel, Event
+from app.timeline.models import ConfidenceLevel, Event
 
 
 class WriteEventInput(BaseModel):

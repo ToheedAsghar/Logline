@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.session import Base
-from app.models.event import ConfidenceLevel
+from app.timeline.models import ConfidenceLevel
 
 
 class WorkBlock(Base):

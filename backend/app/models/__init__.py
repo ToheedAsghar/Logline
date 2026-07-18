@@ -1,4 +1,3 @@
-from app.models.event import ConfidenceLevel, Event
 from app.models.integration import Integration, IntegrationSource, IntegrationStatus
 from app.models.oauth_token import OAuthToken
 from app.models.user import User
@@ -10,7 +9,5 @@ __all__ = [
     "IntegrationSource",
     "IntegrationStatus",
     "OAuthToken",
-    "Event",
-    "ConfidenceLevel",
     "WorkBlock",
 ]

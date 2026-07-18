@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.event import ConfidenceLevel
+from app.timeline.models import ConfidenceLevel
 
 
 class EventResponse(BaseModel):
