@@ -24,7 +24,15 @@ def decode_access_token(token: str) -> int:
     """Return the user_id encoded in `token`.
 
     Raises jwt.PyJWTError (or a subclass) if the token is expired, malformed,
-    or has an invalid signature.
+    has an invalid signature, or carries a missing/non-numeric `sub` claim --
+    callers (e.g. get_current_user) only need to catch jwt.PyJWTError to
+    treat every one of those cases as an unauthenticated request.
     """
     payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-    return int(payload["sub"])
+    sub = payload.get("sub")
+    if sub is None:
+        raise jwt.InvalidTokenError("Token is missing the 'sub' claim")
+    try:
+        return int(sub)
+    except (TypeError, ValueError):
+        raise jwt.InvalidTokenError("Token 'sub' claim is not numeric") from None
