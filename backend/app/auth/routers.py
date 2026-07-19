@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import crud
 from app.auth.constants import (
-    EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, FORGOT_PASSWORD_WAIT_MESSAGE, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
+    EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
     TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE, TEXT_LOGIN_EMAIL_NOT_VERIFIED, TEXT_LOGIN_INVALID_CREDENTIALS,
     TEXT_PASSWORD_RESET_SUBJECT, TEXT_PASSWORD_RESET_SUCCESSFULL, TEXT_PASSWORD_TOKEN_ERROR,
 )
@@ -147,10 +147,11 @@ def resend_verification(
     if last_token is not None:
         elapsed_seconds = (datetime.now(timezone.utc) - last_token.created_at).total_seconds()
         if elapsed_seconds < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="A verification email was already sent recently. Please wait before requesting another.",
-            )
+            # Under cooldown: skip sending, but return the same generic 200
+            # as every other case (nonexistent email, already active, real
+            # send) -- a 429 here would leak that the account exists and is
+            # eligible, the exact enumeration this response is meant to deny.
+            return generic_response
 
     _issue_and_queue_verification_email(db, user, background_tasks)
     return generic_response
@@ -177,9 +178,10 @@ def forgot_password(payload: ForgotPasswordRequest, background_tasks: Background
     if not eligible:
         return generic_response
 
+    cooldown_user_id = user.id if user is not None else -1
     last_token = (
         db.query(PasswordResetToken)
-        .filter(PasswordResetToken.user_id == user.id)
+        .filter(PasswordResetToken.user_id == cooldown_user_id)
         .order_by(PasswordResetToken.created_at.desc())
         .first()
     )
@@ -187,9 +189,11 @@ def forgot_password(payload: ForgotPasswordRequest, background_tasks: Background
     if last_token is not None:
         elapsed_seconds = (datetime.now(timezone.utc) - last_token.created_at).total_seconds()
         if elapsed_seconds < PASSWORD_RESET_RESEND_COOLDOWN_SECONDS:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=FORGOT_PASSWORD_WAIT_MESSAGE
-            )
+            # Under cooldown: skip sending, but return the same generic 200
+            # as every other case (nonexistent email, SSO-only, real send)
+            # -- a 429 here would leak that the account exists and is
+            # eligible, the exact enumeration this response is meant to deny.
+            return generic_response
 
     _issue_and_queue_password_reset_email(db, user, background_tasks)
     return generic_response
