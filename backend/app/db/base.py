@@ -3,7 +3,7 @@
 # else) inspects it -- regardless of which folder a model physically
 # lives in. This is the single place that must be updated whenever a
 # new domain gains a models.py.
-from app.auth.models import User
+from app.auth.models import EmailVerificationToken, PasswordResetToken, User
 from app.db.session import Base
 from app.entries.models import Entry, EntryFormat, EntryStatus
 from app.integrations.models import Integration, IntegrationSource, IntegrationStatus, OAuthToken
@@ -14,6 +14,8 @@ from app.timeline.models import ConfidenceLevel, Event
 __all__ = [
     "Base",
     "User",
+    "EmailVerificationToken",
+    "PasswordResetToken",
     "Integration",
     "IntegrationSource",
     "IntegrationStatus",
