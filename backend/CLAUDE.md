@@ -61,7 +61,7 @@ Shape depends on `entries.format`:
 - `standup` → `{yesterday, today, blockers}`
 - `project_log` → `{text}`
 
-Validated via Pydantic schemas in `app/schemas/entry.py`. Don't assume `content`
+Validated via Pydantic schemas in `app/entries/schemas.py`. Don't assume `content`
 is a plain string anywhere.
 
 ## Stack
