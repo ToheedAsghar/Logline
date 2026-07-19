@@ -5,7 +5,10 @@ import jwt
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.orm import Session
 
-from app.auth.constants import EMAIL_VERIFICATION_TOKEN_MAX_AGE_SECONDS, PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS
+from app.auth.constants import (
+    EMAIL_VERIFICATION_SALT, EMAIL_VERIFICATION_TOKEN_MAX_AGE_SECONDS, PASSWORD_RESET_SALT,
+    PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS,
+)
 from app.auth.models import EmailVerificationToken, PasswordResetToken
 from app.config import settings
 
@@ -54,7 +57,7 @@ class EmailVerificationTokenError(Exception):
 
 
 def _email_verification_serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(settings.itsdangerous_secret_key, salt="email-verification")
+    return URLSafeTimedSerializer(settings.itsdangerous_secret_key, salt=EMAIL_VERIFICATION_SALT)
 
 
 def create_email_verification_token(db: Session, user_id: int) -> str:
@@ -110,7 +113,7 @@ class PasswordResetTokenError(Exception):
 
 
 def _password_reset_serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(settings.itsdangerous_secret_key, salt="password-reset")
+    return URLSafeTimedSerializer(settings.itsdangerous_secret_key, salt=PASSWORD_RESET_SALT)
 
 
 def create_password_reset_token(db: Session, user_id: int) -> str:

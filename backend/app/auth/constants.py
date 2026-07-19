@@ -4,7 +4,11 @@ PASSWORD_MAX_LENGTH = 128
 # Error Messages
 TEXT_UNAUTHORIZED = "Could not validate credentials"
 
+# Email Verification
+EMAIL_VERIFICATION_SALT = "email-verification"
+
 # Password Reset
+PASSWORD_RESET_SALT = "password-reset"
 TEXT_PASSWORD_RESET_SUBJECT = "Reset your Logline password"
 
 # password verification
