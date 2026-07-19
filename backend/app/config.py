@@ -5,6 +5,20 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _require_env(name: str) -> str:
+    """Read a required env var, raising instead of silently defaulting to "".
+
+    Some settings (e.g. SMTP credentials) are unsafe to fall back to an
+    empty string for -- a misconfigured deploy should fail loudly at
+    startup, not send mail with a blank host or crash later with an opaque
+    error the first time the feature is used.
+    """
+    value = os.getenv(name, "")
+    if not value:
+        raise RuntimeError(f"Required environment variable {name!r} is not set")
+    return value
+
+
 class Settings:
     database_url: str = os.getenv("DATABASE_URL", "")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
@@ -17,6 +31,12 @@ class Settings:
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", str(60 * 24)))
+
+    smtp_host: str = _require_env("SMTP_HOST")
+    smtp_port: int = int(_require_env("SMTP_PORT"))
+    smtp_username: str = _require_env("SMTP_USERNAME")
+    smtp_password: str = _require_env("SMTP_PASSWORD")
+    smtp_from_address: str = _require_env("SMTP_FROM_ADDRESS")
 
     github_client_id: str = os.getenv("GITHUB_CLIENT_ID", "")
     github_client_secret: str = os.getenv("GITHUB_CLIENT_SECRET", "")

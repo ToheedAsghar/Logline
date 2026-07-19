@@ -12,3 +12,4 @@ openai
 bcrypt
 pyjwt
 email-validator
+aiosmtplib
