@@ -20,7 +20,7 @@ def _require_env(name: str) -> str:
 
 
 class Settings:
-    database_url: str = os.getenv("DATABASE_URL", "")
+    database_url: str = _require_env("DATABASE_URL")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
     encryption_key: str = os.getenv("ENCRYPTION_KEY", "")
 
@@ -28,11 +28,11 @@ class Settings:
     llm_model: str = os.getenv("LLM_MODEL", "gpt-5-mini")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
 
-    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "")
+    jwt_secret_key: str = _require_env("JWT_SECRET_KEY")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", str(60 * 24)))
 
-    itsdangerous_secret_key: str = os.getenv("ITSDANGEROUS_SECRET_KEY", "")
+    itsdangerous_secret_key: str = _require_env("ITSDANGEROUS_SECRET_KEY")
 
     smtp_host: str = _require_env("SMTP_HOST")
     smtp_port: int = int(_require_env("SMTP_PORT"))
