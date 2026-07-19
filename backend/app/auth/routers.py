@@ -26,17 +26,28 @@ logger = logging.getLogger(__name__)
 
 
 async def _send_verification_email(user_id: int, email: str, token: str) -> None:
+    """Runs as a FastAPI BackgroundTask, which awaits this coroutine with no
+    try/except of its own (starlette.background.BackgroundTask.__call__).
+    A failure here never reaches the original HTTP request -- the response
+    was already sent -- so it must be caught and logged here, or it vanishes
+    with no record anywhere.
+    """
     verify_url = f"{settings.frontend_base_url}/verify-email?token={token}"
     provider = get_email_provider()
-    await provider.send(
-        to=email,
-        subject="Verify your Logline email",
-        body=(
-            "Click the link below to verify your email address:\n\n"
-            f"{verify_url}\n\n"
-            "This link expires in 24 hours."
-        ),
-    )
+    try:
+        await provider.send(
+            to=email,
+            subject="Verify your Logline email",
+            body=(
+                "Click the link below to verify your email address:\n\n"
+                f"{verify_url}\n\n"
+                "This link expires in 24 hours."
+            ),
+        )
+    except Exception as exc:
+        logger.error(
+            "Failed to send verification email to user_id=%s email=%s: %s", user_id, email, exc, exc_info=True
+        )
 
 
 def _issue_and_queue_verification_email(db: Session, user: User, background_tasks: BackgroundTasks) -> None:
