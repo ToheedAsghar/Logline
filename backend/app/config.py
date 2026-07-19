@@ -32,6 +32,8 @@ class Settings:
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", str(60 * 24)))
 
+    itsdangerous_secret_key: str = os.getenv("ITSDANGEROUS_SECRET_KEY", "")
+
     smtp_host: str = _require_env("SMTP_HOST")
     smtp_port: int = int(_require_env("SMTP_PORT"))
     smtp_username: str = _require_env("SMTP_USERNAME")
@@ -55,6 +57,8 @@ class Settings:
     jira_client_id: str = os.getenv("JIRA_CLIENT_ID", "")
     jira_client_secret: str = os.getenv("JIRA_CLIENT_SECRET", "")
     jira_redirect_uri: str = os.getenv("JIRA_REDIRECT_URI", "")
+
+    frontend_base_url: str = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
 
     cors_origins: list[str] = [
         origin.strip()

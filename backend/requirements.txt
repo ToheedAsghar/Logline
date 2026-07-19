@@ -13,3 +13,4 @@ bcrypt
 pyjwt
 email-validator
 aiosmtplib
+itsdangerous
