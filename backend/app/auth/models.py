@@ -14,6 +14,7 @@ class User(Base):
     name = Column(String(100), nullable=True)
     default_channel = Column(String, nullable=True)
     is_active = Column(Boolean, nullable=False, default=False, server_default=expression.false())
+    is_sso_user = Column(Boolean, nullable=False, default=False, server_default=expression.false())
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     integrations = relationship("Integration", back_populates="user", cascade="all, delete-orphan")
@@ -31,6 +32,7 @@ class User(Base):
 
 class EmailVerificationToken(Base):
     __tablename__ = "email_verification_tokens"
+    __table_args__ = (Index("ix_email_verification_tokens_user_id_created_at", "user_id", "created_at"),)
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)

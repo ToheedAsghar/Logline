@@ -7,14 +7,20 @@ from sqlalchemy.orm import Session
 
 from app.auth import crud
 from app.auth.constants import (
-    EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, TEXT_LOGIN_EMAIL_NOT_VERIFIED, TEXT_LOGIN_INVALID_CREDENTIALS,
+    EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, FORGOT_PASSWORD_WAIT_MESSAGE, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
+    TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE, TEXT_LOGIN_EMAIL_NOT_VERIFIED, TEXT_LOGIN_INVALID_CREDENTIALS,
+    TEXT_PASSWORD_RESET_SUBJECT, TEXT_PASSWORD_RESET_SUCCESSFULL, TEXT_PASSWORD_TOKEN_ERROR,
 )
 from app.auth.deps import get_current_user
-from app.auth.models import EmailVerificationToken, User
-from app.auth.schemas import MessageResponse, ResendVerificationRequest, Token, UserLogin, UserResponse, UserSignup
+from app.auth.models import EmailVerificationToken, PasswordResetToken, User
+from app.auth.schemas import (
+    ForgotPasswordRequest, MessageResponse, ResendVerificationRequest, ResetPasswordRequest, Token, UserLogin,
+    UserResponse, UserSignup,
+)
 from app.auth.security import (
-    EmailVerificationTokenError, create_access_token, create_email_verification_token, hash_password,
-    verify_email_verification_token, verify_password,
+    EmailVerificationTokenError, PasswordResetTokenError, create_access_token, create_email_verification_token,
+    create_password_reset_token, hash_password, verify_email_verification_token, verify_password,
+    verify_password_reset_token,
 )
 from app.config import settings
 from app.core.email import get_email_provider
@@ -53,6 +59,34 @@ async def _send_verification_email(user_id: int, email: str, token: str) -> None
 def _issue_and_queue_verification_email(db: Session, user: User, background_tasks: BackgroundTasks) -> None:
     token = create_email_verification_token(db, user.id)
     background_tasks.add_task(_send_verification_email, user.id, user.email, token)
+
+
+async def _send_password_reset_email(user_id: int, email: str, token: str) -> None:
+    """Runs as a FastAPI BackgroundTask -- see _send_verification_email for
+    why failures must be caught and logged here rather than left to
+    propagate.
+    """
+    reset_url = f"{settings.frontend_base_url}/reset-password?token={token}"
+    provider = get_email_provider()
+    try:
+        await provider.send(
+            to=email,
+            subject=TEXT_PASSWORD_RESET_SUBJECT,
+            body=(
+                "Click the link below to choose a new password:\n\n"
+                f"{reset_url}\n\n"
+                "This link expires in 1 hour. If you didn't request this, you can ignore this email."
+            ),
+        )
+    except Exception as exc:
+        logger.error(
+            "Failed to send password reset email to user_id=%s email=%s: %s", user_id, email, exc, exc_info=True
+        )
+
+
+def _issue_and_queue_password_reset_email(db: Session, user: User, background_tasks: BackgroundTasks) -> None:
+    token = create_password_reset_token(db, user.id)
+    background_tasks.add_task(_send_password_reset_email, user.id, user.email, token)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -122,11 +156,82 @@ def resend_verification(
     return generic_response
 
 
+@router.post("/forgot-password", response_model=MessageResponse)
+def forgot_password(payload: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Email enumeration is a cybersecurity technique used by attackers to
+    discover valid email addresses associated with a specific domain or
+    organization.
+
+    the caller must not be able to distinguish
+    - "no such account",
+    - "account exists but is SSO-only",
+    - "account exists, reset queued"
+    response text OR by response shape.
+    """
+    generic_response = MessageResponse(message=TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE)
+
+    user = crud.get_user_by_email(db, payload.email)
+    eligible = user is not None and not user.is_sso_user
+
+    if not eligible:
+        return generic_response
+
+    last_token = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.user_id == user.id)
+        .order_by(PasswordResetToken.created_at.desc())
+        .first()
+    )
+
+    if last_token is not None:
+        elapsed_seconds = (datetime.now(timezone.utc) - last_token.created_at).total_seconds()
+        if elapsed_seconds < PASSWORD_RESET_RESEND_COOLDOWN_SECONDS:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=FORGOT_PASSWORD_WAIT_MESSAGE
+            )
+
+    _issue_and_queue_password_reset_email(db, user, background_tasks)
+    return generic_response
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Reset a password with a valid, unused token."""
+    try:
+        token_row = verify_password_reset_token(db, payload.token)
+    except PasswordResetTokenError as exc:
+        logger.info("Password reset failed: %s", exc.reason)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
+
+    now = datetime.now(timezone.utc)
+    claimed = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.id == token_row.id, PasswordResetToken.used_at.is_(None))
+        .update({"used_at": now})
+    )
+    if claimed == 0:
+        db.rollback()
+        logger.info("Password reset failed: already_used")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_PASSWORD_TOKEN_ERROR)
+
+    user = db.query(User).filter(User.id == token_row.user_id).first()
+    user.hashed_password = hash_password(payload.new_password)
+
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None)
+    ).update({"used_at": now})
+
+    db.commit()
+
+    return MessageResponse(message=TEXT_PASSWORD_RESET_SUCCESSFULL)
+
+
 @router.post("/login", response_model=Token)
 def login(payload: UserLogin, db: Session = Depends(get_db)):
     user = crud.get_user_by_email(db, payload.email)
     if user is None or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=TEXT_LOGIN_INVALID_CREDENTIALS)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=TEXT_PASSWORD_TOKEN_ERROR)
 
     if not user.is_active:
         raise HTTPException(

@@ -5,8 +5,8 @@ import jwt
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.orm import Session
 
-from app.auth.constants import EMAIL_VERIFICATION_TOKEN_MAX_AGE_SECONDS
-from app.auth.models import EmailVerificationToken
+from app.auth.constants import EMAIL_VERIFICATION_TOKEN_MAX_AGE_SECONDS, PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS
+from app.auth.models import EmailVerificationToken, PasswordResetToken
 from app.config import settings
 
 
@@ -94,5 +94,54 @@ def verify_email_verification_token(db: Session, token: str) -> EmailVerificatio
         raise EmailVerificationTokenError("not_found")
     if token_row.used_at is not None:
         raise EmailVerificationTokenError("already_used")
+
+    return token_row
+
+
+class PasswordResetTokenError(Exception):
+    """Raised by verify_password_reset_token.
+
+    `reason` is one of "expired" / "tampered" / "already_used" / "not_found"
+    """
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
+def _password_reset_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(settings.itsdangerous_secret_key, salt="password-reset")
+
+
+def create_password_reset_token(db: Session, user_id: int) -> str:
+    """Create a PasswordResetToken row for `user_id` and return an opaque,
+    signed token string embedding {user_id, token_id} for later verification.
+    """
+    token_row = PasswordResetToken(user_id=user_id)
+    db.add(token_row)
+    db.commit()
+    db.refresh(token_row)
+
+    serializer = _password_reset_serializer()
+    return serializer.dumps({"user_id": user_id, "token_id": token_row.id})
+
+
+def verify_password_reset_token(db: Session, token: str) -> PasswordResetToken:
+    """Check the token, find the reset row, and make sure it was not used."""
+
+    serializer = _password_reset_serializer()
+    try:
+        data = serializer.loads(token, max_age=PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS)
+    except SignatureExpired:
+        raise PasswordResetTokenError("expired") from None
+    except BadSignature:
+        raise PasswordResetTokenError("tampered") from None
+
+    token_id = data.get("token_id")
+    token_row = db.query(PasswordResetToken).filter(PasswordResetToken.id == token_id).first()
+    if token_row is None:
+        raise PasswordResetTokenError("not_found")
+    if token_row.used_at is not None:
+        raise PasswordResetTokenError("already_used")
 
     return token_row
