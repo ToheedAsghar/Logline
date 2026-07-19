@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import expression, func
 
@@ -11,7 +11,7 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     email = Column(String, unique=True, nullable=False, index=True)
     hashed_password = Column(String, nullable=False)
-    name = Column(String, nullable=True)
+    name = Column(String(100), nullable=True)
     default_channel = Column(String, nullable=True)
     is_active = Column(Boolean, nullable=False, default=False, server_default=expression.false())
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -42,6 +42,7 @@ class EmailVerificationToken(Base):
 
 class PasswordResetToken(Base):
     __tablename__ = "password_reset_tokens"
+    __table_args__ = (Index("ix_password_reset_tokens_user_id_created_at", "user_id", "created_at"),)
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
