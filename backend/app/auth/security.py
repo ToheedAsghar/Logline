@@ -74,11 +74,12 @@ def create_email_verification_token(db: Session, user_id: int) -> str:
     """
     token_row = EmailVerificationToken(user_id=user_id)
     db.add(token_row)
-    db.commit()
-    db.refresh(token_row)
+    db.flush()
 
     serializer = _email_verification_serializer()
-    return serializer.dumps({"user_id": user_id, "token_id": token_row.id})
+    token = serializer.dumps({"user_id": user_id, "token_id": token_row.id})
+    db.commit()
+    return token
 
 
 def verify_email_verification_token(db: Session, token: str) -> EmailVerificationToken:
@@ -130,11 +131,12 @@ def create_password_reset_token(db: Session, user_id: int) -> str:
     """
     token_row = PasswordResetToken(user_id=user_id)
     db.add(token_row)
-    db.commit()
-    db.refresh(token_row)
+    db.flush()
 
     serializer = _password_reset_serializer()
-    return serializer.dumps({"user_id": user_id, "token_id": token_row.id})
+    token = serializer.dumps({"user_id": user_id, "token_id": token_row.id})
+    db.commit()
+    return token
 
 
 def verify_password_reset_token(db: Session, token: str) -> PasswordResetToken:

@@ -235,7 +235,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
 def login(payload: UserLogin, db: Session = Depends(get_db)):
     user = crud.get_user_by_email(db, payload.email)
     if user is None or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=TEXT_PASSWORD_TOKEN_ERROR)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=TEXT_LOGIN_INVALID_CREDENTIALS)
 
     if not user.is_active:
         raise HTTPException(
