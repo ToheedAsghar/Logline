@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import agent
+from app.agent import routers as agent
 from app.auth import routers as auth
 from app.config import settings
 # Registers every domain's models on Base.metadata before any request can
