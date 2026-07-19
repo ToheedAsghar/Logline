@@ -1,3 +1,5 @@
+import base64
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -13,12 +15,18 @@ from app.auth.models import EmailVerificationToken, PasswordResetToken
 from app.config import settings
 
 
+def _bcrypt_input(password: str) -> bytes:
+    """Hash the password with SHA-256 first so bcrypt always gets short input."""
+    digest = hashlib.sha256(password.encode()).digest()
+    return base64.b64encode(digest)
+
+
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(_bcrypt_input(password), bcrypt.gensalt()).decode()
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(password.encode(), hashed_password.encode())
+    return bcrypt.checkpw(_bcrypt_input(password), hashed_password.encode())
 
 
 def create_access_token(user_id: int) -> str:
