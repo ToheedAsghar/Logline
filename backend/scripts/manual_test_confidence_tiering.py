@@ -28,12 +28,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.agent.llm.base import ToolDefinition
-from app.agent.runner import run_agent
-from app.agent.toolbelt import Toolbelt
 import app.agent.tools.flag_gap as flag_gap_module
 import app.agent.tools.get_existing_events as get_existing_events_module
 import app.agent.tools.write_event as write_event_module
+from app.agent.llm.base import ToolDefinition
+from app.agent.runner import run_agent
+from app.agent.toolbelt import Toolbelt
 
 TEST_USER_ID = 1
 TASK = (

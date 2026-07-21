@@ -28,11 +28,11 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+import app.agent.runner as runner_module
 from app.agent.llm.base import AgentResponse, LLMProvider, ToolCall
 from app.agent.runner import run_agent
 from app.agent.system_prompt import SYSTEM_PROMPT
 from app.agent.toolbelt import GET_SLACK_CHANNEL_ACTIVITY_TOOL, Toolbelt
-import app.agent.runner as runner_module
 
 
 def _slack_page_result(channels: list[dict], next_cursor: str | None = None) -> MagicMock:

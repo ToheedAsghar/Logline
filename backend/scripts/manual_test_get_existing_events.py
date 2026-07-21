@@ -9,10 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.agent.tools.get_existing_events import (
-    GetExistingEventsValidationError,
-    get_existing_events,
-)
+from app.agent.tools.get_existing_events import GetExistingEventsValidationError, get_existing_events
 from app.agent.tools.write_event import write_event
 from app.db.session import SessionLocal
 from app.models.event import Event

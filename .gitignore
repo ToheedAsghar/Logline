@@ -61,3 +61,8 @@ uploads/
 coverage/
 .coverage
 htmlcov/
+
+
+# -- temp folders --- 
+Logline.html
+logline-frontend-build

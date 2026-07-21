@@ -44,15 +44,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import app.agent.runner as runner_module
+import app.agent.tools.flag_gap as flag_gap_module
+import app.agent.tools.write_event as write_event_module
 from app.agent.llm.base import AgentResponse, LLMProvider, ToolCall
 from app.agent.runner import run_agent
 from app.agent.system_prompt import SYSTEM_PROMPT
 from app.agent.toolbelt import Toolbelt
 from app.agent.tools.flag_gap import flag_gap
 from app.agent.tools.write_event import write_event
-import app.agent.runner as runner_module
-import app.agent.tools.flag_gap as flag_gap_module
-import app.agent.tools.write_event as write_event_module
 
 WORKING_LOCATION_EVENT = {
     "id": "evt-home",
