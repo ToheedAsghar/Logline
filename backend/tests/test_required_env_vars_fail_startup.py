@@ -12,12 +12,30 @@ import sys
 
 import pytest
 
-REQUIRED_VARS = ["JWT_SECRET_KEY", "ITSDANGEROUS_SECRET_KEY", "DATABASE_URL"]
+# Valid dummy values for every var app.config._require_env guards, so each
+# parametrized case blanks exactly one var against an otherwise-complete,
+# hermetic baseline instead of depending on whatever happens to be in the
+# developer's local .env.
+BASELINE_ENV = {
+    "JWT_SECRET_KEY": "test-jwt-secret",
+    "ITSDANGEROUS_SECRET_KEY": "test-itsdangerous-secret",
+    "DATABASE_URL": "postgresql://test:test@localhost:5432/test",
+    "SMTP_HOST": "localhost",
+    "SMTP_PORT": "1025",
+    "SMTP_USERNAME": "test",
+    "SMTP_PASSWORD": "test",
+    "SMTP_FROM_ADDRESS": "test@example.com",
+    "GOOGLE_CLIENT_ID": "test-google-client-id",
+    "GOOGLE_CLIENT_SECRET": "test-google-client-secret",
+    "GOOGLE_REDIRECT_URI": "http://localhost:8000/auth/callback/google",
+}
+REQUIRED_VARS = list(BASELINE_ENV)
 
 
 @pytest.mark.parametrize("missing_var", REQUIRED_VARS)
 def test_app_fails_to_start_when_required_var_missing(missing_var):
     env = os.environ.copy()
+    env.update(BASELINE_ENV)
     env[missing_var] = ""
 
     result = subprocess.run(
@@ -39,6 +57,7 @@ def test_app_fails_to_start_when_required_var_missing(missing_var):
 
 def test_app_starts_when_all_required_vars_present():
     env = os.environ.copy()
+    env.update(BASELINE_ENV)
 
     result = subprocess.run(
         [sys.executable, "-c", "import app.main"],

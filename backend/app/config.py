@@ -6,13 +6,7 @@ load_dotenv()
 
 
 def _require_env(name: str) -> str:
-    """Read a required env var, raising instead of silently defaulting to "".
-
-    Some settings (e.g. SMTP credentials) are unsafe to fall back to an
-    empty string for -- a misconfigured deploy should fail loudly at
-    startup, not send mail with a blank host or crash later with an opaque
-    error the first time the feature is used.
-    """
+    """Read a required env var, raising instead of silently defaulting to an empty string."""
     value = os.getenv(name, "")
     if not value:
         raise RuntimeError(f"Required environment variable {name!r} is not set")
@@ -50,9 +44,9 @@ class Settings:
     slack_redirect_uri: str = os.getenv("SLACK_REDIRECT_URI", "")
     slack_bot_token: str = os.getenv("SLACK_BOT_TOKEN", "")
 
-    google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
-    google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
-    google_redirect_uri: str = os.getenv("GOOGLE_REDIRECT_URI", "")
+    google_client_id: str = _require_env("GOOGLE_CLIENT_ID")
+    google_client_secret: str = _require_env("GOOGLE_CLIENT_SECRET")
+    google_redirect_uri: str = _require_env("GOOGLE_REDIRECT_URI")
 
     jira_client_id: str = os.getenv("JIRA_CLIENT_ID", "")
     jira_client_secret: str = os.getenv("JIRA_CLIENT_SECRET", "")
