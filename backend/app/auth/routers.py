@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import crud, google_oauth
 from app.auth.constants import (
-    EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
+    EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, GOOGLE_LOGIN_STATE_PURPOSE, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
     TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE, TEXT_LOGIN_EMAIL_NOT_VERIFIED, TEXT_LOGIN_INVALID_CREDENTIALS,
     TEXT_PASSWORD_RESET_SUBJECT, TEXT_PASSWORD_RESET_SUCCESSFULL, TEXT_PASSWORD_TOKEN_ERROR,
 )
@@ -32,8 +32,6 @@ from app.db.session import get_db
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 logger = logging.getLogger(__name__)
-
-GOOGLE_LOGIN_STATE_PURPOSE = "google_login"
 
 
 async def _send_verification_email(user_id: int, email: str, token: str) -> None:
@@ -135,6 +133,13 @@ def verify_email(token: str, db: Session = Depends(get_db)):
 def resend_verification(
     payload: ResendVerificationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
 ):
+    """Resend a verification email when the account still needs one.
+
+    The response stays the same in every case so people cannot tell whether
+    the email exists, the account is already active, or a new email was sent.
+    If the last verification email was sent too recently, this skips sending a
+    new one but still returns the same generic success message.
+    """
     user = crud.get_user_by_email(db, payload.email)
 
     generic_response = MessageResponse(
@@ -152,10 +157,6 @@ def resend_verification(
     if last_token is not None:
         elapsed_seconds = (datetime.now(timezone.utc) - last_token.created_at).total_seconds()
         if elapsed_seconds < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS:
-            # Under cooldown: skip sending, but return the same generic 200
-            # as every other case (nonexistent email, already active, real
-            # send) -- a 429 here would leak that the account exists and is
-            # eligible, the exact enumeration this response is meant to deny.
             return generic_response
 
     _issue_and_queue_verification_email(db, user, background_tasks)
@@ -164,16 +165,12 @@ def resend_verification(
 
 @router.post("/forgot-password", response_model=MessageResponse)
 def forgot_password(payload: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """
-    Email enumeration is a cybersecurity technique used by attackers to
-    discover valid email addresses associated with a specific domain or
-    organization.
+    """Send a password reset email when the account can use one.
 
-    the caller must not be able to distinguish
-    - "no such account",
-    - "account exists but is SSO-only",
-    - "account exists, reset queued"
-    response text OR by response shape.
+    The reply is always the same so people cannot tell whether the email
+    exists, belongs to an SSO-only account, or already has a reset email
+    queued. If the last reset email was sent too recently, this skips sending
+    a new one but still returns the same generic message.
     """
     generic_response = MessageResponse(message=TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE)
 
@@ -194,10 +191,6 @@ def forgot_password(payload: ForgotPasswordRequest, background_tasks: Background
     if last_token is not None:
         elapsed_seconds = (datetime.now(timezone.utc) - last_token.created_at).total_seconds()
         if elapsed_seconds < PASSWORD_RESET_RESEND_COOLDOWN_SECONDS:
-            # Under cooldown: skip sending, but return the same generic 200
-            # as every other case (nonexistent email, SSO-only, real send)
-            # -- a 429 here would leak that the account exists and is
-            # eligible, the exact enumeration this response is meant to deny.
             return generic_response
 
     _issue_and_queue_password_reset_email(db, user, background_tasks)

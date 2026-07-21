@@ -22,9 +22,10 @@ import jwt as pyjwt
 import pytest
 from fastapi import HTTPException
 
+from app.auth.constants import GOOGLE_LOGIN_STATE_PURPOSE
 from app.auth.google_oauth import GoogleAuthError
 from app.auth.models import User
-from app.auth.routers import GOOGLE_LOGIN_STATE_PURPOSE, google_callback, google_login
+from app.auth.routers import google_callback, google_login
 from app.auth.security import hash_password
 from app.config import settings
 from app.core.oauth_state import OAuthState, create_oauth_state

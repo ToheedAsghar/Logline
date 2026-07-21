@@ -19,6 +19,17 @@ EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS = 60
 TEXT_LOGIN_INVALID_CREDENTIALS = "Invalid email or password"
 TEXT_LOGIN_EMAIL_NOT_VERIFIED = "Email not verified. Please check your inbox for a verification link"
 
+# Google SSO
+GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"
+GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"]
+GOOGLE_SCOPES = ["openid", "email", "profile"]
+GOOGLE_LOGIN_STATE_PURPOSE = "google_login"
+TEXT_GOOGLE_MISSING_ID_TOKEN = "Google's token response did not include an id_token"
+TEXT_GOOGLE_EMAIL_NOT_VERIFIED = "Google account email is not verified"
+TEXT_GOOGLE_MISSING_EMAIL_CLAIM = "Google ID token did not include an email claim"
+
 # Password Reset
 TEXT_PASSWORD_TOKEN_ERROR = "Invalid or expired reset link"
 TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE = "If that email exists, a password reset link has been sent."

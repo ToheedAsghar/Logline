@@ -10,16 +10,11 @@ from authlib.jose import jwt as jose_jwt
 from authlib.jose.errors import JoseError
 from httpx import Client as HTTPXClient
 
+from app.auth.constants import (
+    GOOGLE_AUTHORIZE_URL, GOOGLE_ISSUERS, GOOGLE_JWKS_URL, GOOGLE_SCOPES, GOOGLE_TOKEN_URL,
+    TEXT_GOOGLE_EMAIL_NOT_VERIFIED, TEXT_GOOGLE_MISSING_EMAIL_CLAIM, TEXT_GOOGLE_MISSING_ID_TOKEN,
+)
 from app.config import settings
-
-GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-GOOGLE_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"
-GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"]
-GOOGLE_SCOPES = ["openid", "email", "profile"]
-TEXT_GOOGLE_MISSING_ID_TOKEN = "Google's token response did not include an id_token"
-TEXT_GOOGLE_EMAIL_NOT_VERIFIED = "Google account email is not verified"
-TEXT_GOOGLE_MISSING_EMAIL_CLAIM = "Google ID token did not include an email claim"
 
 
 class GoogleAuthError(Exception):
