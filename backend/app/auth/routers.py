@@ -9,8 +9,9 @@ from sqlalchemy.orm import Session
 from app.auth import crud, google_oauth
 from app.auth.constants import (
     EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, GOOGLE_LOGIN_STATE_PURPOSE, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
-    TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE, TEXT_LOGIN_EMAIL_NOT_VERIFIED, TEXT_LOGIN_INVALID_CREDENTIALS,
-    TEXT_PASSWORD_RESET_SUBJECT, TEXT_PASSWORD_RESET_SUCCESSFULL, TEXT_PASSWORD_TOKEN_ERROR,
+    TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE, TEXT_GOOGLE_SIGN_IN_FAILED, TEXT_LOGIN_EMAIL_NOT_VERIFIED,
+    TEXT_LOGIN_INVALID_CREDENTIALS, TEXT_PASSWORD_RESET_SUBJECT, TEXT_PASSWORD_RESET_SUCCESSFULL,
+    TEXT_PASSWORD_TOKEN_ERROR,
 )
 from app.auth.deps import get_current_user
 from app.auth.google_oauth import GoogleAuthError
@@ -263,7 +264,7 @@ def google_callback(code: str, state: str, db: Session = Depends(get_db)):
         claims = google_oauth.verify_google_id_token(id_token)
     except GoogleAuthError as exc:
         logger.info("Google login failed: %s", exc)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_GOOGLE_SIGN_IN_FAILED)
 
     google_user_id = claims["sub"]
     email = claims["email"]

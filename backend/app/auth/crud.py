@@ -1,3 +1,4 @@
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
@@ -26,6 +27,12 @@ def get_user_by_google_id(db: Session, google_user_id: str) -> User | None:
 def create_google_user(db: Session, *, email: str, google_user_id: str, name: str | None) -> User:
     """Fresh signup via Google: no password, active and SSO-linked immediately
     since Google's verified email is trustworthy proof.
+
+    Two near-simultaneous callback requests for the same new Google account
+    can both pass the caller's "no existing user" lookup before either
+    commits. Rather than crash the loser with a raw IntegrityError, treat the
+    unique-constraint conflict (on email or google_user_id) as proof a
+    concurrent request already won and re-query for the row it created.
     """
     user = User(
         email=normalize_email(email),
@@ -36,7 +43,14 @@ def create_google_user(db: Session, *, email: str, google_user_id: str, name: st
         google_user_id=google_user_id,
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        winner = get_user_by_google_id(db, google_user_id) or get_user_by_email(db, email)
+        if winner is None:
+            raise
+        return winner
     db.refresh(user)
     return user
 

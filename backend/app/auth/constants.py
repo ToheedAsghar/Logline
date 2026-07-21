@@ -27,8 +27,10 @@ GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"]
 GOOGLE_SCOPES = ["openid", "email", "profile"]
 GOOGLE_LOGIN_STATE_PURPOSE = "google_login"
 TEXT_GOOGLE_MISSING_ID_TOKEN = "Google's token response did not include an id_token"
+TEXT_GOOGLE_SIGN_IN_FAILED = "Google sign-in could not be completed"
 TEXT_GOOGLE_EMAIL_NOT_VERIFIED = "Google account email is not verified"
 TEXT_GOOGLE_MISSING_EMAIL_CLAIM = "Google ID token did not include an email claim"
+TEXT_GOOGLE_MISSING_SUB_CLAIM = "Google ID token did not include a sub claim"
 
 # Password Reset
 TEXT_PASSWORD_TOKEN_ERROR = "Invalid or expired reset link"

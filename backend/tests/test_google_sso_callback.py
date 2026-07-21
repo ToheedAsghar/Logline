@@ -15,6 +15,7 @@ TestClient/HTTP layer in this repo's test suite.
 Hits the real test Postgres database (docker-compose, see backend/CLAUDE.md)
 for User/OAuthState side effects.
 """
+import threading
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 
@@ -22,7 +23,8 @@ import jwt as pyjwt
 import pytest
 from fastapi import HTTPException
 
-from app.auth.constants import GOOGLE_LOGIN_STATE_PURPOSE, TEXT_LOGIN_INVALID_CREDENTIALS
+from app.auth import crud
+from app.auth.constants import GOOGLE_LOGIN_STATE_PURPOSE, TEXT_GOOGLE_SIGN_IN_FAILED, TEXT_LOGIN_INVALID_CREDENTIALS
 from app.auth.google_oauth import GoogleAuthError
 from app.auth.models import User
 from app.auth.routers import google_callback, google_login, login
@@ -50,6 +52,9 @@ UNVERIFIED_EMAIL_CLAIM_SUB = "google-sub-unverified-claim-888999"
 REUSE_EMAIL = "google-sso-reuse-test@example.com"
 REUSE_SUB = "google-sub-reuse-111222"
 
+CONCURRENT_SIGNUP_EMAIL = "google-sso-concurrent-signup-test@example.com"
+CONCURRENT_SIGNUP_SUB = "google-sub-concurrent-signup-333444"
+
 ALL_TEST_EMAILS = [
     FRESH_EMAIL,
     EXISTING_GOOGLE_EMAIL,
@@ -57,6 +62,7 @@ ALL_TEST_EMAILS = [
     LINK_UNVERIFIED_EMAIL,
     UNVERIFIED_EMAIL_CLAIM_EMAIL,
     REUSE_EMAIL,
+    CONCURRENT_SIGNUP_EMAIL,
 ]
 
 
@@ -400,6 +406,95 @@ class TestGoogleCallbackStateValidation:
                 google_callback(code="fake-code", state=state_token, db=db)
 
             assert exc_info.value.status_code == 400
+        finally:
+            if jti is not None:
+                _delete_state(db, jti)
+            db.close()
+
+
+class TestCreateGoogleUserConcurrentSignup:
+    """Two near-simultaneous requests for a brand-new Google account both
+    pass the caller's "no existing user" lookup before either commits.
+    crud.create_google_user must handle the resulting unique-constraint
+    IntegrityError by re-querying for the row the winning request created,
+    rather than letting the loser crash -- see crud.py.
+    """
+
+    def test_concurrent_create_for_same_new_account_yields_one_row_no_crash(self, clean_test_users):
+        results = []
+        errors = []
+        ready = threading.Barrier(2)
+
+        def worker():
+            db = SessionLocal()
+            try:
+                ready.wait(timeout=5)
+                user = crud.create_google_user(
+                    db, email=CONCURRENT_SIGNUP_EMAIL, google_user_id=CONCURRENT_SIGNUP_SUB, name="Concurrent"
+                )
+                results.append(user.id)
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                db.close()
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert errors == [], f"concurrent create_google_user raised: {errors}"
+        assert len(results) == 2
+        assert results[0] == results[1], "both callers must resolve to the same row"
+
+        db = SessionLocal()
+        try:
+            matches = db.query(User).filter(User.google_user_id == CONCURRENT_SIGNUP_SUB).all()
+            assert len(matches) == 1
+        finally:
+            db.close()
+
+
+class TestGoogleCallbackErrorMessageSanitization:
+    """GoogleAuthError text can embed library/internal failure detail. That
+    must never reach the client -- only the generic message -- while the
+    real reason still lands in the server log for debugging. See routers.py
+    and google_oauth.py.
+    """
+
+    def test_client_response_has_generic_message_not_raw_exception_text(self, clean_test_users, mock_google):
+        db = SessionLocal()
+        jti = None
+        raw_detail = "authlib internal failure: signature mismatch for kid=xyz123"
+        try:
+            mock_google["verify_error"] = GoogleAuthError(raw_detail)
+            state_token, jti = _create_state(db)
+
+            with pytest.raises(HTTPException) as exc_info:
+                google_callback(code="fake-code", state=state_token, db=db)
+
+            assert exc_info.value.status_code == 400
+            assert exc_info.value.detail == TEXT_GOOGLE_SIGN_IN_FAILED
+            assert raw_detail not in exc_info.value.detail
+        finally:
+            if jti is not None:
+                _delete_state(db, jti)
+            db.close()
+
+    def test_raw_exception_text_still_logged_server_side(self, clean_test_users, mock_google, caplog):
+        db = SessionLocal()
+        jti = None
+        raw_detail = "authlib internal failure: signature mismatch for kid=xyz123"
+        try:
+            mock_google["verify_error"] = GoogleAuthError(raw_detail)
+            state_token, jti = _create_state(db)
+
+            with caplog.at_level("INFO"):
+                with pytest.raises(HTTPException):
+                    google_callback(code="fake-code", state=state_token, db=db)
+
+            assert raw_detail in caplog.text
         finally:
             if jti is not None:
                 _delete_state(db, jti)
