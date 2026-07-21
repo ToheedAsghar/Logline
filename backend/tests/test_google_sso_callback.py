@@ -22,10 +22,11 @@ import jwt as pyjwt
 import pytest
 from fastapi import HTTPException
 
-from app.auth.constants import GOOGLE_LOGIN_STATE_PURPOSE
+from app.auth.constants import GOOGLE_LOGIN_STATE_PURPOSE, TEXT_LOGIN_INVALID_CREDENTIALS
 from app.auth.google_oauth import GoogleAuthError
 from app.auth.models import User
-from app.auth.routers import google_callback, google_login
+from app.auth.routers import google_callback, google_login, login
+from app.auth.schemas import UserLogin
 from app.auth.security import hash_password
 from app.config import settings
 from app.core.oauth_state import OAuthState, create_oauth_state
@@ -40,6 +41,9 @@ EXISTING_GOOGLE_SUB = "google-sub-existing-222333"
 LINK_VERIFIED_EMAIL = "google-sso-link-verified-test@example.com"
 LINK_VERIFIED_SUB = "google-sub-link-verified-444555"
 
+LINK_UNVERIFIED_EMAIL = "google-sso-link-unverified-test@example.com"
+LINK_UNVERIFIED_SUB = "google-sub-link-unverified-666777"
+
 UNVERIFIED_EMAIL_CLAIM_EMAIL = "google-sso-unverified-claim-test@example.com"
 UNVERIFIED_EMAIL_CLAIM_SUB = "google-sub-unverified-claim-888999"
 
@@ -50,6 +54,7 @@ ALL_TEST_EMAILS = [
     FRESH_EMAIL,
     EXISTING_GOOGLE_EMAIL,
     LINK_VERIFIED_EMAIL,
+    LINK_UNVERIFIED_EMAIL,
     UNVERIFIED_EMAIL_CLAIM_EMAIL,
     REUSE_EMAIL,
 ]
@@ -224,6 +229,81 @@ class TestGoogleCallbackLinksExistingPasswordAccount:
             assert existing.is_sso_user is True
             assert existing.is_active is True
             assert existing.hashed_password == original_hash
+        finally:
+            if jti is not None:
+                _delete_state(db, jti)
+            db.close()
+
+    def test_links_to_existing_unverified_account_and_activates_it(self, clean_test_users, mock_google):
+        db = SessionLocal()
+        jti = None
+        try:
+            existing = User(
+                email=LINK_UNVERIFIED_EMAIL,
+                hashed_password=hash_password("correct-horse-battery"),
+                is_active=False,
+                is_sso_user=False,
+            )
+            db.add(existing)
+            db.commit()
+            db.refresh(existing)
+
+            mock_google["claims"] = _claims(LINK_UNVERIFIED_SUB, LINK_UNVERIFIED_EMAIL)
+            state_token, jti = _create_state(db)
+
+            google_callback(code="fake-code", state=state_token, db=db)
+
+            db.refresh(existing)
+            assert existing.google_user_id == LINK_UNVERIFIED_SUB
+            assert existing.is_sso_user is True
+            assert existing.is_active is True
+            # Unproven password from the pre-activation row must be discarded
+            # -- see test_login_null_password_oracle.py for the attack this
+            # closes (pre-registering a victim's email to inherit the
+            # account once their Google login activates it).
+            assert existing.hashed_password is None
+        finally:
+            if jti is not None:
+                _delete_state(db, jti)
+            db.close()
+
+    def test_attacker_password_on_preregistered_email_stops_working_after_victim_links_google(
+        self, clean_test_users, mock_google
+    ):
+        """End-to-end account-pre-hijacking scenario: an attacker
+        pre-registers the victim's email with a password only the attacker
+        knows, leaving the account unverified. The real victim later signs
+        in with Google using that same email, linking and activating the
+        account. The attacker's original password must no longer grant
+        login -- only Google login (or a fresh password reset) should.
+        """
+        db = SessionLocal()
+        jti = None
+        try:
+            attacker_password = "attacker-chosen-password"
+            preregistered = User(
+                email=LINK_UNVERIFIED_EMAIL,
+                hashed_password=hash_password(attacker_password),
+                is_active=False,
+                is_sso_user=False,
+            )
+            db.add(preregistered)
+            db.commit()
+            db.refresh(preregistered)
+
+            mock_google["claims"] = _claims(LINK_UNVERIFIED_SUB, LINK_UNVERIFIED_EMAIL)
+            state_token, jti = _create_state(db)
+
+            google_callback(code="fake-code", state=state_token, db=db)
+
+            db.refresh(preregistered)
+            assert preregistered.is_active is True
+            assert preregistered.hashed_password is None
+
+            with pytest.raises(HTTPException) as exc_info:
+                login(UserLogin(email=LINK_UNVERIFIED_EMAIL, password=attacker_password), db=db)
+            assert exc_info.value.status_code == 401
+            assert exc_info.value.detail == TEXT_LOGIN_INVALID_CREDENTIALS
         finally:
             if jti is not None:
                 _delete_state(db, jti)
