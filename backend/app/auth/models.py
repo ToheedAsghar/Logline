@@ -10,11 +10,12 @@ class User(Base):
 
     id = Column(Integer, primary_key=True)
     email = Column(String, unique=True, nullable=False, index=True)
-    hashed_password = Column(String, nullable=False)
+    hashed_password = Column(String, nullable=True)
     name = Column(String(100), nullable=True)
     default_channel = Column(String, nullable=True)
     is_active = Column(Boolean, nullable=False, default=False, server_default=expression.false())
     is_sso_user = Column(Boolean, nullable=False, default=False, server_default=expression.false())
+    google_user_id = Column(String, nullable=True, unique=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     integrations = relationship("Integration", back_populates="user", cascade="all, delete-orphan")

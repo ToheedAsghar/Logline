@@ -4,6 +4,7 @@
 # lives in. This is the single place that must be updated whenever a
 # new domain gains a models.py.
 from app.auth.models import EmailVerificationToken, PasswordResetToken, User
+from app.core.oauth_state import OAuthState
 from app.db.session import Base
 from app.entries.models import Entry, EntryFormat, EntryStatus
 from app.integrations.models import Integration, IntegrationSource, IntegrationStatus, OAuthToken
@@ -15,6 +16,7 @@ __all__ = [
     "User",
     "EmailVerificationToken",
     "PasswordResetToken",
+    "OAuthState",
     "Integration",
     "IntegrationSource",
     "IntegrationStatus",

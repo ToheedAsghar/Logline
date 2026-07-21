@@ -2,16 +2,18 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth import crud
+from app.auth import crud, google_oauth
 from app.auth.constants import (
     EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
     TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE, TEXT_LOGIN_EMAIL_NOT_VERIFIED, TEXT_LOGIN_INVALID_CREDENTIALS,
     TEXT_PASSWORD_RESET_SUBJECT, TEXT_PASSWORD_RESET_SUCCESSFULL, TEXT_PASSWORD_TOKEN_ERROR,
 )
 from app.auth.deps import get_current_user
+from app.auth.google_oauth import GoogleAuthError
 from app.auth.models import EmailVerificationToken, PasswordResetToken, User
 from app.auth.schemas import (
     ForgotPasswordRequest, MessageResponse, ResendVerificationRequest, ResetPasswordRequest, Token, UserLogin,
@@ -24,11 +26,14 @@ from app.auth.security import (
 )
 from app.config import settings
 from app.core.email import get_email_provider
+from app.core.oauth_state import OAuthStateError, consume_oauth_state, create_oauth_state
 from app.db.session import get_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 logger = logging.getLogger(__name__)
+
+GOOGLE_LOGIN_STATE_PURPOSE = "google_login"
 
 
 async def _send_verification_email(user_id: int, email: str, token: str) -> None:
@@ -234,7 +239,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
 @router.post("/login", response_model=Token)
 def login(payload: UserLogin, db: Session = Depends(get_db)):
     user = crud.get_user_by_email(db, payload.email)
-    if user is None or not verify_password(payload.password, user.hashed_password):
+    if user is None or user.hashed_password is None or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=TEXT_LOGIN_INVALID_CREDENTIALS)
 
     if not user.is_active:
@@ -244,3 +249,47 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
         )
 
     return Token(access_token=create_access_token(user.id))
+
+
+@router.get("/google/login")
+def google_login(db: Session = Depends(get_db)):
+    state = create_oauth_state(db, purpose=GOOGLE_LOGIN_STATE_PURPOSE)
+    return RedirectResponse(google_oauth.build_authorize_url(state))
+
+
+@router.get("/google/callback")
+def google_callback(code: str, state: str, db: Session = Depends(get_db)):
+    try:
+        consume_oauth_state(db, token=state, expected_purpose=GOOGLE_LOGIN_STATE_PURPOSE)
+    except OAuthStateError as exc:
+        logger.info("Google login state validation failed: %s", exc.message)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message)
+
+    try:
+        id_token = google_oauth.exchange_code_for_id_token(code)
+        claims = google_oauth.verify_google_id_token(id_token)
+    except GoogleAuthError as exc:
+        logger.info("Google login failed: %s", exc)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    google_user_id = claims["sub"]
+    email = claims["email"]
+    name = claims.get("name")
+
+    user = crud.get_user_by_google_id(db, google_user_id)
+    if user is None:
+        user = crud.get_user_by_email(db, email)
+        if user is None:
+            user = crud.create_google_user(db, email=email, google_user_id=google_user_id, name=name)
+        else:
+            user = crud.link_google_account(db, user, google_user_id=google_user_id)
+
+    access_token = create_access_token(user.id)
+    # KNOWN, DEFERRED: the access token rides in the redirect URL, so it lands
+    # in browser history/referrer headers/server logs. Deliberately not fixed
+    # here -- the right shape (short-lived one-time exchange code the
+    # frontend swaps for the real token, vs. setting it as an httpOnly
+    # cookie directly) depends on how /oauth/callback ends up handling auth
+    # state, which isn't built yet. Decide when that frontend work starts,
+    # not now.
+    return RedirectResponse(f"{settings.frontend_base_url}/oauth/callback?token={access_token}")
