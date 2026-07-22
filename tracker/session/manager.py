@@ -59,8 +59,9 @@ class SessionManager:
         self._open_session(bundle_id=bundle_id, app_name=app_name)
 
     def on_title_changed(self, bundle_id: str, app_name: str, window_title: Optional[str]) -> None:
+        was_idle = self._open.is_idle if self._open else False
         self._close_open(end_reason="title_change")
-        self._open_session(bundle_id=bundle_id, app_name=app_name, window_title=window_title)
+        self._open_session(bundle_id=bundle_id, app_name=app_name, window_title=window_title, is_idle=was_idle)
 
     def on_idle_start(self, stopped_at: datetime) -> None:
         """Closes the active session backdated to when input actually stopped, then
