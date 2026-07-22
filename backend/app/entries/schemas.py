@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Union
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -42,6 +42,7 @@ class EntryCreate(BaseModel):
     user_id: int
     format: EntryFormat
     content: dict
+    work_date: date
     status: EntryStatus = EntryStatus.draft
 
     @model_validator(mode="after")
@@ -70,6 +71,7 @@ class EntryResponse(BaseModel):
     user_id: int
     format: EntryFormat
     content: dict
+    work_date: date
     status: EntryStatus
     created_at: datetime
     approved_at: datetime | None = None

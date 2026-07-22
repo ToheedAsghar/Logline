@@ -37,7 +37,11 @@ ALL_SOURCES = ("github", "slack", "jira", "calendar")
 WRITE_DRAFT_ENTRY_CALL = ToolCall(
     id="draft-1",
     name="write_draft_entry",
-    arguments={"format": "project_log", "content": {"text": "Worked on the API today."}},
+    arguments={
+        "format": "project_log",
+        "content": {"text": "Worked on the API today."},
+        "work_date": "2026-07-22",
+    },
 )
 
 
