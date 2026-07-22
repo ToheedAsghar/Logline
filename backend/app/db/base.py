@@ -10,6 +10,7 @@ from app.integrations.models import Integration, IntegrationSource, IntegrationS
 from app.models.work_block import WorkBlock
 from app.self_captures.models import SelfCapture
 from app.timeline.models import ConfidenceLevel, Event
+from app.tracker_sync.models import LocalSession
 
 __all__ = [
     "Base",
@@ -25,4 +26,5 @@ __all__ = [
     "EntryFormat",
     "EntryStatus",
     "SelfCapture",
+    "LocalSession",
 ]
