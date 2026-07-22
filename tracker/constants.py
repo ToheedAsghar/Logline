@@ -13,6 +13,9 @@ KNOWN_TERMINAL_BUNDLE_IDS = frozenset(
         "com.googlecode.iterm2",
         "dev.warp.Warp-Stable",
         "net.kovidgoyal.kitty",
+        "org.alacritty",
+        "com.github.wez.wezterm",
+        "co.zeit.hyper",
     }
 )
 
