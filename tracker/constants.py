@@ -16,6 +16,9 @@ KNOWN_TERMINAL_BUNDLE_IDS = frozenset(
     }
 )
 
+SCREEN_LOCKED_NOTIFICATION = "com.apple.screenIsLocked"
+SCREEN_UNLOCKED_NOTIFICATION = "com.apple.screenIsUnlocked"
+
 DB_DIR = Path.home() / "Library" / "Application Support" / "Logline"
 DB_PATH = DB_DIR / "tracker.db"
 
