@@ -3,6 +3,16 @@
 from pathlib import Path
 
 HEARTBEAT_INTERVAL_SECONDS = 5
+TITLE_POLL_INTERVAL_SECONDS = 5
+
+KNOWN_TERMINAL_BUNDLE_IDS = frozenset(
+    {
+        "com.apple.Terminal",
+        "com.googlecode.iterm2",
+        "dev.warp.Warp-Stable",
+        "net.kovidgoyal.kitty",
+    }
+)
 
 DB_DIR = Path.home() / "Library" / "Application Support" / "Logline"
 DB_PATH = DB_DIR / "tracker.db"
