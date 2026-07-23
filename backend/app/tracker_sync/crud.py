@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import delete, literal_column
+from sqlalchemy import delete, func, literal_column, or_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -31,7 +31,14 @@ def upsert_sessions(db: Session, rows: list[dict]) -> tuple[set[UUID], set[UUID]
     insert_stmt = insert(LocalSession).values(rows)
     stmt = insert_stmt.on_conflict_do_update(
         index_elements=["user_id", "id"],
-        set_={field: getattr(insert_stmt.excluded, field) for field in UPSERT_FIELDS},
+        set_={
+            **{field: getattr(insert_stmt.excluded, field) for field in UPSERT_FIELDS},
+            "synced_at": func.now(),
+        },
+        where=or_(*[
+            LocalSession.__table__.c[field].is_distinct_from(getattr(insert_stmt.excluded, field))
+            for field in UPSERT_FIELDS
+        ]),
     ).returning(LocalSession.id, literal_column("(xmax = 0)").label("inserted"))
     result = db.execute(stmt)
     db.commit()

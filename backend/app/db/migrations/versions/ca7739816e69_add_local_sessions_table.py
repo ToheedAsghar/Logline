@@ -1,7 +1,7 @@
 """add local_sessions table
 
 Revision ID: ca7739816e69
-Revises: 2e875f27d1e3
+Revises: ccefa75771fd
 Create Date: 2026-07-22 17:11:21.794710
 
 """

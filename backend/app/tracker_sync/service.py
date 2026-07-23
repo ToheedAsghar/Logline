@@ -142,12 +142,7 @@ def ingest_sessions(
         and earlier ones are marked as duplicates.
     """
     if schema_version is not None:
-        logger.info(
-            "tracker_sync.ingest_sessions: schema_version=%r for user_id=%s (%d sessions)",
-            schema_version,
-            user_id,
-            len(sessions),
-        )
+        logger.info("tracker_sync.ingest_sessions: schema_version=%r for user_id=%s (%d sessions)", schema_version, user_id, len(sessions))
 
     now = datetime.now(timezone.utc)
     results: list[IngestRowResult | None] = [None] * len(sessions)
@@ -164,13 +159,7 @@ def ingest_sessions(
         normalized_by_index[index] = (started_at_utc, ended_at_utc)
 
         if session.end_reason not in KNOWN_END_REASONS:
-            logger.warning(
-                "tracker_sync.ingest_sessions: unknown end_reason %r for session id=%s user_id=%s -- "
-                "accepting and storing as free text",
-                session.end_reason,
-                session.id,
-                user_id,
-            )
+            logger.warning("tracker_sync.ingest_sessions: unknown end_reason %r for session id=%s user_id=%s -- accepting and storing as free text", session.end_reason, session.id, user_id)
 
         prior_index = winning_index_for_id.get(session.id)
         if prior_index is not None:

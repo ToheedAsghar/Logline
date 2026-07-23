@@ -13,11 +13,13 @@ update behavior, and per-user cleanup rules need an actual DB to verify.
 The tests call ingest_sessions directly and do not use any transport code.
 """
 
+import time
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 import pydantic
 import pytest
+from sqlalchemy import text
 
 from app.auth.models import User
 from app.db.session import SessionLocal
@@ -248,6 +250,81 @@ class TestIngestSessionsDuplicates:
             assert row.app_name == "Safari"
             assert row.window_title == "Example Domain"
             assert row.started_at == corrected_started_at
+        finally:
+            db.close()
+
+
+class TestUpsertConditionalWrite:
+    """upsert_sessions' ON CONFLICT DO UPDATE carries a WHERE ... is_distinct_from
+    guard so idempotent re-syncs skip the write entirely, avoiding needless
+    WAL/vacuum churn -- while a genuine field change must still update the row
+    and bump `synced_at` (which previously only had a value from the initial
+    insert's server_default and never moved again)."""
+
+    @staticmethod
+    def _xmin(db, user_id, session_id) -> str:
+        return db.execute(
+            text("SELECT xmin::text FROM local_sessions WHERE user_id = :user_id AND id = :id"),
+            {"user_id": user_id, "id": str(session_id)},
+        ).scalar_one()
+
+    def test_resync_with_real_field_change_updates_and_bumps_synced_at(self, users):
+        user_a, _ = users
+        db = SessionLocal()
+        try:
+            session_id = uuid4()
+            now = datetime.now(timezone.utc)
+            started_at = now - timedelta(minutes=30)
+
+            original = _session_in(
+                id=session_id,
+                started_at=started_at,
+                ended_at=now - timedelta(minutes=20),
+                end_reason="lock",
+            )
+            service.ingest_sessions(db, user_a, [original])
+            first_synced_at = db.query(LocalSession).filter(LocalSession.id == session_id).one().synced_at
+
+            time.sleep(0.01)
+
+            changed = _session_in(
+                id=session_id,
+                started_at=started_at,
+                ended_at=now - timedelta(minutes=10),
+                end_reason="switch",
+            )
+            result = service.ingest_sessions(db, user_a, [changed])
+            assert _by_id(result, session_id).status is IngestStatus.duplicate
+
+            row = db.query(LocalSession).filter(LocalSession.id == session_id).one()
+            assert row.ended_at == changed.ended_at
+            assert row.end_reason == "switch"
+            assert row.synced_at > first_synced_at
+        finally:
+            db.close()
+
+    def test_identical_resync_skips_the_write_entirely(self, users):
+        """The critical fix: re-sending byte-identical mutable fields must not
+        perform an actual UPDATE at the storage layer. Verified via Postgres's
+        `xmin` system column (the row version stamped by whichever transaction
+        last wrote it) rather than end-state values -- an unconditional
+        ON CONFLICT DO UPDATE would leave the same values in place but still
+        bump xmin on every idempotent re-sync, which is exactly the
+        WAL/vacuum churn this fix exists to avoid."""
+        user_a, _ = users
+        db = SessionLocal()
+        try:
+            session = _session_in()
+            service.ingest_sessions(db, user_a, [session])
+            xmin_before = self._xmin(db, user_a, session.id)
+
+            time.sleep(0.01)
+
+            result = service.ingest_sessions(db, user_a, [session])
+            assert _by_id(result, session.id).status is IngestStatus.duplicate
+
+            xmin_after = self._xmin(db, user_a, session.id)
+            assert xmin_after == xmin_before
         finally:
             db.close()
 
