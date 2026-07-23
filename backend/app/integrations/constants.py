@@ -81,9 +81,6 @@ SLACK_OAUTH_UNKNOWN_CALLBACK_ERROR_MESSAGE = (
 SLACK_OAUTH_CALLBACK_ERROR_MESSAGES = {
     "access_denied": SLACK_OAUTH_ACCESS_DENIED_MESSAGE,
 }
-"""Maps Slack's `error` query-param values to fixed, internal-facing redirect
-messages -- the raw provider string is never reflected into the redirect URL
-directly. Unrecognized codes fall back to SLACK_OAUTH_UNKNOWN_CALLBACK_ERROR_MESSAGE."""
 
 OAUTH_PROVIDER_NOT_REGISTERED_MESSAGE = (
     "No OAuth provider is registered for source={source!r}. This source is a valid "
@@ -160,4 +157,91 @@ GITHUB_OAUTH_UNKNOWN_CALLBACK_ERROR_MESSAGE = (
 
 GITHUB_OAUTH_CALLBACK_ERROR_MESSAGES = {
     "access_denied": GITHUB_OAUTH_ACCESS_DENIED_MESSAGE,
+}
+
+# --- Jira (Atlassian) OAuth 2.0 (3LO) endpoints/scopes ---
+
+JIRA_OAUTH_AUTHORIZE_URL = "https://auth.atlassian.com/authorize"
+JIRA_OAUTH_TOKEN_URL = "https://auth.atlassian.com/oauth/token"
+
+JIRA_OAUTH_SCOPES = ("read:jira-work", "read:jira-user", "offline_access")
+
+JIRA_CONNECT_STATE_PURPOSE = "jira_connect"
+
+# --- Messages ---
+
+JIRA_TOKEN_EXCHANGE_FAILED_MESSAGE = (
+    "Jira rejected the authorization_code exchange: {jira_error}. This usually means "
+    "the authorization code already expired or was already used. Restart the connect "
+    "flow from the Integrations page."
+)
+
+JIRA_TOKEN_REFRESH_FAILED_MESSAGE = (
+    "Jira rejected the refresh_token exchange: {jira_error}. Atlassian's refresh "
+    "tokens rotate on every use and expire after 90 days of inactivity, so the stored "
+    "one may have already been superseded, expired, or revoked -- reconnect Jira "
+    "from the Integrations page."
+)
+
+JIRA_OAUTH_NETWORK_ERROR_MESSAGE = (
+    "Could not reach Jira to complete the OAuth request: {detail}. Check network "
+    "connectivity and try again."
+)
+
+JIRA_MISSING_ACCESS_TOKEN_MESSAGE = (
+    "Jira's response did not include an access token. This app's Atlassian OAuth "
+    "2.0 (3LO) app configuration is likely missing the required scopes ({scopes}) -- "
+    "check its settings before retrying the connect flow."
+).format(scopes=", ".join(JIRA_OAUTH_SCOPES))
+
+JIRA_RESPONSE_MISSING_REFRESH_TOKEN_MESSAGE = (
+    "Jira's token response did not include a refresh_token. Atlassian only issues one "
+    "when `offline_access` is granted, and its refresh tokens rotate on every use -- "
+    "without a fresh one here the connection could not be renewed again, so this is "
+    "refused rather than silently stored. This app's Atlassian OAuth 2.0 (3LO) app is "
+    "likely missing the `offline_access` scope; check its settings, then reconnect Jira "
+    "from the Integrations page."
+)
+
+JIRA_MALFORMED_RESPONSE_MESSAGE = (
+    "Jira returned a response that could not be parsed as the expected token JSON: "
+    "{detail}. This is unexpected from Atlassian's token endpoint -- restart the connect "
+    "flow from the Integrations page, and if it persists the endpoint may be having "
+    "issues."
+)
+
+JIRA_TOKEN_NOT_FOUND_MESSAGE = (
+    "No stored Jira OAuth token was found for integration_id={integration_id}. The "
+    "user needs to connect Jira from the Integrations page before this token can be "
+    "refreshed."
+)
+
+JIRA_TOKEN_MISSING_REFRESH_TOKEN_MESSAGE = (
+    "The stored Jira token for integration_id={integration_id} is near/past expiry "
+    "but has no refresh_token on file, so it can't be silently refreshed. The user "
+    "needs to reconnect Jira from the Integrations page."
+)
+
+JIRA_TOKEN_REFRESH_PERSIST_FAILED_MESSAGE = (
+    "Could not persist the refreshed Jira token pair for integration_id={integration_id} "
+    "after Atlassian rotated the credentials. Reconnect Jira from the Integrations page."
+)
+
+JIRA_CALLBACK_MISSING_PARAMS_MESSAGE = (
+    "Jira's callback did not include both `code` and `state` -- the connect flow "
+    "did not complete. Restart it from the Integrations page."
+)
+
+JIRA_OAUTH_ACCESS_DENIED_MESSAGE = (
+    "Jira authorization was not granted -- the connect flow was cancelled. Restart "
+    "it from the Integrations page if you'd like to connect Jira."
+)
+
+JIRA_OAUTH_UNKNOWN_CALLBACK_ERROR_MESSAGE = (
+    "Jira's callback reported an error completing the connect flow. Restart it "
+    "from the Integrations page."
+)
+
+JIRA_OAUTH_CALLBACK_ERROR_MESSAGES = {
+    "access_denied": JIRA_OAUTH_ACCESS_DENIED_MESSAGE,
 }

@@ -39,9 +39,9 @@ class TestEnsureTokenFreshUnimplementedSource:
         db = MagicMock()
 
         with pytest.raises(NotImplementedError) as exc_info:
-            asyncio.run(ensure_token_fresh(db, IntegrationSource.jira, integration_id=1))
+            asyncio.run(ensure_token_fresh(db, IntegrationSource.calendar, integration_id=1))
 
-        assert "jira" in str(exc_info.value)
+        assert "calendar" in str(exc_info.value)
 
 
 class TestEnsureTokenFreshSkipsWhenNotNearExpiry:

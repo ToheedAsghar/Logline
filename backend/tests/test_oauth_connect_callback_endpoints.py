@@ -1,12 +1,14 @@
-"""Tests for the generic OAuth connect and callback endpoints with Slack.
+"""Tests for the generic OAuth connect and callback endpoints.
 
-These tests call the router functions directly (not via HTTP) with a real test
-database. Slack's API is mocked so we test the connection logic without making
-real network calls. The tests verify: tokens are encrypted and stored correctly,
-state validation prevents replays, and errors are handled properly.
+Slack is used as the mocked provider to test connection logic (tokens
+encrypted and stored correctly, state validation prevents replays, errors
+handled properly) without real network calls. TestUnregisteredSource
+additionally verifies that any valid IntegrationSource without a
+registered provider is rejected with a 404, using a currently-unregistered
+source as the test case -- independent of Slack.
 
-We use a real Postgres database (via docker-compose) to verify that database
-changes (storing tokens, marking state as used) actually persist.
+We use a real Postgres database (via docker-compose) to verify that
+database changes (storing tokens, marking state as used) actually persist.
 """
 
 import asyncio
@@ -142,16 +144,16 @@ class TestConnectIntegration:
 
 
 class TestUnregisteredSource:
-    """A valid IntegrationSource with no registered provider (jira/github/
-    calendar today) must be rejected cleanly with a 404, never a 500 or a
-    partially-run flow."""
+    """A valid IntegrationSource with no registered provider (calendar today
+    now that slack/github/jira are all registered) must be rejected cleanly
+    with a 404, never a 500 or a partially-run flow."""
 
     def test_connect_unregistered_source_404s(self, test_user_id):
         db = SessionLocal()
         try:
             with pytest.raises(HTTPException) as exc_info:
                 connect_integration(
-                    source=IntegrationSource.jira, current_user=MagicMock(id=test_user_id), db=db
+                    source=IntegrationSource.calendar, current_user=MagicMock(id=test_user_id), db=db
                 )
             assert exc_info.value.status_code == 404
         finally:
@@ -162,7 +164,7 @@ class TestUnregisteredSource:
         try:
             with pytest.raises(HTTPException) as exc_info:
                 asyncio.run(
-                    integration_callback(source=IntegrationSource.jira, code="x", state="y", db=db)
+                    integration_callback(source=IntegrationSource.calendar, code="x", state="y", db=db)
                 )
             assert exc_info.value.status_code == 404
         finally:

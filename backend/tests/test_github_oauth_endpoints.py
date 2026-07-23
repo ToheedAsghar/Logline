@@ -1,12 +1,12 @@
 """Tests for the generic OAuth connect and callback endpoints with GitHub.
 
-These tests verify the same properties that test_slack_oauth_endpoints.py
+These tests verify the same properties that test_oauth_connect_callback_endpoints.py
 already verified for Slack: state validation, token storage, error handling.
 By running them again for GitHub, we confirm the generic routes (the ones
 shared by all providers) work correctly with a second provider without needing
 any changes to the shared code.
 
-Like test_slack_oauth_endpoints.py: the tests call router functions directly
+Like test_oauth_connect_callback_endpoints.py: the tests call router functions directly
 with a real test database. GitHub's HTTP API is mocked at the provider level
 so no real network calls are made. GitHub-specific behavior (its scopes, error
 codes) is tested here too.
