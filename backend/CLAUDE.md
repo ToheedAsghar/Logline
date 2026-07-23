@@ -68,6 +68,16 @@ is a plain string anywhere.
 
 FastAPI, SQLAlchemy, PostgreSQL, Pydantic, Alembic for migrations.
 
+## Pre-commit checks
+
+Before committing, always run isort and flake8 across any files touched:
+
+    isort <touched files or .>
+    flake8 <touched files or the relevant package>
+
+Fix anything either tool flags before committing — do not commit code with
+import-ordering or lint issues, even if tests pass.
+
 ## LLM API: OpenAI, behind a provider abstraction (decided 2026-07-06)
 
 The agent runner uses OpenAI (`LLM_PROVIDER=openai`, model configurable via
