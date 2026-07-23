@@ -1,9 +1,11 @@
-"""Slack's concrete `OAuthProvider`: building the authorize URL and talking to
-Slack's token endpoints. All Slack-specific wire details -- the oauth.v2.access
-endpoint, the `authed_user` response shape, HTTP/JSON error normalization --
-are contained here so the generic routes and token-refresh flow never branch on
-`source`. GitHub/Jira/Calendar will each add an analogous `OAuthProvider`
-subclass and one registry entry, rather than editing shared route logic.
+"""Slack OAuth provider: builds authorization URLs and exchanges authorization
+codes for access tokens. All Slack-specific logic is here (API endpoints, error
+response formats, how to parse responses, token refresh) so the generic connect
+and token-refresh routes don't need to know about individual providers.
+
+This pattern (a dedicated provider class per service) will scale to future
+integrations like Jira or Calendar -- each gets one subclass here and one entry
+in the provider registry, with no changes to the shared route logic.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -116,12 +118,10 @@ def _parse_httpx_response(response: httpx.Response, parser) -> OAuthTokens:
 class SlackOAuthProvider(OAuthProvider):
     """Slack's implementation of the shared OAuthProvider interface.
 
-    This is the real, used seam: the generic connect/callback routes and
-    `ensure_token_fresh` reach Slack only through these methods and the
-    message attributes below. The Slack-verified security properties (correct
-    refresh endpoint, HTTP/JSON error normalization into SlackOAuthError, the
-    actionable-missing-scope error) are preserved unchanged in the helpers
-    above and the methods here.
+    The generic routes for connecting and refreshing tokens call ONLY this
+    class and the helper functions above. This ensures Slack-specific logic
+    (the correct endpoints, how to parse responses, error handling) lives in
+    one place and doesn't leak into shared route code.
     """
 
     source = IntegrationSource.slack

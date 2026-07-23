@@ -1,22 +1,20 @@
-"""The integrations OAuth providers package: one concrete `OAuthProvider` per
-source (`base.py` holds the ABC, `slack.py` the Slack implementation) plus the
-single factory that dispatches by source.
+"""OAuth provider registry: manages which OAuth sources (Slack, GitHub, etc.)
+are available and routes requests to the right provider.
 
-This `__init__` is the one true source of truth for which sources have a working
-OAuth connect/refresh flow. Both the generic routes and `ensure_token_fresh`
-resolve providers exclusively through `get_oauth_provider()` here -- there is no
-second per-source dispatch table anywhere. Adding GitHub/Jira/Calendar later is
-one new OAuthProvider subclass (a `providers/<source>.py`) plus one entry in
-`_PROVIDERS`.
+`base.py` defines the shared OAuthProvider interface that all providers must
+implement. `slack.py` and `github.py` are concrete implementations for those
+sources. This `__init__.py` file exports the factory function that returns the
+right provider for a given source.
 
-Package shape and dispatch style mirror `app/agent/llm/`: `base.py` ~
-`llm/base.py`, `slack.py` ~ `llm/openai_provider.py`, and this factory ~
-`app/agent/llm/__init__.py::get_llm_provider()`.
+To add a new OAuth source (e.g., Jira or Calendar), create one new file
+(e.g., `providers/jira.py`) with your implementation and register it in the
+`PROVIDERS` dict below.
 """
 
 from app.integrations.constants import OAUTH_PROVIDER_NOT_REGISTERED_MESSAGE
 from app.integrations.models import IntegrationSource
 from app.integrations.providers.base import OAuthProvider, OAuthTokens
+from app.integrations.providers.github import GitHubOAuthProvider
 from app.integrations.providers.slack import SlackOAuthProvider
 
 __all__ = [
@@ -26,27 +24,27 @@ __all__ = [
     "is_source_registered",
 ]
 
-# Providers are stateless singletons (they read config per call), so one shared
-# instance per source is fine.
-_PROVIDERS: dict[IntegrationSource, OAuthProvider] = {
+
+PROVIDERS: dict[IntegrationSource, OAuthProvider] = {
     IntegrationSource.slack: SlackOAuthProvider(),
+    IntegrationSource.github: GitHubOAuthProvider(),
 }
 
 
 def is_source_registered(source: IntegrationSource) -> bool:
-    """Whether `source` has a registered OAuth provider. Lets the generic
-    routes 404 an unregistered (but enum-valid) source without catching."""
-    return source in _PROVIDERS
+    """Check whether a source has an OAuth provider. Returns False for valid
+    IntegrationSource values that don't have a provider yet.
+    """
+    return source in PROVIDERS
 
 
 def get_oauth_provider(source: IntegrationSource) -> OAuthProvider:
-    """Return the provider handling `source`.
+    """Get the OAuth provider for a source.
 
-    Raises NotImplementedError for a valid IntegrationSource that has no
-    registered provider yet (e.g. jira/github/calendar today) -- mirrors
-    `get_llm_provider()`'s behavior for an unsupported provider.
+    Raises NotImplementedError if the source is valid as an IntegrationSource
+    but doesn't have a registered OAuth provider yet (e.g., Jira or Calendar).
     """
-    provider = _PROVIDERS.get(source)
+    provider = PROVIDERS.get(source)
     if provider is None:
         raise NotImplementedError(
             OAUTH_PROVIDER_NOT_REGISTERED_MESSAGE.format(source=source.value)

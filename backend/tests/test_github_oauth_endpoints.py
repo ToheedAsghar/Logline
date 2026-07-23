@@ -1,12 +1,15 @@
-"""Tests for the generic OAuth connect and callback endpoints with Slack.
+"""Tests for the generic OAuth connect and callback endpoints with GitHub.
 
-These tests call the router functions directly (not via HTTP) with a real test
-database. Slack's API is mocked so we test the connection logic without making
-real network calls. The tests verify: tokens are encrypted and stored correctly,
-state validation prevents replays, and errors are handled properly.
+These tests verify the same properties that test_slack_oauth_endpoints.py
+already verified for Slack: state validation, token storage, error handling.
+By running them again for GitHub, we confirm the generic routes (the ones
+shared by all providers) work correctly with a second provider without needing
+any changes to the shared code.
 
-We use a real Postgres database (via docker-compose) to verify that database
-changes (storing tokens, marking state as used) actually persist.
+Like test_slack_oauth_endpoints.py: the tests call router functions directly
+with a real test database. GitHub's HTTP API is mocked at the provider level
+so no real network calls are made. GitHub-specific behavior (its scopes, error
+codes) is tested here too.
 """
 
 import asyncio
@@ -15,7 +18,6 @@ from urllib.parse import parse_qs, urlparse
 
 import jwt
 import pytest
-from fastapi import HTTPException
 from itsdangerous import URLSafeTimedSerializer
 from sqlalchemy import text
 
@@ -24,20 +26,17 @@ from app.config import settings
 from app.core.oauth_state import OAuthState, OAuthStateError
 from app.db.session import SessionLocal, engine
 from app.integrations.connect_state import CONNECT_STATE_SALT, consume_connect_state, create_connect_state
-from app.integrations.constants import SLACK_OAUTH_ACCESS_DENIED_MESSAGE, SLACK_OAUTH_USER_SCOPES
+from app.integrations.constants import GITHUB_OAUTH_ACCESS_DENIED_MESSAGE
 from app.integrations.models import Integration, IntegrationSource, IntegrationStatus, OAuthToken
 from app.integrations.providers.base import OAuthTokens
-from app.integrations.providers.slack import SlackOAuthError, SlackOAuthProvider
+from app.integrations.providers.github import GitHubOAuthError, GitHubOAuthProvider
 from app.integrations.routers import connect_integration, integration_callback
 
-TEST_EMAIL = "slack-oauth-endpoint-test@example.com"
+TEST_EMAIL = "github-oauth-endpoint-test@example.com"
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _require_oauth_states_table():
-    """Verify the oauth_states table exists before running tests. If missing,
-    fail with a clear message (the database migration wasn't applied).
-    """
     with engine.connect() as connection:
         exists = connection.execute(
             text("SELECT to_regclass('public.oauth_states') IS NOT NULL")
@@ -89,18 +88,13 @@ def test_user_id():
 def _issue_state(user_id: int) -> str:
     db = SessionLocal()
     try:
-        token = create_connect_state(db, user_id=user_id, source=IntegrationSource.slack)
+        token = create_connect_state(db, user_id=user_id, source=IntegrationSource.github)
     finally:
         db.close()
     return token
 
 
 def _decode_inner_jti(state_token: str) -> str:
-    """Extract the jti (unique ID) from a state token by unwrapping both
-    the outer signed envelope and the inner JWT. This lets tests query the
-    oauth_states table directly to verify that token consumption is
-    permanently saved to the database (not just in memory).
-    """
     envelope = URLSafeTimedSerializer(settings.itsdangerous_secret_key, salt=CONNECT_STATE_SALT)
     inner_token = envelope.loads(state_token)["inner_token"]
     payload = jwt.decode(inner_token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
@@ -108,17 +102,15 @@ def _decode_inner_jti(state_token: str) -> str:
 
 
 def _patch_exchange(**kwargs):
-    """Patch the Slack provider's exchange_code -- the seam the generic
-    callback route now calls instead of a module-level function."""
-    return patch.object(SlackOAuthProvider, "exchange_code", AsyncMock(**kwargs))
+    return patch.object(GitHubOAuthProvider, "exchange_code", AsyncMock(**kwargs))
 
 
 class TestConnectIntegration:
-    def test_redirects_to_slack_authorize_url_with_correct_scopes_and_valid_state(self, test_user_id):
+    def test_redirects_to_github_authorize_url_with_correct_scopes_and_valid_state(self, test_user_id):
         db = SessionLocal()
         try:
             response = connect_integration(
-                source=IntegrationSource.slack, current_user=MagicMock(id=test_user_id), db=db
+                source=IntegrationSource.github, current_user=MagicMock(id=test_user_id), db=db
             )
 
             assert response.status_code in (302, 307)
@@ -126,80 +118,42 @@ class TestConnectIntegration:
             parsed = urlparse(location)
             assert (
                 f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-                == "https://slack.com/oauth/v2/authorize"
+                == "https://github.com/login/oauth/authorize"
             )
 
             query = parse_qs(parsed.query)
-            assert query["user_scope"] == [",".join(SLACK_OAUTH_USER_SCOPES)]
-            assert "im:history" not in query["user_scope"][0].split(",")
+            assert query["scope"] == ["repo"]
 
             user_id = consume_connect_state(
-                db, token=query["state"][0], expected_source=IntegrationSource.slack
+                db, token=query["state"][0], expected_source=IntegrationSource.github
             )
             assert user_id == test_user_id
         finally:
             db.close()
 
 
-class TestUnregisteredSource:
-    """A valid IntegrationSource with no registered provider (jira/github/
-    calendar today) must be rejected cleanly with a 404, never a 500 or a
-    partially-run flow."""
-
-    def test_connect_unregistered_source_404s(self, test_user_id):
-        db = SessionLocal()
-        try:
-            with pytest.raises(HTTPException) as exc_info:
-                connect_integration(
-                    source=IntegrationSource.jira, current_user=MagicMock(id=test_user_id), db=db
-                )
-            assert exc_info.value.status_code == 404
-        finally:
-            db.close()
-
-    def test_callback_unregistered_source_404s(self):
-        db = SessionLocal()
-        try:
-            with pytest.raises(HTTPException) as exc_info:
-                asyncio.run(
-                    integration_callback(source=IntegrationSource.jira, code="x", state="y", db=db)
-                )
-            assert exc_info.value.status_code == 404
-        finally:
-            db.close()
-
-
 class TestIntegrationCallback:
     def test_successful_exchange_stores_encrypted_tokens_and_redirects_connected(self, test_user_id):
-        """Checks both ends of storage: the ORM-decrypted value matches what
-        was exchanged (round trip works), and the raw column value read via
-        plain textual SQL -- which bypasses EncryptedString's result
-        processing -- does not contain the plaintext (it's actually
-        encrypted at rest, not stored as-is)."""
         state = _issue_state(test_user_id)
-        fake_tokens = OAuthTokens(
-            access_token="xoxp-plaintext-access-token",
-            refresh_token="xoxe-plaintext-refresh-token",
-            authed_user_id="U123",
-        )
+        fake_tokens = OAuthTokens(access_token="gho_plaintext-access-token")
 
         db = SessionLocal()
         try:
             with _patch_exchange(return_value=fake_tokens):
                 response = asyncio.run(
-                    integration_callback(source=IntegrationSource.slack, code="good-code", state=state, db=db)
+                    integration_callback(source=IntegrationSource.github, code="good-code", state=state, db=db)
                 )
 
             assert response.status_code in (302, 307)
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["connected"]
-            assert query["integration"] == ["slack"]
+            assert query["integration"] == ["github"]
 
             integration = (
                 db.query(Integration)
                 .filter(
                     Integration.user_id == test_user_id,
-                    Integration.source == IntegrationSource.slack,
+                    Integration.source == IntegrationSource.github,
                 )
                 .first()
             )
@@ -212,8 +166,8 @@ class TestIntegrationCallback:
                 .first()
             )
             assert token_row is not None
-            assert token_row.access_token == "xoxp-plaintext-access-token"
-            assert token_row.refresh_token == "xoxe-plaintext-refresh-token"
+            assert token_row.access_token == "gho_plaintext-access-token"
+            assert token_row.refresh_token is None
 
             raw_row = db.execute(
                 text("SELECT access_token FROM oauth_tokens WHERE id = :id"),
@@ -221,7 +175,7 @@ class TestIntegrationCallback:
             ).first()
         finally:
             db.close()
-        assert "xoxp-plaintext-access-token" not in raw_row.access_token
+        assert "gho_plaintext-access-token" not in raw_row.access_token
 
     def test_reconnecting_updates_the_same_integration_and_token_row(self, test_user_id):
         state_one = _issue_state(test_user_id)
@@ -229,7 +183,7 @@ class TestIntegrationCallback:
         try:
             with _patch_exchange(return_value=OAuthTokens(access_token="first-token")):
                 asyncio.run(
-                    integration_callback(source=IntegrationSource.slack, code="code-1", state=state_one, db=db)
+                    integration_callback(source=IntegrationSource.github, code="code-1", state=state_one, db=db)
                 )
         finally:
             db.close()
@@ -239,14 +193,14 @@ class TestIntegrationCallback:
         try:
             with _patch_exchange(return_value=OAuthTokens(access_token="second-token")):
                 asyncio.run(
-                    integration_callback(source=IntegrationSource.slack, code="code-2", state=state_two, db=db)
+                    integration_callback(source=IntegrationSource.github, code="code-2", state=state_two, db=db)
                 )
 
             integrations = (
                 db.query(Integration)
                 .filter(
                     Integration.user_id == test_user_id,
-                    Integration.source == IntegrationSource.slack,
+                    Integration.source == IntegrationSource.github,
                 )
                 .all()
             )
@@ -263,15 +217,13 @@ class TestIntegrationCallback:
 
     def test_tampered_state_redirects_with_error_and_writes_nothing(self, test_user_id):
         state = _issue_state(test_user_id)
-        # Change a character in the middle (not the last one, to avoid
-        # base64 padding edge cases that could make the test flaky).
         mid = len(state) // 2
         tampered = state[:mid] + ("A" if state[mid] != "A" else "B") + state[mid + 1 :]
 
         db = SessionLocal()
         try:
             response = asyncio.run(
-                integration_callback(source=IntegrationSource.slack, code="some-code", state=tampered, db=db)
+                integration_callback(source=IntegrationSource.github, code="some-code", state=tampered, db=db)
             )
 
             query = parse_qs(urlparse(response.headers["location"]).query)
@@ -281,7 +233,7 @@ class TestIntegrationCallback:
                 db.query(Integration)
                 .filter(
                     Integration.user_id == test_user_id,
-                    Integration.source == IntegrationSource.slack,
+                    Integration.source == IntegrationSource.github,
                 )
                 .first()
                 is None
@@ -295,13 +247,13 @@ class TestIntegrationCallback:
         try:
             with _patch_exchange(return_value=OAuthTokens(access_token="first-use-token")):
                 first = asyncio.run(
-                    integration_callback(source=IntegrationSource.slack, code="code-1", state=state, db=db)
+                    integration_callback(source=IntegrationSource.github, code="code-1", state=state, db=db)
                 )
             assert parse_qs(urlparse(first.headers["location"]).query)["status"] == ["connected"]
 
             with _patch_exchange() as mock_exchange:
                 second = asyncio.run(
-                    integration_callback(source=IntegrationSource.slack, code="code-2", state=state, db=db)
+                    integration_callback(source=IntegrationSource.github, code="code-2", state=state, db=db)
                 )
 
             mock_exchange.assert_not_called()
@@ -309,12 +261,7 @@ class TestIntegrationCallback:
         finally:
             db.close()
 
-    def test_slack_denial_redirects_with_error_and_durably_consumes_state(self, test_user_id):
-        """Tests that Slack denials (with error but no code) are handled
-        correctly: the error is mapped to a user-friendly message, and the
-        state token is permanently marked as consumed in the database so
-        it can't be reused.
-        """
+    def test_github_denial_redirects_with_error_and_durably_consumes_state(self, test_user_id):
         state = _issue_state(test_user_id)
         jti = _decode_inner_jti(state)
 
@@ -322,13 +269,13 @@ class TestIntegrationCallback:
         try:
             response = asyncio.run(
                 integration_callback(
-                    source=IntegrationSource.slack, code=None, state=state, error="access_denied", db=db
+                    source=IntegrationSource.github, code=None, state=state, error="access_denied", db=db
                 )
             )
 
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["error"]
-            assert query["detail"] == [SLACK_OAUTH_ACCESS_DENIED_MESSAGE]
+            assert query["detail"] == [GITHUB_OAUTH_ACCESS_DENIED_MESSAGE]
             assert "access_denied" not in query["detail"][0]
         finally:
             db.close()
@@ -344,65 +291,86 @@ class TestIntegrationCallback:
         replay_db = SessionLocal()
         try:
             with pytest.raises(OAuthStateError):
-                consume_connect_state(replay_db, token=state, expected_source=IntegrationSource.slack)
+                consume_connect_state(replay_db, token=state, expected_source=IntegrationSource.github)
         finally:
             replay_db.close()
 
-    def test_slack_denial_with_stray_code_still_hits_denial_branch(self, test_user_id):
-        """Ensures that if both error and code are present (shouldn't
-        happen with real Slack), the error is handled instead of attempting
-        a token exchange.
+    def test_state_issued_for_a_different_provider_is_rejected(self, test_user_id):
+        """State tokens are bound to a specific provider. A state token created
+        for Slack's connect flow cannot be reused in GitHub's callback, even
+        though both providers use the same generic routes. This prevents someone
+        from redirecting a user from a Slack auth flow to a GitHub callback.
         """
-        state = _issue_state(test_user_id)
+        db = SessionLocal()
+        try:
+            slack_state = create_connect_state(db, user_id=test_user_id, source=IntegrationSource.slack)
+        finally:
+            db.close()
 
         db = SessionLocal()
         try:
             with _patch_exchange() as mock_exchange:
                 response = asyncio.run(
                     integration_callback(
-                        source=IntegrationSource.slack, code="stray-code", state=state, error="access_denied", db=db
+                        source=IntegrationSource.github, code="some-code", state=slack_state, db=db
                     )
                 )
 
             mock_exchange.assert_not_called()
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["error"]
-            assert query["detail"] == [SLACK_OAUTH_ACCESS_DENIED_MESSAGE]
+
+            assert (
+                db.query(Integration)
+                .filter(
+                    Integration.user_id == test_user_id,
+                    Integration.source == IntegrationSource.github,
+                )
+                .first()
+                is None
+            )
+            assert (
+                db.query(OAuthToken)
+                .join(Integration, OAuthToken.integration_id == Integration.id)
+                .filter(Integration.user_id == test_user_id)
+                .first()
+                is None
+            )
         finally:
             db.close()
 
     def test_missing_code_or_state_redirects_with_error(self):
         db = SessionLocal()
         try:
-            response = asyncio.run(integration_callback(source=IntegrationSource.slack, db=db))
+            response = asyncio.run(integration_callback(source=IntegrationSource.github, db=db))
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["error"]
         finally:
             db.close()
 
-    def test_failed_slack_exchange_redirects_with_informative_error_and_writes_nothing(self, test_user_id):
+    def test_failed_github_exchange_redirects_with_informative_error_and_writes_nothing(self, test_user_id):
         state = _issue_state(test_user_id)
 
         db = SessionLocal()
         try:
             with _patch_exchange(
-                side_effect=SlackOAuthError(
-                    "Slack rejected the oauth.v2.access request: invalid_code"
+                side_effect=GitHubOAuthError(
+                    "GitHub rejected the access_token request: bad_verification_code"
                 )
             ):
                 response = asyncio.run(
-                    integration_callback(source=IntegrationSource.slack, code="bad-code", state=state, db=db)
+                    integration_callback(source=IntegrationSource.github, code="bad-code", state=state, db=db)
                 )
 
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["error"]
-            assert "invalid_code" in query["detail"][0]
+            assert "bad_verification_code" in query["detail"][0]
 
             assert (
                 db.query(Integration)
                 .filter(
                     Integration.user_id == test_user_id,
-                    Integration.source == IntegrationSource.slack,
+                    Integration.source == IntegrationSource.github,
                 )
                 .first()
                 is None
