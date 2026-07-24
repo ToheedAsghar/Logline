@@ -1,11 +1,17 @@
-"""Centralized long-string constants for the integrations domain (OAuth
-connect flows, per-provider token refresh). Follow this pattern for new
-values rather than inlining error messages/descriptions at their call site.
+"""All the long text strings we show to users in the integrations feature:
+error messages when OAuth fails, URLs for connecting to providers, and other
+configuration. Keeping them here instead of scattering them through code makes
+it easier to update messages or add a new provider.
 """
 
 # --- OAuth token refresh ---
 
 OAUTH_TOKEN_REFRESH_MARGIN_SECONDS = 300
+
+# --- Connect-link tokens ---
+
+CONNECT_LINK_TOKEN_SALT = "integration-connect-link"
+CONNECT_LINK_TOKEN_TTL_SECONDS = 60
 
 # --- Slack OAuth endpoints/scopes ---
 

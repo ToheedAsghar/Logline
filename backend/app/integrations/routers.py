@@ -11,11 +11,13 @@ from app.config import settings
 from app.core.oauth_state import OAuthStateError
 from app.db.session import get_db
 from app.integrations import crud
+from app.integrations.connect_link_token import create_connect_link_token
 from app.integrations.connect_state import consume_connect_state, create_connect_state
+from app.integrations.deps import get_connect_endpoint_user
 from app.integrations.errors import TokenRefreshError
 from app.integrations.models import Integration, IntegrationSource, IntegrationStatus, OAuthToken
 from app.integrations.providers import OAuthProvider, OAuthTokens, get_oauth_provider, is_source_registered
-from app.integrations.schemas import IntegrationResponse
+from app.integrations.schemas import ConnectLinkResponse, IntegrationResponse
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +33,10 @@ def list_integrations(
 
 
 def _require_provider(source: IntegrationSource) -> OAuthProvider:
-    """Resolve the provider for `source`, 404ing cleanly for a valid
-    IntegrationSource that has no registered OAuth flow yet."""
+    """Get the OAuth handler for a provider. If the provider isn't set up yet
+    (e.g., we added the integration to our enum but haven't built its OAuth flow),
+    raise a 404 so the endpoint behaves like it doesn't exist.
+    """
     if not is_source_registered(source):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -41,10 +45,37 @@ def _require_provider(source: IntegrationSource) -> OAuthProvider:
     return get_oauth_provider(source)
 
 
+@router.post("/{source}/connect-link", response_model=ConnectLinkResponse)
+def create_connect_link(
+    source: IntegrationSource,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a one-time pass for the user and return the URL they should
+    visit to connect this provider. This endpoint is called as a normal
+    background request (fetch) with the user's login token, which is why it
+    can authenticate them. The one-time pass is then embedded in the returned
+    URL as a query parameter, so the browser can carry it along when actually
+    visiting the login page.
+    """
+    _require_provider(source)
+    token = create_connect_link_token(db, user_id=current_user.id, source=source)
+    # KNOWN TRADEOFF: the connect-link token rides in a URL query parameter, so it
+    # can land in browser history, referrer headers, or server logs. This is
+    # meaningfully safer than google_callback's access-token-in-URL pattern because:
+    # (a) it's consumed BEFORE the redirect response is produced (in
+    #     get_connect_endpoint_user, not the handler), so any token later found in a
+    #     log is already dead, and
+    # (b) it's single-use, has a 60s TTL, and is scoped to one IntegrationSource,
+    #     vs. a long-lived full account bearer token.
+    connect_url = f"{settings.backend_base_url}/integrations/{source.value}/connect?{urlencode({'token': token})}"
+    return ConnectLinkResponse(connect_url=connect_url)
+
+
 @router.get("/{source}/connect")
 def connect_integration(
     source: IntegrationSource,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_connect_endpoint_user),
     db: Session = Depends(get_db),
 ):
     provider = _require_provider(source)

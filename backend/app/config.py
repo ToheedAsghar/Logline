@@ -53,6 +53,8 @@ class Settings:
     jira_redirect_uri: str = os.getenv("JIRA_REDIRECT_URI", "")
 
     frontend_base_url: str = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
+    backend_base_url: str = os.getenv("BACKEND_BASE_URL", "http://localhost:8000")
+    environment: str = os.getenv("ENVIRONMENT", "development")
 
     cors_origins: list[str] = [
         origin.strip()
@@ -62,3 +64,12 @@ class Settings:
 
 
 settings = Settings()
+
+_is_dev_mode = settings.environment.lower() in ("development", "dev", "local", "test") or settings.backend_base_url.startswith(
+    ("http://localhost", "http://127.0.0.1", "http://0.0.0.0")
+)
+if not _is_dev_mode and not settings.backend_base_url.startswith("https://"):
+    raise RuntimeError(
+        f"BACKEND_BASE_URL must start with 'https://' in non-dev environment {settings.environment!r} "
+        f"(got {settings.backend_base_url!r})"
+    )
