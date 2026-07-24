@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { cn, formatRelativeTime } from "@/common/utils";
 import { Button } from "@/atoms";
 import { INTEGRATION_SOURCES, type IntegrationId } from "@/constants/integrations";
@@ -86,17 +86,26 @@ export interface IntegrationCardProps {
 export function IntegrationCard({ integration, className }: IntegrationCardProps) {
   const connect = useConnectIntegration();
   const disconnect = useDisconnectIntegration();
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   const name = INTEGRATION_SOURCES.find((s) => s.id === integration.source)?.name ?? integration.source;
   const badge = SOURCE_BADGE[integration.source];
 
-  // The backend's connect endpoint is a permanent 501 stub today (see
-  // backend/app/api/integrations.py) — that's an expected, calm "not yet
-  // available" state, not a crash or a red error banner. Reconnect uses the
-  // same mutation (there's no dedicated reconnect endpoint), so it hits the
-  // same stub and shows the same message.
-  const connectNotAvailable = connect.isError && connect.error instanceof ApiError && connect.error.status === 501;
+  // Catch 501 (stub) or 404 (unregistered OAuth provider e.g. calendar) as expected "not available" state.
+  const connectNotAvailable =
+    connect.isError &&
+    connect.error instanceof ApiError &&
+    (connect.error.status === 501 || connect.error.status === 404);
   const connectFailed = connect.isError && !connectNotAvailable;
+
+  const isConnecting = (connect.isPending || isRedirecting) && !connectFailed && !connectNotAvailable;
+
+  const handleConnect = () => {
+    setIsRedirecting(true);
+    connect.mutate(integration.source, {
+      onError: () => setIsRedirecting(false),
+    });
+  };
 
   return (
     <div
@@ -135,9 +144,9 @@ export function IntegrationCard({ integration, className }: IntegrationCardProps
             variant="danger-solid"
             size="sm"
             className="flex-1"
-            working={connect.isPending}
+            working={isConnecting}
             workingLabel="Reconnecting…"
-            onClick={() => connect.mutate(integration.source)}
+            onClick={handleConnect}
           >
             Reconnect
           </Button>
@@ -147,9 +156,9 @@ export function IntegrationCard({ integration, className }: IntegrationCardProps
             variant="primary"
             size="sm"
             className="flex-1"
-            working={connect.isPending}
+            working={isConnecting}
             workingLabel="Connecting…"
-            onClick={() => connect.mutate(integration.source)}
+            onClick={handleConnect}
           >
             Connect
           </Button>

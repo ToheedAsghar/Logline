@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Loading } from "@/atoms";
 import { IntegrationCard } from "@/molecules";
 import { INTEGRATION_SOURCES, type IntegrationId } from "@/constants/integrations";
@@ -20,6 +21,32 @@ export default function Settings() {
   const connectedCount = rows.filter((integration) => integration.status === "connected").length;
   const attentionCount = rows.filter((integration) => integration.status === "error").length;
 
+  const [callbackNotice, setCallbackNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const integration = params.get("integration");
+    const status = params.get("status");
+    const detail = params.get("detail");
+
+    if (integration && status) {
+      const sourceName = INTEGRATION_SOURCES.find((s) => s.id === integration)?.name ?? integration;
+      if (status === "connected") {
+        setCallbackNotice({
+          type: "success",
+          message: `Successfully connected ${sourceName}!`,
+        });
+      } else if (status === "error") {
+        setCallbackNotice({
+          type: "error",
+          message: `Couldn't connect ${sourceName}${detail ? `: ${detail}` : " — authorization failed."}`,
+        });
+      }
+
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -29,6 +56,25 @@ export default function Settings() {
           ever posted back without your approval.
         </p>
       </div>
+
+      {callbackNotice && (
+        <div
+          className={`flex items-center justify-between rounded-lg border px-3.5 py-2.5 font-mono text-xs ${
+            callbackNotice.type === "success"
+              ? "border-accent-soft bg-accent-soft text-accent-dim"
+              : "border-danger/40 bg-danger-soft text-danger"
+          }`}
+        >
+          <span>{callbackNotice.message}</span>
+          <button
+            type="button"
+            onClick={() => setCallbackNotice(null)}
+            className="ml-3 font-sans text-xs opacity-70 hover:opacity-100"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {integrations.isLoading && <Loading label="Loading integrations…" />}
       {integrations.isError && (
