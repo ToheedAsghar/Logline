@@ -3,11 +3,11 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.config import settings
-from app.db.session import Base
-
 # import all models here so they're registered on Base.metadata before autogenerate runs
 from app import models  # noqa: F401
+from app.config import settings
+from app.db.session import Base
+from app.matching import models as matching_models  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
