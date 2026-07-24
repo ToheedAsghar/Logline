@@ -166,8 +166,6 @@ JIRA_OAUTH_TOKEN_URL = "https://auth.atlassian.com/oauth/token"
 
 JIRA_OAUTH_SCOPES = ("read:jira-work", "read:jira-user", "offline_access")
 
-JIRA_CONNECT_STATE_PURPOSE = "jira_connect"
-
 # --- Messages ---
 
 JIRA_TOKEN_EXCHANGE_FAILED_MESSAGE = (
