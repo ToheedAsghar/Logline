@@ -133,3 +133,48 @@ class TestTitleChangeCarriesIdleFlagForward:
         sessions = all_sessions(conn)
         assert len(sessions) == 1
         assert sessions[0]["is_idle"] == 0
+
+
+class TestCrashRecoveryPreservesIdleState:
+    """When the tracker crashes during idle time, seal_dangling_session() must
+    read is_idle from open_session and seal the session as idle (is_idle=1),
+    not active work."""
+
+    def test_crashed_idle_session_seals_as_idle(self, conn):
+        manager1 = SessionManager(conn)
+        manager1._open_session(
+            bundle_id=BUNDLE_ID,
+            app_name=APP_NAME,
+            window_title="doc.txt",
+            is_idle=True,
+        )
+        assert len(open_session_rows(conn)) == 1
+        assert open_session_rows(conn)[0]["is_idle"] == 1
+
+        # Simulate process restart after crash/unclean exit
+        manager2 = SessionManager(conn)
+
+        sessions = all_sessions(conn)
+        assert len(sessions) == 1
+        sealed = sessions[0]
+        assert sealed["is_idle"] == 1
+        assert sealed["end_reason"] == "quit"
+
+    def test_crashed_active_session_seals_as_active(self, conn):
+        manager1 = SessionManager(conn)
+        manager1._open_session(
+            bundle_id=BUNDLE_ID,
+            app_name=APP_NAME,
+            window_title="doc.txt",
+            is_idle=False,
+        )
+        assert open_session_rows(conn)[0]["is_idle"] == 0
+
+        manager2 = SessionManager(conn)
+
+        sessions = all_sessions(conn)
+        assert len(sessions) == 1
+        sealed = sessions[0]
+        assert sealed["is_idle"] == 0
+        assert sealed["end_reason"] == "quit"
+

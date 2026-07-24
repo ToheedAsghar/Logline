@@ -15,6 +15,9 @@ def get_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(_CREATE_SESSIONS)
     conn.execute(_CREATE_OPEN_SESSION)
+    cols = [row["name"] for row in conn.execute("PRAGMA table_info(open_session)").fetchall()]
+    if "is_idle" not in cols:
+        conn.execute("ALTER TABLE open_session ADD COLUMN is_idle INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     return conn
 
@@ -24,17 +27,25 @@ def insert_open_session(conn: sqlite3.Connection, session: Session) -> None:
     conn.execute("DELETE FROM open_session")
     conn.execute(
         """
-        INSERT INTO open_session (id, bundle_id, app_name, window_title, started_at, ended_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO open_session (id, bundle_id, app_name, window_title, started_at, ended_at, is_idle)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (session.id, session.bundle_id, session.app_name, session.window_title, session.started_at, session.ended_at),
+        (
+            session.id,
+            session.bundle_id,
+            session.app_name,
+            session.window_title,
+            session.started_at,
+            session.ended_at,
+            int(session.is_idle),
+        ),
     )
     conn.commit()
 
 
 def update_open_session_ended_at(conn: sqlite3.Connection, session_id: str, ended_at: str) -> None:
-    """Heartbeat write, keeping the mirror's ended_at current. Not yet called on a
-    timer — see the deferral note above open_session's schema."""
+    """Heartbeat write, keeping the mirror's ended_at timestamp current. Called on a
+    timer every HEARTBEAT_INTERVAL_SECONDS via SessionManager._on_heartbeat()."""
     conn.execute("UPDATE open_session SET ended_at = ? WHERE id = ?", (ended_at, session_id))
     conn.commit()
 
@@ -78,7 +89,7 @@ def seal_dangling_session(conn: sqlite3.Connection) -> Optional[Session]:
         started_at=row["started_at"],
         ended_at=row["ended_at"],
         end_reason="quit",
-        is_idle=False,
+        is_idle=bool(row["is_idle"]) if "is_idle" in row.keys() else False,
     )
     close_open_session(conn, sealed)
     return sealed

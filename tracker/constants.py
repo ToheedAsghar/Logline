@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS open_session (
     app_name     TEXT,
     window_title TEXT,
     started_at   TEXT,
-    ended_at     TEXT
+    ended_at     TEXT,
+    is_idle      INTEGER NOT NULL DEFAULT 0
 )
 """
