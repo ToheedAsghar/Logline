@@ -152,7 +152,7 @@ class TestCrashRecoveryPreservesIdleState:
         assert open_session_rows(conn)[0]["is_idle"] == 1
 
         # Simulate process restart after crash/unclean exit
-        manager2 = SessionManager(conn)
+        SessionManager(conn)
 
         sessions = all_sessions(conn)
         assert len(sessions) == 1
@@ -170,11 +170,10 @@ class TestCrashRecoveryPreservesIdleState:
         )
         assert open_session_rows(conn)[0]["is_idle"] == 0
 
-        manager2 = SessionManager(conn)
+        SessionManager(conn)
 
         sessions = all_sessions(conn)
         assert len(sessions) == 1
         sealed = sessions[0]
         assert sealed["is_idle"] == 0
         assert sealed["end_reason"] == "quit"
-
