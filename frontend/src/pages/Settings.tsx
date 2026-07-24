@@ -43,7 +43,13 @@ export default function Settings() {
         });
       }
 
-      window.history.replaceState({}, "", window.location.pathname);
+      // Selectively remove only callback params to preserve other query string parameters
+      params.delete("integration");
+      params.delete("status");
+      params.delete("detail");
+      const cleanQuery = params.toString();
+      const cleanUrl = cleanQuery ? `${window.location.pathname}?${cleanQuery}` : window.location.pathname;
+      window.history.replaceState({}, "", cleanUrl);
     }
   }, []);
 
@@ -59,6 +65,8 @@ export default function Settings() {
 
       {callbackNotice && (
         <div
+          role="alert"
+          aria-live="polite"
           className={`flex items-center justify-between rounded-lg border px-3.5 py-2.5 font-mono text-xs ${
             callbackNotice.type === "success"
               ? "border-accent-soft bg-accent-soft text-accent-dim"
@@ -68,8 +76,9 @@ export default function Settings() {
           <span>{callbackNotice.message}</span>
           <button
             type="button"
+            aria-label="Dismiss notice"
             onClick={() => setCallbackNotice(null)}
-            className="ml-3 font-sans text-xs opacity-70 hover:opacity-100"
+            className="ml-3 font-sans text-xs opacity-70 hover:opacity-100 focus:outline-none"
           >
             ✕
           </button>
@@ -96,7 +105,7 @@ export default function Settings() {
               </span>
             )}
           </div>
-          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
             {rows.map((integration) => (
               <IntegrationCard key={integration.source} integration={integration} />
             ))}

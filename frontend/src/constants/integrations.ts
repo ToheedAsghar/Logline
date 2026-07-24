@@ -4,7 +4,7 @@
  * handoff's integration list and the source-checking sequence shown in the
  * Compose screen's "agent working" state.
  */
-export type IntegrationId = "github" | "jira" | "calendar" | "slack";
+export type IntegrationId = "github" | "jira" | "calendar" | "slack" | (string & {});
 
 export interface IntegrationSource {
   id: IntegrationId;
@@ -17,3 +17,4 @@ export const INTEGRATION_SOURCES: IntegrationSource[] = [
   { id: "calendar", name: "Google Calendar" },
   { id: "slack", name: "Slack" },
 ];
+

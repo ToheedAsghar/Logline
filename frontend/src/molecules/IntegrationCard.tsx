@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { cn, formatRelativeTime } from "@/common/utils";
 import { Button } from "@/atoms";
-import { INTEGRATION_SOURCES, type IntegrationId } from "@/constants/integrations";
+import { INTEGRATION_SOURCES } from "@/constants/integrations";
 import { ApiError } from "@/repositories/api/client";
 import { useConnectIntegration, useDisconnectIntegration } from "@/repositories/hooks";
 import type { Integration } from "@/repositories/types";
@@ -31,14 +31,23 @@ const STATUS_PILL: Record<Integration["status"], string> = {
  * palette, same as the handoff. GitHub has no fixed tint there (its mark
  * uses `var(--text)`), so it rides the theme text color instead.
  */
-const SOURCE_BADGE: Record<IntegrationId, { bg: string; color: string }> = {
+const DEFAULT_SOURCE_BADGE = { bg: "oklch(0.55 0.02 260 / 0.18)", color: "var(--color-text)" };
+
+const DEFAULT_SOURCE_ICON: ReactNode = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <polygon points="12 8 8 12 12 16 16 12 12 8" />
+  </svg>
+);
+
+const SOURCE_BADGE: Record<string, { bg: string; color: string }> = {
   github: { bg: "oklch(0.55 0.02 260 / 0.18)", color: "var(--color-text)" },
   jira: { bg: "oklch(0.60 0.18 255 / 0.18)", color: "oklch(0.58 0.19 255)" },
   calendar: { bg: "oklch(0.62 0.18 255 / 0.18)", color: "oklch(0.60 0.18 255)" },
   slack: { bg: "oklch(0.62 0.16 330 / 0.18)", color: "oklch(0.60 0.17 330)" },
 };
 
-const SOURCE_ICON: Record<IntegrationId, ReactNode> = {
+const SOURCE_ICON: Record<string, ReactNode> = {
   github: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49l-.01-1.9c-2.78.62-3.37-1.2-3.37-1.2-.46-1.18-1.11-1.5-1.11-1.5-.9-.63.07-.62.07-.62 1 .07 1.53 1.05 1.53 1.05.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.28 2.75 1.05a9.36 9.36 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9l-.01 2.81c0 .27.18.59.69.49A10.26 10.26 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" />
@@ -89,7 +98,8 @@ export function IntegrationCard({ integration, className }: IntegrationCardProps
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   const name = INTEGRATION_SOURCES.find((s) => s.id === integration.source)?.name ?? integration.source;
-  const badge = SOURCE_BADGE[integration.source];
+  const badge = SOURCE_BADGE[integration.source] ?? DEFAULT_SOURCE_BADGE;
+  const icon = SOURCE_ICON[integration.source] ?? DEFAULT_SOURCE_ICON;
 
   // Catch 501 (stub) or 404 (unregistered OAuth provider e.g. calendar) as expected "not available" state.
   const connectNotAvailable =
@@ -120,9 +130,11 @@ export function IntegrationCard({ integration, className }: IntegrationCardProps
           className="flex h-12 w-12 flex-none items-center justify-center rounded-lg"
           style={{ background: badge.bg, color: badge.color }}
         >
-          {SOURCE_ICON[integration.source]}
+          {icon}
         </div>
         <span
+          role="status"
+          aria-label={`Status: ${STATUS_LABEL[integration.status]}`}
           className={cn(
             "inline-flex flex-none items-center gap-1.5 rounded-pill border px-2.5 py-1 font-mono text-[10.5px]",
             STATUS_PILL[integration.status],
