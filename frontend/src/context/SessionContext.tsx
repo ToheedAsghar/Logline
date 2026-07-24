@@ -13,6 +13,7 @@ interface SessionContextValue {
   user: SessionUser | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithToken: (token: string) => void;
   signup: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => void;
 }
@@ -50,6 +51,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     applyToken(null);
   }, [applyToken]);
+
+  const loginWithToken = useCallback(
+    (token: string) => {
+      applyToken(token);
+    },
+    [applyToken],
+  );
 
   // `client.ts` holds `authToken`/the 401 handler as plain module state (not
   // React state), which is exactly why syncing them from a `useEffect` is
@@ -102,8 +110,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const user = useMemo(() => (token ? decodeUserFromToken(token) : null), [token]);
 
   const value = useMemo<SessionContextValue>(
-    () => ({ token, user, isAuthenticated: token !== null, login, signup, logout }),
-    [token, user, login, signup, logout],
+    () => ({ token, user, isAuthenticated: token !== null, login, loginWithToken, signup, logout }),
+    [token, user, login, loginWithToken, signup, logout],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
