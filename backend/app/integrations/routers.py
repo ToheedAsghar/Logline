@@ -31,8 +31,9 @@ def list_integrations(
 
 
 def _require_provider(source: IntegrationSource) -> OAuthProvider:
-    """Resolve the provider for `source`, 404ing cleanly for a valid
-    IntegrationSource that has no registered OAuth flow yet."""
+    """Resolve the provider for `source`, 404ing cleanly for a valid IntegrationSource that has no registered OAuth
+    flow yet.
+    """
     if not is_source_registered(source):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

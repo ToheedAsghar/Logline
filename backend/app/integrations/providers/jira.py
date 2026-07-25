@@ -1,28 +1,21 @@
-"""Jira (Atlassian) OAuth provider: builds authorization URLs and exchanges
-authorization codes for access tokens. All Jira-specific logic is here (API
-endpoints, error response formats, how to parse responses, token refresh) so
-the generic connect and token-refresh routes don't need to know about
-individual providers.
+"""Jira (Atlassian) OAuth provider: builds authorization URLs and exchanges authorization codes for access tokens.
+All Jira-specific logic is here (API endpoints, error response formats, how to parse responses, token refresh) so the
+generic connect and token-refresh routes don't need to know about individual providers.
 
 Atlassian's OAuth flow differs from Slack and GitHub in important ways:
 
-- Request and response format: Atlassian expects a JSON request body (not
-  form-encoded like the others), and returns real HTTP error status codes
-  (400, 403, etc. with error details in the response body). Slack and GitHub
-  always respond HTTP 200 even on rejection, so error details are in the body.
-- Refresh token rotation: Atlassian requires "offline_access" scope to issue
-  refresh tokens at all. Once you have a refresh token, it rotates on every
-  use — when you refresh, Atlassian gives you a new refresh token and
-  invalidates the old one immediately. Unused tokens expire after ~90 days.
-- Token response shape: Both the initial authorization and refresh flows
-  return the same flat JSON structure, so we parse both with one function.
-- Cloud ID discovery (NOT done here): After getting a token, you can't call
-  Jira's API until you discover the user's cloud ID via a separate API call
-  (`GET /oauth/token/accessible-resources`). That discovery step is outside
-  this module's scope — this module only handles obtaining and refreshing
-  tokens. The actual Jira API integration lives elsewhere (currently the Jira
-  MCP server in toolbelt.py uses separate shared credentials untouched by
-  this module).
+- Request and response format: Atlassian expects a JSON request body (not form-encoded like the others), and returns
+  real HTTP error status codes (400, 403, etc. with error details in the response body). Slack and GitHub always respond
+  HTTP 200 even on rejection, so error details are in the body.
+- Refresh token rotation: Atlassian requires "offline_access" scope to issue refresh tokens at all. Once you have a
+  refresh token, it rotates on every use — when you refresh, Atlassian gives you a new refresh token and invalidates
+  the old one immediately. Unused tokens expire after ~90 days.
+- Token response shape: Both the initial authorization and refresh flows return the same flat JSON structure, so we
+  parse both with one function.
+- Cloud ID discovery (NOT done here): After getting a token, you can't call Jira's API until you discover the user's
+  cloud ID via a separate API call (`GET /oauth/token/accessible-resources`). That discovery step is outside this
+  module's scope — this module only handles obtaining and refreshing tokens. The actual Jira API integration lives
+  elsewhere (currently the Jira MCP server in toolbelt.py uses separate shared credentials untouched by this module).
 """
 
 from datetime import datetime, timedelta, timezone
@@ -44,8 +37,7 @@ from app.integrations.providers.base import OAuthProvider, OAuthTokens
 
 
 class JiraOAuthError(TokenRefreshError):
-    """Raised when Jira/Atlassian rejects an OAuth request or the request
-    can't be sent."""
+    """Raised when Jira/Atlassian rejects an OAuth request or the request can't be sent."""
 
     def __init__(self, message: str) -> None:
         super().__init__(source=IntegrationSource.jira.value, message=message)
@@ -58,16 +50,13 @@ def _compute_expires_at(expires_in: int | None) -> datetime | None:
 
 
 def _parse_token_response(data: dict, *, require_refresh_token: bool) -> OAuthTokens:
-    """Extract access token, refresh token, and expiry from Atlassian's
-    response. Used by both the initial code exchange and token refresh flows,
-    since both return the same structure.
+    """Extract access token, refresh token, and expiry from Atlassian's response. Used by both the initial code
+    exchange and token refresh flows, since both return the same structure.
 
-    Because we always request `offline_access`, Atlassian is expected to return
-    a refresh_token on both flows, and because those refresh tokens rotate on
-    every use, a missing one is a hard error (`require_refresh_token=True`),
-    never silently accepted: storing `None` would strand the connection with no
-    way to renew it (the just-spent token Atlassian rotated away is already
-    invalid). See JIRA_RESPONSE_MISSING_REFRESH_TOKEN_MESSAGE.
+    Because we always request `offline_access`, Atlassian is expected to return a refresh_token on both flows, and
+    because those refresh tokens rotate on every use, a missing one is a hard error (`require_refresh_token=True`),
+    never silently accepted: storing `None` would strand the connection with no way to renew it (the just-spent token
+    Atlassian rotated away is already invalid). See JIRA_RESPONSE_MISSING_REFRESH_TOKEN_MESSAGE.
     """
     access_token = data.get("access_token")
     if not access_token:
@@ -125,10 +114,9 @@ def _parse_httpx_response(
 class JiraOAuthProvider(OAuthProvider):
     """Jira's implementation of the shared OAuthProvider interface.
 
-    The generic routes for connecting and refreshing tokens call ONLY this
-    class and the helper functions above. This ensures Jira-specific logic
-    (the correct endpoints, how to parse responses, error handling) lives in
-    one place and doesn't leak into shared route code.
+    The generic routes for connecting and refreshing tokens call ONLY this class and the helper functions above. This
+    ensures Jira-specific logic (the correct endpoints, how to parse responses, error handling) lives in one place
+    and doesn't leak into shared route code.
     """
 
     source = IntegrationSource.jira

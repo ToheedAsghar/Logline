@@ -1,15 +1,12 @@
 """Tests for the generic OAuth connect and callback endpoints with GitHub.
 
-These tests verify the same properties that test_oauth_connect_callback_endpoints.py
-already verified for Slack: state validation, token storage, error handling.
-By running them again for GitHub, we confirm the generic routes (the ones
-shared by all providers) work correctly with a second provider without needing
-any changes to the shared code.
+These tests verify the same properties that test_oauth_connect_callback_endpoints.py already verified for Slack: state
+validation, token storage, error handling. By running them again for GitHub, we confirm the generic routes (the ones
+shared by all providers) work correctly with a second provider without needing any changes to the shared code.
 
-Like test_oauth_connect_callback_endpoints.py: the tests call router functions directly
-with a real test database. GitHub's HTTP API is mocked at the provider level
-so no real network calls are made. GitHub-specific behavior (its scopes, error
-codes) is tested here too.
+Like test_oauth_connect_callback_endpoints.py: the tests call router functions directly with a real test database.
+GitHub's HTTP API is mocked at the provider level so no real network calls are made. GitHub-specific behavior (its
+scopes, error codes) is tested here too.
 """
 
 import asyncio
@@ -296,10 +293,9 @@ class TestIntegrationCallback:
             replay_db.close()
 
     def test_state_issued_for_a_different_provider_is_rejected(self, test_user_id):
-        """State tokens are bound to a specific provider. A state token created
-        for Slack's connect flow cannot be reused in GitHub's callback, even
-        though both providers use the same generic routes. This prevents someone
-        from redirecting a user from a Slack auth flow to a GitHub callback.
+        """State tokens are bound to a specific provider. A state token created for Slack's connect flow cannot be
+        reused in GitHub's callback, even though both providers use the same generic routes. This prevents someone from
+        redirecting a user from a Slack auth flow to a GitHub callback.
         """
         db = SessionLocal()
         try:
@@ -377,3 +373,4 @@ class TestIntegrationCallback:
             )
         finally:
             db.close()
+

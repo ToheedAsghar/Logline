@@ -1,6 +1,5 @@
-"""Centralized long-string constants for the integrations domain (OAuth
-connect flows, per-provider token refresh). Follow this pattern for new
-values rather than inlining error messages/descriptions at their call site.
+"""Centralized long-string constants for the integrations domain (OAuth connect flows, per-provider token refresh).
+Follow this pattern for new values rather than inlining error messages/descriptions at their call site.
 """
 
 # --- OAuth token refresh ---

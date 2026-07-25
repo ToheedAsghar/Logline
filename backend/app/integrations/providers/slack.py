@@ -1,11 +1,9 @@
-"""Slack OAuth provider: builds authorization URLs and exchanges authorization
-codes for access tokens. All Slack-specific logic is here (API endpoints, error
-response formats, how to parse responses, token refresh) so the generic connect
-and token-refresh routes don't need to know about individual providers.
+"""Slack OAuth provider: builds authorization URLs and exchanges authorization codes for access tokens. All
+Slack-specific logic is here (API endpoints, error response formats, how to parse responses, token refresh) so the
+generic connect and token-refresh routes don't need to know about individual providers.
 
-This pattern (a dedicated provider class per service) will scale to future
-integrations like Jira or Calendar -- each gets one subclass here and one entry
-in the provider registry, with no changes to the shared route logic.
+This pattern (a dedicated provider class per service) will scale to future integrations like Jira or Calendar -- each
+gets one subclass here and one entry in the provider registry, with no changes to the shared route logic.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -40,13 +38,11 @@ def _compute_expires_at(expires_in: int | None) -> datetime | None:
 
 
 def _parse_authed_user_response(data: dict) -> OAuthTokens:
-    """Parse Slack's response after exchanging an authorization code for a
-    user token during the initial OAuth flow.
+    """Parse Slack's response after exchanging an authorization code for a user token during the initial OAuth flow.
 
-    Slack's response structure differs based on what permissions were
-    requested: for user tokens only (no bot permissions), the token is in
-    an `authed_user` field. If bot permissions were also granted, a
-    top-level `access_token` would appear instead.
+    Slack's response structure differs based on what permissions were requested: for user tokens only (no bot
+    permissions), the token is in an `authed_user` field. If bot permissions were also granted, a top-level
+    `access_token` would appear instead.
     """
     if not data.get("ok"):
         raise SlackOAuthError(
@@ -118,10 +114,9 @@ def _parse_httpx_response(response: httpx.Response, parser) -> OAuthTokens:
 class SlackOAuthProvider(OAuthProvider):
     """Slack's implementation of the shared OAuthProvider interface.
 
-    The generic routes for connecting and refreshing tokens call ONLY this
-    class and the helper functions above. This ensures Slack-specific logic
-    (the correct endpoints, how to parse responses, error handling) lives in
-    one place and doesn't leak into shared route code.
+    The generic routes for connecting and refreshing tokens call ONLY this class and the helper functions above. This
+    ensures Slack-specific logic (the correct endpoints, how to parse responses, error handling) lives in one place
+    and doesn't leak into shared route code.
     """
 
     source = IntegrationSource.slack
@@ -183,3 +178,4 @@ class SlackOAuthProvider(OAuthProvider):
         return SLACK_OAUTH_CALLBACK_ERROR_MESSAGES.get(
             error_code, SLACK_OAUTH_UNKNOWN_CALLBACK_ERROR_MESSAGE
         )
+

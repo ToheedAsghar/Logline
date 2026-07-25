@@ -1,9 +1,8 @@
-"""Unit tests for the GitHub OAuth provider (app/integrations/providers/github.py):
-building authorize URLs and exchanging authorization codes for access tokens.
+"""Unit tests for the GitHub OAuth provider (app/integrations/providers/github.py): building authorize URLs and
+exchanging authorization codes for access tokens.
 
-These tests mock the HTTP calls to GitHub (using unittest.mock.patch) so there
-are no real network calls and no real GitHub OAuth App is needed. The test
-structure and coverage mirrors test_slack_oauth_client.py.
+These tests mock the HTTP calls to GitHub (using unittest.mock.patch) so there are no real network calls and no real
+GitHub OAuth App is needed. The test structure and coverage mirrors test_slack_oauth_client.py.
 """
 
 import asyncio
@@ -28,9 +27,9 @@ def _mock_response(payload: dict) -> MagicMock:
 
 class TestGitHubOAuthErrorHierarchy:
     def test_github_oauth_error_is_a_token_refresh_error(self):
-        """ensure_token_fresh's callers only catch TokenRefreshError -- pin
-        that GitHubOAuthError is actually a subclass, not just a same-shaped
-        sibling."""
+        """ensure_token_fresh's callers only catch TokenRefreshError -- pin that GitHubOAuthError is actually a
+        subclass, not just a same-shaped sibling.
+        """
         assert issubclass(GitHubOAuthError, TokenRefreshError)
 
     def test_github_oauth_error_sets_source_and_message_on_the_base_class(self):
@@ -82,8 +81,9 @@ class TestExchangeCodeForAccessToken:
         assert call_kwargs.kwargs["headers"] == {"Accept": "application/json"}
 
     def test_github_error_raises_informative_error_not_generic(self):
-        """GitHub returns HTTP 200 even on rejection -- the error is an
-        `error` field in the JSON body, not an HTTP status code."""
+        """GitHub returns HTTP 200 even on rejection -- the error is an `error` field in the JSON body, not an HTTP
+        status code.
+        """
         response = _mock_response(
             {
                 "error": "bad_verification_code",
@@ -118,9 +118,9 @@ class TestExchangeCodeForAccessToken:
 
 class TestRefreshGitHubUserToken:
     def test_refresh_raises_without_making_a_network_call(self):
-        """GitHub OAuth Apps don't issue refresh tokens or expiring access
-        tokens -- refresh() is a documented no-op that raises rather than
-        silently succeeding or hitting a nonexistent endpoint."""
+        """GitHub OAuth Apps don't issue refresh tokens or expiring access tokens -- refresh() is a documented no-op that
+        raises rather than silently succeeding or hitting a nonexistent endpoint.
+        """
         with patch("httpx.AsyncClient.post", AsyncMock()) as mock_post:
             with pytest.raises(GitHubOAuthError) as exc_info:
                 asyncio.run(provider.refresh("irrelevant-token"))
@@ -138,3 +138,4 @@ class TestGitHubCallbackErrorDetail:
     def test_unknown_error_code_falls_back_to_generic_message(self):
         detail = provider.callback_error_detail("some_unrecognized_code")
         assert "some_unrecognized_code" not in detail
+

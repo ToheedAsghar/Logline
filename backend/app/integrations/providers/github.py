@@ -1,14 +1,11 @@
-"""GitHub OAuth provider: builds authorization URLs and exchanges authorization
-codes for access tokens. All GitHub-specific logic is here (API endpoints, error
-response formats, how to parse responses) so the generic connect and token-refresh
-routes don't need to know about individual providers.
+"""GitHub OAuth provider: builds authorization URLs and exchanges authorization codes for access tokens. All
+GitHub-specific logic is here (API endpoints, error response formats, how to parse responses) so the generic connect
+and token-refresh routes don't need to know about individual providers.
 
-Unlike Slack, GitHub's "OAuth Apps" (the standard OAuth app type, not the newer
-"GitHub Apps") issue access tokens that never expire. This means there's nothing
-to refresh -- the token from the initial exchange remains valid indefinitely. The
-refresh() method raises an error instead of making a network call, since refresh
-attempts should never happen for GitHub tokens (and if they do, that's a real bug
-worth surfacing loudly).
+Unlike Slack, GitHub's "OAuth Apps" (the standard OAuth app type, not the newer "GitHub Apps") issue access tokens
+that never expire. This means there's nothing to refresh -- the token from the initial exchange remains valid
+indefinitely. The refresh() method raises an error instead of making a network call, since refresh attempts should
+never happen for GitHub tokens (and if they do, that's a real bug worth surfacing loudly).
 """
 
 from urllib.parse import urlencode
@@ -36,10 +33,9 @@ class GitHubOAuthError(TokenRefreshError):
 
 
 def _parse_token_response(data: dict) -> OAuthTokens:
-    """Parse GitHub's response after exchanging an authorization code for an
-    access token. GitHub returns HTTP 200 even on rejection -- errors surface
-    as an `error` field in the (JSON, given `Accept: application/json`) body,
-    not as an HTTP status code.
+    """Parse GitHub's response after exchanging an authorization code for an access token. GitHub returns HTTP 200
+    even on rejection -- errors surface as an `error` field in the (JSON, given `Accept: application/json`) body, not
+    as an HTTP status code.
     """
     if "error" in data:
         raise GitHubOAuthError(
@@ -110,11 +106,10 @@ class GitHubOAuthProvider(OAuthProvider):
         return _parse_httpx_response(response)
 
     async def refresh(self, refresh_token: str) -> OAuthTokens:
-        """GitHub OAuth Apps never need token refresh since access tokens don't
-        expire. In normal operation, this is never called -- the token-refresh
-        flow checks if a token has an expiry time, and GitHub tokens never do.
-        This method raises an error instead of silently succeeding, so if it
-        ever gets called, we surface the unexpected situation loudly.
+        """GitHub OAuth Apps never need token refresh since access tokens don't expire. In normal operation, this is
+        never called -- the token-refresh flow checks if a token has an expiry time, and GitHub tokens never do. This
+        method raises an error instead of silently succeeding, so if it ever gets called, we surface the unexpected
+        situation loudly.
         """
         raise GitHubOAuthError(GITHUB_REFRESH_NOT_SUPPORTED_MESSAGE)
 

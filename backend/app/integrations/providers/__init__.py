@@ -1,14 +1,12 @@
-"""OAuth provider registry: manages which OAuth sources (Slack, GitHub, etc.)
-are available and routes requests to the right provider.
+"""OAuth provider registry: manages which OAuth sources (Slack, GitHub, etc.) are available and routes requests to the
+right provider.
 
-`base.py` defines the shared OAuthProvider interface that all providers must
-implement. `slack.py`, `github.py`, and `jira.py` are concrete implementations
-for those sources. This `__init__.py` file exports the factory function that
+`base.py` defines the shared OAuthProvider interface that all providers must implement. `slack.py`, `github.py`, and
+`jira.py` are concrete implementations for those sources. This `__init__.py` file exports the factory function that
 returns the right provider for a given source.
 
-To add a new OAuth source (e.g., Calendar), create one new file (e.g.,
-`providers/calendar.py`) with your implementation and register it in the
-`PROVIDERS` dict below.
+To add a new OAuth source (e.g., Calendar), create one new file (e.g., `providers/calendar.py`) with your
+implementation and register it in the `PROVIDERS` dict below.
 """
 
 from app.integrations.constants import OAUTH_PROVIDER_NOT_REGISTERED_MESSAGE
@@ -34,8 +32,8 @@ PROVIDERS: dict[IntegrationSource, OAuthProvider] = {
 
 
 def is_source_registered(source: IntegrationSource) -> bool:
-    """Check whether a source has an OAuth provider. Returns False for valid
-    IntegrationSource values that don't have a provider yet.
+    """Check whether a source has an OAuth provider. Returns False for valid IntegrationSource values that don't have
+    a provider yet.
     """
     return source in PROVIDERS
 
@@ -43,8 +41,8 @@ def is_source_registered(source: IntegrationSource) -> bool:
 def get_oauth_provider(source: IntegrationSource) -> OAuthProvider:
     """Get the OAuth provider for a source.
 
-    Raises NotImplementedError if the source is valid as an IntegrationSource
-    but doesn't have a registered OAuth provider yet (e.g., Calendar).
+    Raises NotImplementedError if the source is valid as an IntegrationSource but doesn't have a registered OAuth
+    provider yet (e.g., Calendar).
     """
     provider = PROVIDERS.get(source)
     if provider is None:
@@ -52,3 +50,4 @@ def get_oauth_provider(source: IntegrationSource) -> OAuthProvider:
             OAUTH_PROVIDER_NOT_REGISTERED_MESSAGE.format(source=source.value)
         )
     return provider
+

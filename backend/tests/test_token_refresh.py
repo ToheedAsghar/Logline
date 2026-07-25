@@ -1,10 +1,8 @@
 """Tests for the token refresh module.
 
-Tests the ensure_token_fresh function, which checks if a stored OAuth token
-is expiring and refreshes it if needed. The database is mocked to avoid
-hitting the real test DB; Slack's API is also mocked so no real network calls
-are made. These tests verify the refresh logic: when to refresh, how to handle
-missing tokens, and error cases.
+Tests the ensure_token_fresh function, which checks if a stored OAuth token is expiring and refreshes it if needed.
+The database is mocked to avoid hitting the real test DB; Slack's API is also mocked so no real network calls are
+made. These tests verify the refresh logic: when to refresh, how to handle missing tokens, and error cases.
 """
 
 import asyncio
@@ -108,9 +106,8 @@ class TestEnsureTokenFreshRefreshesWhenNeeded:
         mock_refresh.assert_called_once()
 
     def test_refresh_response_without_new_refresh_token_keeps_old_one(self):
-        """When Slack refreshes a token but doesn't rotate the refresh_token
-        itself, we must keep the old one. Clearing it would break future
-        refreshes.
+        """When Slack refreshes a token but doesn't rotate the refresh_token itself, we must keep the old one. Clearing
+        it would break future refreshes.
         """
         token = _token(expires_at=datetime.now(timezone.utc) - timedelta(minutes=1))
         db = _fake_db_with_token(token)
@@ -168,3 +165,4 @@ class TestEnsureTokenFreshErrors:
 
         assert "invalid_refresh_token" in str(exc_info.value)
         db.commit.assert_not_called()
+
