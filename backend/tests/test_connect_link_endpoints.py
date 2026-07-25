@@ -1,19 +1,17 @@
 """Tests for the HTTP endpoints and auth logic that handle one-time passes.
 
 The tests confirm that:
-- POST /{source}/connect-link creates and returns a valid pass URL, and
-  cleanly rejects requests for providers we haven't wired up yet (404).
-- GET /{source}/connect can authenticate using either a bearer token or a
-  one-time pass query parameter, and rejects missing credentials.
-- A one-time pass is rejected if it's expired, already used, or for the wrong
-  provider.
-- Crucially: the two kinds of tokens we use (one-time passes, and the "state"
-  tokens used later in the OAuth flow) can never be confused or swapped. Using
-  one where the other is expected is rejected, even though both are signed
+- POST /{source}/connect-link creates and returns a valid pass URL, and cleanly rejects requests for providers we
+  haven't wired up yet (404).
+- GET /{source}/connect can authenticate using either a bearer token or a one-time pass query parameter, and rejects
+  missing credentials.
+- A one-time pass is rejected if it's expired, already used, or for the wrong provider.
+- Crucially: the two kinds of tokens we use (one-time passes, and the "state" tokens used later in the OAuth flow) can
+  never be confused or swapped. Using one where the other is expected is rejected, even though both are signed
   itsdangerous envelopes.
 
-The tests use a real Postgres database (not mocks) because the purpose is to
-verify database row behavior and the single-use guarantee across connections.
+The tests use a real Postgres database (not mocks) because the purpose is to verify database row behavior and the
+single-use guarantee across connections.
 """
 
 from urllib.parse import parse_qs, urlparse

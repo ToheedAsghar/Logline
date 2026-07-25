@@ -33,9 +33,8 @@ def list_integrations(
 
 
 def _require_provider(source: IntegrationSource) -> OAuthProvider:
-    """Get the OAuth handler for a provider. If the provider isn't set up yet
-    (e.g., we added the integration to our enum but haven't built its OAuth flow),
-    raise a 404 so the endpoint behaves like it doesn't exist.
+    """Resolve the provider for `source`, 404ing cleanly for a valid IntegrationSource that has no registered OAuth
+    flow yet.
     """
     if not is_source_registered(source):
         raise HTTPException(

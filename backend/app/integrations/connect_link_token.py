@@ -1,27 +1,20 @@
-"""These are one-time passes that let the "Connect" button actually work.
-Normally, when your browser talks to our server, it proves who you are with a
-login token attached to the request. But actually opening a new page (like
-navigating to Slack's login screen) is different -- that's a real page visit,
-not a background request, and a page visit can't carry that proof along with
-it the way a normal request can.
+"""These are one-time passes that let the "Connect" button actually work. Normally, when your browser talks to our
+server, it proves who you are with a login token attached to the request. But actually opening a new page (like
+navigating to Slack's login screen) is different -- that's a real page visit, not a background request, and a page
+visit can't carry that proof along with it the way a normal request can.
 
-So here's the trick: right before the browser navigates away, we quietly ask
-our own server (using your normal login, since this part IS a background
-request) for a temporary one-time code. We stick that code onto the end of the
-web address as a query parameter, and the browser carries it there
-automatically just by visiting the page. Our server sees the code arrive and
-accepts it as proof -- but only once, and only for 60 seconds.
+So here's the trick: right before the browser navigates away, we quietly ask our own server (using your normal login,
+since this part IS a background request) for a temporary one-time code. We stick that code onto the end of the web
+address as a query parameter, and the browser carries it there automatically just by visiting the page. Our server sees
+the code arrive and accepts it as proof -- but only once, and only for 60 seconds.
 
-This works similarly to how we already handle "reset your password" and "verify
-your email" links elsewhere in this project -- a signed, one-time code tied to
-a database row, marked used after one use. We built this one to be simpler than
-the code used later in this same OAuth flow (the one that handles the provider
-redirecting back to us), because that one has to wrap around another code and
-this one doesn't -- it's just a direct, one-time pass.
+This works similarly to how we already handle "reset your password" and "verify your email" links elsewhere in this
+project -- a signed, one-time code tied to a database row, marked used after one use. We built this one to be simpler
+than the code used later in this same OAuth flow (the one that handles the provider redirecting back to us), because
+that one has to wrap around another code and this one doesn't -- it's just a direct, one-time pass.
 
-It uses its own secret signing "flavor" and a much shorter timer (60 seconds,
-not several minutes) specifically so it can never accidentally be mixed up
-with, or reused as, that other code.
+It uses its own secret signing "flavor" and a much shorter timer (60 seconds, not several minutes) specifically so it
+can never accidentally be mixed up with, or reused as, that other code.
 """
 
 from datetime import datetime, timezone
@@ -35,10 +28,9 @@ from app.integrations.models import ConnectLinkToken, IntegrationSource
 
 
 class ConnectLinkTokenError(Exception):
-    """Raised when a token can't be accepted. The `reason` field is one of:
-    "expired" (token is too old), "tampered" (token signature is invalid),
-    "already_used" (someone already redeemed it), "not_found" (no matching
-    database row), or "source_mismatch" (token was for a different provider).
+    """Raised when a token can't be accepted. The `reason` field is one of: "expired" (token is too old), "tampered"
+    (token signature is invalid), "already_used" (someone already redeemed it), "not_found" (no matching database
+    row), or "source_mismatch" (token was for a different provider).
     """
 
     def __init__(self, reason: str) -> None:
@@ -51,9 +43,8 @@ def _serializer() -> URLSafeTimedSerializer:
 
 
 def create_connect_link_token(db: Session, *, user_id: int, source: IntegrationSource) -> str:
-    """Create a new one-time pass for a browser navigation. Stores a row in
-    the database and returns a signed token string that proves this pass exists
-    and is valid when presented later as a query parameter.
+    """Create a new one-time pass for a browser navigation. Stores a row in the database and returns a signed token
+    string that proves this pass exists and is valid when presented later as a query parameter.
     """
     token_row = ConnectLinkToken(user_id=user_id, source=source)
     db.add(token_row)
@@ -65,13 +56,11 @@ def create_connect_link_token(db: Session, *, user_id: int, source: IntegrationS
 
 
 def consume_connect_link_token(db: Session, *, token: str, expected_source: IntegrationSource) -> int:
-    """Redeem a one-time pass if it's valid. Returns the user ID the pass was
-    issued for. Raises ConnectLinkTokenError if the token is expired, tampered,
-    already used, doesn't exist, or is for the wrong provider.
+    """Redeem a one-time pass if it's valid. Returns the user ID the pass was issued for. Raises ConnectLinkTokenError
+    if the token is expired, tampered, already used, doesn't exist, or is for the wrong provider.
 
-    This function locks the database row before marking it used, so two
-    requests arriving at the exact same time can't both succeed -- the first
-    one wins, the second gets rejected as "already_used".
+    This function locks the database row before marking it used, so two requests arriving at the exact same time
+    can't both succeed -- the first one wins, the second gets rejected as "already_used".
     """
     try:
         data = _serializer().loads(token, max_age=CONNECT_LINK_TOKEN_TTL_SECONDS)

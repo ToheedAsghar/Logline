@@ -1,7 +1,5 @@
-"""All the long text strings we show to users in the integrations feature:
-error messages when OAuth fails, URLs for connecting to providers, and other
-configuration. Keeping them here instead of scattering them through code makes
-it easier to update messages or add a new provider.
+"""Centralized long-string constants for the integrations domain (OAuth connect flows, per-provider token refresh).
+Follow this pattern for new values rather than inlining error messages/descriptions at their call site.
 """
 
 # --- OAuth token refresh ---
@@ -171,8 +169,6 @@ JIRA_OAUTH_AUTHORIZE_URL = "https://auth.atlassian.com/authorize"
 JIRA_OAUTH_TOKEN_URL = "https://auth.atlassian.com/oauth/token"
 
 JIRA_OAUTH_SCOPES = ("read:jira-work", "read:jira-user", "offline_access")
-
-JIRA_CONNECT_STATE_PURPOSE = "jira_connect"
 
 # --- Messages ---
 

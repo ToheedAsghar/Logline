@@ -1,12 +1,10 @@
-"""Refreshes OAuth tokens before they expire, routing refresh requests to the
-correct provider's API (Slack, GitHub, etc. each have different endpoints).
+"""Refreshes OAuth tokens before they expire, routing refresh requests to the correct provider's API (Slack, GitHub,
+etc. each have different endpoints).
 
-`ensure_token_fresh()` works across all integration providers by resolving the
-provider from the shared OAuth registry (`get_oauth_provider`) -- the same
-single source of truth the connect/callback routes use. The provider supplies
-its refresh call, its error type, and its user-facing message wording, so this
-module has no per-source dispatch table of its own. Adding a provider requires
-no change here.
+`ensure_token_fresh()` works across all integration providers by resolving the provider from the shared OAuth registry
+(`get_oauth_provider`) -- the same single source of truth the connect/callback routes use. The provider supplies its
+refresh call, its error type, and its user-facing message wording, so this module has no per-source dispatch table of
+its own. Adding a provider requires no change here.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -27,13 +25,11 @@ def _needs_refresh(expires_at: datetime | None) -> bool:
 async def ensure_token_fresh(db: Session, source: IntegrationSource, integration_id: int) -> OAuthToken:
     """Check if an OAuth token is still valid, and refresh it if needed.
 
-    Takes an integration (identified by source and integration_id), checks its
-    stored token's expiry time, and refreshes it from the provider if it's
-    getting close to expiring. Returns the valid token.
+    Takes an integration (identified by source and integration_id), checks its stored token's expiry time, and
+    refreshes it from the provider if it's getting close to expiring. Returns the valid token.
 
-    Raises TokenRefreshError (with provider-specific details like which
-    integration failed and why) if the token can't be refreshed. Raises
-    NotImplementedError if the provider doesn't support refresh yet.
+    Raises TokenRefreshError (with provider-specific details like which integration failed and why) if the token can't
+    be refreshed. Raises NotImplementedError if the provider doesn't support refresh yet.
     """
     provider = get_oauth_provider(source)
 

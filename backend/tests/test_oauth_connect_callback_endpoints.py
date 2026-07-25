@@ -1,14 +1,12 @@
 """Tests for the generic OAuth connect and callback endpoints.
 
-Slack is used as the mocked provider to test connection logic (tokens
-encrypted and stored correctly, state validation prevents replays, errors
-handled properly) without real network calls. TestUnregisteredSource
-additionally verifies that any valid IntegrationSource without a
-registered provider is rejected with a 404, using a currently-unregistered
-source as the test case -- independent of Slack.
+Slack is used as the mocked provider to test connection logic (tokens encrypted and stored correctly, state validation
+prevents replays, errors handled properly) without real network calls. TestUnregisteredSource additionally verifies that
+any valid IntegrationSource without a registered provider is rejected with a 404, using a currently-unregistered source
+as the test case -- independent of Slack.
 
-We use a real Postgres database (via docker-compose) to verify that
-database changes (storing tokens, marking state as used) actually persist.
+We use a real Postgres database (via docker-compose) to verify that database changes (storing tokens, marking state as
+used) actually persist.
 """
 
 import asyncio
@@ -37,8 +35,8 @@ TEST_EMAIL = "slack-oauth-endpoint-test@example.com"
 
 @pytest.fixture(scope="module", autouse=True)
 def _require_oauth_states_table():
-    """Verify the oauth_states table exists before running tests. If missing,
-    fail with a clear message (the database migration wasn't applied).
+    """Verify the oauth_states table exists before running tests. If missing, fail with a clear message (the database
+    migration wasn't applied).
     """
     with engine.connect() as connection:
         exists = connection.execute(
@@ -98,10 +96,9 @@ def _issue_state(user_id: int) -> str:
 
 
 def _decode_inner_jti(state_token: str) -> str:
-    """Extract the jti (unique ID) from a state token by unwrapping both
-    the outer signed envelope and the inner JWT. This lets tests query the
-    oauth_states table directly to verify that token consumption is
-    permanently saved to the database (not just in memory).
+    """Extract the jti (unique ID) from a state token by unwrapping both the outer signed envelope and the inner JWT.
+    This lets tests query the oauth_states table directly to verify that token consumption is permanently saved to the
+    database (not just in memory).
     """
     envelope = URLSafeTimedSerializer(settings.itsdangerous_secret_key, salt=CONNECT_STATE_SALT)
     inner_token = envelope.loads(state_token)["inner_token"]
@@ -110,8 +107,9 @@ def _decode_inner_jti(state_token: str) -> str:
 
 
 def _patch_exchange(**kwargs):
-    """Patch the Slack provider's exchange_code -- the seam the generic
-    callback route now calls instead of a module-level function."""
+    """Patch the Slack provider's exchange_code -- the seam the generic callback route now calls instead of a
+    module-level function.
+    """
     return patch.object(SlackOAuthProvider, "exchange_code", AsyncMock(**kwargs))
 
 
@@ -144,9 +142,9 @@ class TestConnectIntegration:
 
 
 class TestUnregisteredSource:
-    """A valid IntegrationSource with no registered provider (calendar today
-    now that slack/github/jira are all registered) must be rejected cleanly
-    with a 404, never a 500 or a partially-run flow."""
+    """A valid IntegrationSource with no registered provider (calendar today now that slack/github/jira are all
+    registered) must be rejected cleanly with a 404, never a 500 or a partially-run flow.
+    """
 
     def test_connect_unregistered_source_404s(self, test_user_id):
         db = SessionLocal()
@@ -173,11 +171,10 @@ class TestUnregisteredSource:
 
 class TestIntegrationCallback:
     def test_successful_exchange_stores_encrypted_tokens_and_redirects_connected(self, test_user_id):
-        """Checks both ends of storage: the ORM-decrypted value matches what
-        was exchanged (round trip works), and the raw column value read via
-        plain textual SQL -- which bypasses EncryptedString's result
-        processing -- does not contain the plaintext (it's actually
-        encrypted at rest, not stored as-is)."""
+        """Checks both ends of storage: the ORM-decrypted value matches what was exchanged (round trip works), and the
+        raw column value read via plain textual SQL -- which bypasses EncryptedString's result processing -- does not
+        contain the plaintext (it's actually encrypted at rest, not stored as-is).
+        """
         state = _issue_state(test_user_id)
         fake_tokens = OAuthTokens(
             access_token="xoxp-plaintext-access-token",
@@ -312,10 +309,9 @@ class TestIntegrationCallback:
             db.close()
 
     def test_slack_denial_redirects_with_error_and_durably_consumes_state(self, test_user_id):
-        """Tests that Slack denials (with error but no code) are handled
-        correctly: the error is mapped to a user-friendly message, and the
-        state token is permanently marked as consumed in the database so
-        it can't be reused.
+        """Tests that Slack denials (with error but no code) are handled correctly: the error is mapped to a
+        user-friendly message, and the state token is permanently marked as consumed in the database so it can't be
+        reused.
         """
         state = _issue_state(test_user_id)
         jti = _decode_inner_jti(state)
@@ -351,9 +347,8 @@ class TestIntegrationCallback:
             replay_db.close()
 
     def test_slack_denial_with_stray_code_still_hits_denial_branch(self, test_user_id):
-        """Ensures that if both error and code are present (shouldn't
-        happen with real Slack), the error is handled instead of attempting
-        a token exchange.
+        """Ensures that if both error and code are present (shouldn't happen with real Slack), the error is handled
+        instead of attempting a token exchange.
         """
         state = _issue_state(test_user_id)
 
@@ -411,3 +406,4 @@ class TestIntegrationCallback:
             )
         finally:
             db.close()
+

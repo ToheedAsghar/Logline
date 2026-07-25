@@ -5,11 +5,11 @@ These tests confirm that:
 - Redeeming a valid, unused pass for the right provider returns the user ID.
 - A pass can only be used once (second use is rejected).
 - A pass rejects tampering, expiry, wrong provider, or missing row.
-- A pass's single-use guarantee holds across separate database connections
-  (the write from the first use is durable before the second attempt reads it).
+- A pass's single-use guarantee holds across separate database connections (the write from the first use is durable
+  before the second attempt reads it).
 
-The tests use a real Postgres database (not mocks) because the point is to
-verify that the database locking and row writes work correctly.
+The tests use a real Postgres database (not mocks) because the point is to verify that the database locking and row
+writes work correctly.
 """
 
 import threading

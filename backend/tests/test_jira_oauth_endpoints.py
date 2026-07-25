@@ -1,14 +1,12 @@
 """Tests for the generic OAuth connect and callback endpoints with Jira.
 
-These tests verify the same properties that test_oauth_connect_callback_endpoints.py and
-test_github_oauth_endpoints.py already verified for their providers: state
-validation, token storage, error handling. By running them again for Jira, we
-confirm the generic routes (the ones shared by all providers) work correctly
-with a third provider without needing any changes to the shared code.
+These tests verify the same properties that test_oauth_connect_callback_endpoints.py and test_github_oauth_endpoints.py
+already verified for their providers: state validation, token storage, error handling. By running them again for Jira,
+we confirm the generic routes (the ones shared by all providers) work correctly with a third provider without needing
+any changes to the shared code.
 
-Like the other two: the tests call router functions directly with a real test
-database. Jira's HTTP API is mocked at the provider level so no real network
-calls are made. Jira-specific behavior (its scopes, error codes) is tested
+Like the other two: the tests call router functions directly with a real test database. Jira's HTTP API is mocked at
+the provider level so no real network calls are made. Jira-specific behavior (its scopes, error codes) is tested
 here too.
 """
 
@@ -111,8 +109,9 @@ def _decode_inner_jti(state_token: str) -> str:
 
 
 def _track_state(state_token: str) -> str:
-    """Record the jti of a freshly issued connect-state so _cleanup can delete
-    its oauth_states row afterward. Returns the token unchanged for chaining."""
+    """Record the jti of a freshly issued connect-state so _cleanup can delete its oauth_states row afterward. Returns
+    the token unchanged for chaining.
+    """
     _issued_state_jtis.append(_decode_inner_jti(state_token))
     return state_token
 
@@ -326,9 +325,8 @@ class TestIntegrationCallback:
             replay_db.close()
 
     def test_state_issued_for_a_different_provider_is_rejected_by_jira(self, test_user_id):
-        """State tokens are bound to a specific provider. A state token
-        created for GitHub's connect flow cannot be reused in Jira's
-        callback, even though both providers use the same generic routes.
+        """State tokens are bound to a specific provider. A state token created for GitHub's connect flow cannot be
+        reused in Jira's callback, even though both providers use the same generic routes.
         """
         db = SessionLocal()
         try:
@@ -371,8 +369,8 @@ class TestIntegrationCallback:
             db.close()
 
     def test_jira_state_is_rejected_by_a_different_providers_callback(self, test_user_id):
-        """The reverse direction: a state token issued for Jira's own connect
-        flow must not be accepted by another provider's callback either.
+        """The reverse direction: a state token issued for Jira's own connect flow must not be accepted by another
+        provider's callback either.
         """
         jira_state = _issue_state(test_user_id, source=IntegrationSource.jira)
 
@@ -442,12 +440,10 @@ class TestIntegrationCallback:
 
 
 class TestJiraRefreshTokenRotationPersistence:
-    """Atlassian rotates the refresh_token on every refresh call (live-confirmed):
-    the old one is invalidated immediately and a brand-new one is returned. A
-    refresh must therefore persist BOTH the new access_token AND the new
-    refresh_token to storage -- persisting only the access_token would leave the
-    now-invalid old refresh_token on file and silently break the very next
-    refresh. This drives ensure_token_fresh against a real DB row and proves the
+    """Atlassian rotates the refresh_token on every refresh call (live-confirmed): the old one is invalidated
+    immediately and a brand-new one is returned. A refresh must therefore persist BOTH the new access_token AND the
+    new refresh_token to storage -- persisting only the access_token would leave the now-invalid old refresh_token on
+    file and silently break the very next refresh. This drives ensure_token_fresh against a real DB row and proves the
     stored refresh_token actually changes to the rotated value.
     """
 
