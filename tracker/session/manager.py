@@ -73,6 +73,7 @@ class SessionManager:
         opened_at = datetime.fromisoformat(self._open.started_at)
         if stopped_at <= opened_at:
             self._open.is_idle = True
+            db.update_open_session_is_idle(self._conn, self._open.id, True)
             return
         bundle_id, app_name, window_title = self._open.bundle_id, self._open.app_name, self._open.window_title
         backdated = _iso(stopped_at)

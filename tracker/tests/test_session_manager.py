@@ -37,6 +37,14 @@ class TestBackdatingClampAvoidsDuplicateZeroDurationRow:
         assert all_sessions(conn) == []
         assert len(open_session_rows(conn)) == 1
         assert open_session_rows(conn)[0]["id"] == original_id
+        assert open_session_rows(conn)[0]["is_idle"] == 1
+
+        # Crash recovery after in-place idle transition must seal as idle
+        SessionManager(conn)
+        sessions = all_sessions(conn)
+        assert len(sessions) == 1
+        assert sessions[0]["is_idle"] == 1
+        assert sessions[0]["end_reason"] == "quit"
 
     def test_stopped_at_equal_to_open_time_also_relabels_in_place(self, conn):
         manager = SessionManager(conn)

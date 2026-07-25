@@ -50,6 +50,12 @@ def update_open_session_ended_at(conn: sqlite3.Connection, session_id: str, ende
     conn.commit()
 
 
+def update_open_session_is_idle(conn: sqlite3.Connection, session_id: str, is_idle: bool) -> None:
+    """Updates the open_session mirror's is_idle flag when an open session transitions to idle."""
+    conn.execute("UPDATE open_session SET is_idle = ? WHERE id = ?", (int(is_idle), session_id))
+    conn.commit()
+
+
 def close_open_session(conn: sqlite3.Connection, session: Session) -> None:
     """Persists the finished session into `sessions` and clears the open_session
     mirror, in one transaction."""
