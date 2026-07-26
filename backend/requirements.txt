@@ -12,3 +12,7 @@ openai
 bcrypt
 pyjwt
 email-validator
+
+# test-only
+pytest
+pytest-asyncio
