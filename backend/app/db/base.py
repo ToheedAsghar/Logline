@@ -8,6 +8,7 @@ from app.db.session import Base
 from app.entries.models import Entry, EntryFormat, EntryStatus, EntryVersion, EntryVersionSource
 from app.integrations.models import ConnectLinkToken, Integration, IntegrationSource, IntegrationStatus, OAuthToken
 from app.matching.models import ProjectMapping, RemoteEvent
+from app.remote_fetch.models import RemoteFetchState
 from app.self_captures.models import SelfCapture
 from app.timeline.models import ConfidenceLevel, Event
 from app.tracker_sync.models import LocalSession
@@ -33,5 +34,6 @@ __all__ = [
     "SelfCapture",
     "RemoteEvent",
     "ProjectMapping",
+    "RemoteFetchState",
     "LocalSession",
 ]
