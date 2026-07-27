@@ -7,9 +7,8 @@ from app.auth.models import User
 from app.db.session import Base
 from app.entries.models import Entry, EntryFormat, EntryStatus
 from app.integrations.models import Integration, IntegrationSource, IntegrationStatus, OAuthToken
-from app.models.work_block import WorkBlock
 from app.self_captures.models import SelfCapture
-from app.timeline.models import ConfidenceLevel, Event
+from app.timeline.models import ConfidenceLevel, Event, WorkBlock
 
 __all__ = [
     "Base",
