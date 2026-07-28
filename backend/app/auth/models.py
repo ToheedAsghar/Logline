@@ -20,3 +20,4 @@ class User(Base):
     work_blocks = relationship("WorkBlock", back_populates="user", cascade="all, delete-orphan")
     entries = relationship("Entry", back_populates="user", cascade="all, delete-orphan")
     self_captures = relationship("SelfCapture", back_populates="user", cascade="all, delete-orphan")
+    local_sessions = relationship("LocalSession", back_populates="user", cascade="all, delete-orphan")
