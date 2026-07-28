@@ -27,12 +27,6 @@ class Entry(Base):
     format = Column(Enum(EntryFormat, name="entry_format"), nullable=False)
     content = Column(JSONB, nullable=False)
     status = Column(Enum(EntryStatus, name="entry_status"), nullable=False, default=EntryStatus.draft)
-    # The calendar day the entry's content is actually ABOUT -- distinct from
-    # created_at (when the row was inserted/approved). Set explicitly at
-    # creation time, never a server default: the two commonly diverge (e.g.
-    # work done Monday, drafted/approved Friday), and retention logic
-    # (app/tracker_sync/crud.py::get_approved_entry_dates) depends on this
-    # being the real work day, not the approval day.
     work_date = Column(Date, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     approved_at = Column(DateTime(timezone=True), nullable=True)
