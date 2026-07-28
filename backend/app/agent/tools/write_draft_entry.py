@@ -7,12 +7,14 @@ and does not call any LLM. It is a standalone DB-write function that can be impo
 and called directly, e.g. `write_draft_entry(user_id=1, format="standup", content={...})`.
 """
 
+from datetime import date
+
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from app.db.session import SessionLocal
-from app.models.entry import Entry, EntryFormat, EntryStatus
-from app.schemas.entry import parse_entry_content
+from app.entries.models import Entry, EntryFormat, EntryStatus
+from app.entries.schemas import parse_entry_content
 
 
 class DraftEntryInput(BaseModel):
@@ -23,6 +25,7 @@ class DraftEntryInput(BaseModel):
     user_id: int
     format: EntryFormat
     content: dict
+    work_date: date
 
 
 class WriteDraftEntryError(Exception):
@@ -42,8 +45,13 @@ def write_draft_entry(**kwargs) -> dict:
     """Validate `kwargs` and insert a new draft row into the `entries` table.
 
     `content` is validated against `format`'s required shape using the same
-    `parse_entry_content` validator the REST API uses (app/schemas/entry.py),
+    `parse_entry_content` validator the REST API uses (app/entries/schemas.py),
     so the agent and the API can never disagree on what counts as valid content.
+
+    `work_date` is the actual calendar day this entry's content is about (not
+    today's date, unless the entry happens to be about today) -- it drives
+    retention decisions later (app/tracker_sync), so it must reflect the real
+    day being reported on, not the day the draft happens to be written.
 
     Returns:
         {"success": True, "status": "created", "entry_id": <int>} on insert.
@@ -72,6 +80,7 @@ def write_draft_entry(**kwargs) -> dict:
                 user_id=payload.user_id,
                 format=payload.format,
                 content=validated_content.model_dump(),
+                work_date=payload.work_date,
                 status=EntryStatus.draft,
             )
             db.add(entry)

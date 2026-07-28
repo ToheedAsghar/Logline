@@ -29,7 +29,7 @@ from app.agent.tools.get_existing_events import GetExistingEventsInput, get_exis
 from app.agent.tools.write_draft_entry import DraftEntryInput, write_draft_entry
 from app.agent.tools.write_event import WriteEventInput, write_event
 from app.db.session import SessionLocal
-from app.models.integration import Integration, IntegrationSource
+from app.integrations.models import Integration, IntegrationSource
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -209,7 +209,10 @@ CUSTOM_TOOLS: list[tuple[ToolDefinition, Callable[..., Any]]] = [
                 "and checked flag_gap for uncovered time. `format` must be 'standup' "
                 "(content: {yesterday, today, blockers}) or 'project_log' (content: "
                 "{text}) — content is validated against that shape and the call is "
-                "rejected if it doesn't match."
+                "rejected if it doesn't match. `work_date` (YYYY-MM-DD) must be the "
+                "actual calendar day this entry reports on — grounded via "
+                "calendar__get-current-time / the evidence's own timestamps, never "
+                "guessed — since it is not necessarily the day the draft is written."
             ),
             input_schema=_schema_without_user_id(DraftEntryInput),
         ),

@@ -13,7 +13,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from app.db.session import SessionLocal
-from app.models.event import Event
+from app.timeline.models import Event
 
 
 class GetExistingEventsInput(BaseModel):

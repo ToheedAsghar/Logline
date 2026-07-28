@@ -21,7 +21,7 @@ import pytest
 from app.db.session import SessionLocal
 from app.matching.models import ProjectMapping
 from app.matching.resolution import resolve_github_identity, resolve_mapped_identity
-from app.models.user import User
+from app.auth.models import User
 
 REPO_IDENTITY = "ToheedAsghar/Logline"
 SSH_REMOTE = "git@github.com:ToheedAsghar/Logline.git"

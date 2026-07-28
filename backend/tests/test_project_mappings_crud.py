@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db.session import SessionLocal
 from app.matching.models import ProjectMapping
-from app.models.user import User
+from app.auth.models import User
 
 TEST_EMAIL = "project-mappings-crud-test@example.com"
 

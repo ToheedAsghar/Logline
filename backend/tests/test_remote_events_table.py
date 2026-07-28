@@ -14,7 +14,7 @@ from sqlalchemy.exc import DataError, IntegrityError
 
 from app.db.session import SessionLocal
 from app.matching.models import RemoteEvent
-from app.models.user import User
+from app.auth.models import User
 
 TEST_EMAIL = "remote-events-table-test@example.com"
 OTHER_TEST_EMAIL = "remote-events-table-test-other-user@example.com"
