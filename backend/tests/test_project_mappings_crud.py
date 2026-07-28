@@ -6,9 +6,9 @@ against the real Postgres database (same DB the app runs against).
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from app.auth.models import User
 from app.db.session import SessionLocal
 from app.matching.models import ProjectMapping
-from app.auth.models import User
 
 TEST_EMAIL = "project-mappings-crud-test@example.com"
 
