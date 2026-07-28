@@ -50,7 +50,7 @@ def create_google_user(db: Session, *, email: str, google_user_id: str, name: st
         winner = get_user_by_google_id(db, google_user_id) or get_user_by_email(db, email)
         if winner is None:
             raise
-        return winner
+        return link_google_account(db, winner, google_user_id=google_user_id)
     db.refresh(user)
     return user
 

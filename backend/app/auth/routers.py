@@ -11,16 +11,16 @@ from sqlalchemy.orm import Session
 from app.auth import crud, google_oauth
 from app.auth.constants import (
     EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, GOOGLE_LOGIN_STATE_PURPOSE, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
-    TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE, TEXT_GOOGLE_SIGN_IN_FAILED, TEXT_LOGIN_EMAIL_NOT_VERIFIED,
-    TEXT_LOGIN_INVALID_CREDENTIALS, TEXT_PASSWORD_RESET_SUBJECT, TEXT_PASSWORD_RESET_SUCCESSFULL,
-    TEXT_PASSWORD_TOKEN_ERROR, TEXT_SIGNUP_GENERIC_MESSAGE,
+    TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE, TEXT_GOOGLE_SIGN_IN_FAILED, TEXT_INACTIVE_USER_ACCOUNT,
+    TEXT_LOGIN_EMAIL_NOT_VERIFIED, TEXT_LOGIN_INVALID_CREDENTIALS, TEXT_PASSWORD_RESET_SUBJECT,
+    TEXT_PASSWORD_RESET_SUCCESSFULL, TEXT_PASSWORD_TOKEN_ERROR, TEXT_SIGNUP_GENERIC_MESSAGE,
 )
 from app.auth.deps import get_current_user
 from app.auth.google_oauth import GoogleAuthError
 from app.auth.models import EmailVerificationToken, PasswordResetToken, User
 from app.auth.schemas import (
-    ForgotPasswordRequest, MessageResponse, ResendVerificationRequest, ResetPasswordRequest, Token, UserLogin,
-    UserResponse, UserSignup,
+    ForgotPasswordRequest, MessageResponse, OAuthExchangeRequest, ResendVerificationRequest, ResetPasswordRequest,
+    Token, UserLogin, UserResponse, UserSignup,
 )
 from app.auth.security import (
     EmailVerificationTokenError, PasswordResetTokenError, create_access_token, create_email_verification_token,
@@ -29,7 +29,9 @@ from app.auth.security import (
 )
 from app.config import settings
 from app.core.email import EmailDeliveryError, get_email_provider
-from app.core.oauth_state import OAuthStateError, consume_oauth_state, create_oauth_state
+from app.core.oauth_state import (
+    OAuthStateError, consume_oauth_exchange_code, consume_oauth_state, create_oauth_exchange_code, create_oauth_state,
+)
 from app.db.session import get_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -253,7 +255,15 @@ def google_login(db: Session = Depends(get_db)):
 
 
 @router.get("/google/callback")
-def google_callback(code: str, state: str, db: Session = Depends(get_db)):
+def google_callback(
+    state: str | None = None,
+    code: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    if error or not code or not state:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_GOOGLE_SIGN_IN_FAILED)
+
     try:
         consume_oauth_state(db, token=state, expected_purpose=GOOGLE_LOGIN_STATE_PURPOSE)
     except OAuthStateError as exc:
@@ -279,12 +289,22 @@ def google_callback(code: str, state: str, db: Session = Depends(get_db)):
         else:
             user = crud.link_google_account(db, user, google_user_id=google_user_id)
 
-    access_token = create_access_token(user.id)
-    # KNOWN, DEFERRED: the access token rides in the redirect URL, so it lands
-    # in browser history/referrer headers/server logs. Deliberately not fixed
-    # here -- the right shape (short-lived one-time exchange code the
-    # frontend swaps for the real token, vs. setting it as an httpOnly
-    # cookie directly) depends on how /oauth/callback ends up handling auth
-    # state, which isn't built yet. Decide when that frontend work starts,
-    # not now.
-    return RedirectResponse(f"{settings.frontend_base_url}/oauth/callback?token={access_token}")
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=TEXT_INACTIVE_USER_ACCOUNT)
+
+    exchange_code = create_oauth_exchange_code(db, user_id=user.id)
+    return RedirectResponse(f"{settings.frontend_base_url}/oauth/callback?code={exchange_code}")
+
+
+@router.post("/google/exchange", response_model=Token)
+def google_exchange(payload: OAuthExchangeRequest, db: Session = Depends(get_db)):
+    try:
+        user_id = consume_oauth_exchange_code(db, code=payload.code)
+    except OAuthStateError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message)
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=TEXT_INACTIVE_USER_ACCOUNT)
+
+    return Token(access_token=create_access_token(user.id))

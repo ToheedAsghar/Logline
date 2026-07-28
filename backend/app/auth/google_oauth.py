@@ -73,7 +73,7 @@ def _fetch_jwks() -> dict:
             response = http_client.get(GOOGLE_JWKS_URL)
             response.raise_for_status()
             return response.json()
-    except HTTPError as exc:
+    except (HTTPError, json.JSONDecodeError, ValueError) as exc:
         raise GoogleAuthError(f"Failed to fetch Google's signing keys: {exc}") from exc
 
 

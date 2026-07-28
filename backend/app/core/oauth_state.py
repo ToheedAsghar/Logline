@@ -119,3 +119,53 @@ def consume_oauth_state(db: Session, *, token: str, expected_purpose: str) -> No
 
     state_row.used_at = now
     db.commit()
+
+
+def create_oauth_exchange_code(db: Session, *, user_id: int) -> str:
+    """Issue a short-lived, single-use token that the frontend can exchange for a JWT access token."""
+    jti = uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=60)
+
+    db.add(OAuthState(jti=jti, purpose="oauth_exchange", expires_at=expires_at))
+    db.commit()
+
+    payload = {"jti": jti, "user_id": user_id, "purpose": "oauth_exchange", "exp": expires_at}
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def consume_oauth_exchange_code(db: Session, *, code: str) -> int:
+    """Validate and redeem a single-use exchange code, returning the user_id."""
+    try:
+        payload = jwt.decode(code, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    except jwt.ExpiredSignatureError as exc:
+        raise OAuthStateError(OAUTH_STATE_EXPIRED_MESSAGE) from exc
+    except jwt.PyJWTError as exc:
+        raise OAuthStateError(OAUTH_STATE_INVALID_MESSAGE) from exc
+
+    if payload.get("purpose") != "oauth_exchange":
+        raise OAuthStateError(OAUTH_STATE_PURPOSE_MISMATCH_MESSAGE)
+
+    jti = payload.get("jti")
+    user_id = payload.get("user_id")
+    if not jti or user_id is None:
+        raise OAuthStateError(OAUTH_STATE_INVALID_MESSAGE)
+
+    state_row = db.query(OAuthState).filter(OAuthState.jti == jti).with_for_update().first()
+    if state_row is None:
+        raise OAuthStateError(OAUTH_STATE_INVALID_MESSAGE)
+
+    if state_row.purpose != "oauth_exchange":
+        raise OAuthStateError(OAUTH_STATE_PURPOSE_MISMATCH_MESSAGE)
+
+    if state_row.used_at is not None:
+        raise OAuthStateError(OAUTH_STATE_ALREADY_USED_MESSAGE)
+
+    now = datetime.now(timezone.utc)
+    if state_row.expires_at <= now:
+        raise OAuthStateError(OAUTH_STATE_EXPIRED_MESSAGE)
+
+    state_row.used_at = now
+    db.commit()
+
+    return int(user_id)

@@ -46,3 +46,7 @@ class ResetPasswordRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class OAuthExchangeRequest(BaseModel):
+    code: str

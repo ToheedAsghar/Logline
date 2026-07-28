@@ -237,6 +237,33 @@ class TestJWKSFetchFailure:
         with pytest.raises(GoogleAuthError):
             verify_google_id_token(token)
 
+    def test_malformed_json_response_surfaces_as_google_auth_error(self, monkeypatch):
+        class _MalformedJSONResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                raise ValueError("Invalid JSON string")
+
+        class _MalformedHTTPXClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def get(self, url):
+                return _MalformedJSONResponse()
+
+        monkeypatch.setattr(google_oauth, "HTTPXClient", _MalformedHTTPXClient)
+        token = _sign(_base_claims())
+
+        with pytest.raises(GoogleAuthError):
+            verify_google_id_token(token)
+
 
 class TestJWKSTTLCaching:
     def test_second_login_within_ttl_does_not_refetch(self, spy_jwks_client):
