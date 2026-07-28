@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.integration import IntegrationSource, IntegrationStatus
+from app.integrations.models import IntegrationSource, IntegrationStatus
 
 
 class IntegrationResponse(BaseModel):

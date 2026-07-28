@@ -3,12 +3,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.agent.tools.write_event import write_event
-from app.api.deps import get_current_user
+from app.auth.deps import get_current_user
+from app.auth.models import User
 from app.db.session import get_db
-from app.models.event import ConfidenceLevel
-from app.models.self_capture import SelfCapture
-from app.models.user import User
-from app.schemas.self_capture import SelfCaptureCreate, SelfCaptureResponse
+from app.self_captures import crud
+from app.self_captures.schemas import SelfCaptureCreate, SelfCaptureResponse
+from app.timeline.models import ConfidenceLevel
 
 router = APIRouter(prefix="/self_captures", tags=["self_captures"])
 
@@ -19,19 +19,19 @@ def create_self_capture(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    self_capture = SelfCapture(
-        user_id=current_user.id,
-        text=payload.text,
-        timestamp=payload.timestamp,
-        linked_gap_id=payload.linked_gap_id,
-    )
-    db.add(self_capture)
     try:
-        db.commit()
+        self_capture = crud.create_self_capture(
+            db,
+            user_id=current_user.id,
+            text=payload.text,
+            timestamp=payload.timestamp,
+            linked_gap_id=payload.linked_gap_id,
+        )
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="linked_gap_id does not reference an existing event")
-    db.refresh(self_capture)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="linked_gap_id does not reference an existing event"
+        )
 
     # A self-capture fills a gap, but gap-detection (flag_gap) only looks at
     # the `events` table -- without this, the same gap would reappear after a

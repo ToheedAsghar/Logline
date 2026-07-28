@@ -11,9 +11,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.agent.tools.flag_gap import FlagGapValidationError, flag_gap
 from app.agent.tools.write_event import write_event
+from app.auth.models import User
+from app.db import base  # noqa: F401 -- registers every domain's models before any User query
 from app.db.session import SessionLocal
-from app.models.event import Event
-from app.models.user import User
+from app.timeline.models import Event
 
 TEST_EMAIL = "flag-gap-test@example.com"
 

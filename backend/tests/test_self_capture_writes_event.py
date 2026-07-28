@@ -1,5 +1,5 @@
 """
-Regression test for the self-capture -> Event fix (app/api/self_captures.py).
+Regression test for the self-capture -> Event fix (app/self_captures/routers.py).
 
 Previously POST /self_captures only wrote to the self_captures table. Nothing
 marked that time range as "covered" in a way gap-detection (flag_gap, which
@@ -19,12 +19,12 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.api.self_captures import create_self_capture
+from app.auth.models import User
 from app.db.session import SessionLocal
-from app.models.event import ConfidenceLevel, Event
-from app.models.self_capture import SelfCapture
-from app.models.user import User
-from app.schemas.self_capture import SelfCaptureCreate
+from app.self_captures.models import SelfCapture
+from app.self_captures.routers import create_self_capture
+from app.self_captures.schemas import SelfCaptureCreate
+from app.timeline.models import ConfidenceLevel, Event
 
 TEST_EMAIL = "self-capture-writes-event-test@example.com"
 

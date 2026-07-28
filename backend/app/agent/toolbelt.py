@@ -29,7 +29,7 @@ from app.agent.tools.get_existing_events import GetExistingEventsInput, get_exis
 from app.agent.tools.write_draft_entry import DraftEntryInput, write_draft_entry
 from app.agent.tools.write_event import WriteEventInput, write_event
 from app.db.session import SessionLocal
-from app.models.integration import Integration, IntegrationSource
+from app.integrations.models import Integration, IntegrationSource
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 

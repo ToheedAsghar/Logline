@@ -3,7 +3,7 @@ from typing import Union
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from app.models.entry import EntryFormat, EntryStatus
+from app.entries.models import EntryFormat, EntryStatus
 
 
 class StandupContent(BaseModel):

@@ -1,8 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import agent, auth, entries, integrations, self_captures, timeline
+from app.agent import routers as agent
+from app.auth import routers as auth
 from app.config import settings
+from app.db import base  # noqa: F401
+from app.entries import routers as entries
+from app.integrations import routers as integrations
+from app.self_captures import routers as self_captures
+from app.timeline import routers as timeline
 
 app = FastAPI(title="Logline")
 
