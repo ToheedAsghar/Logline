@@ -81,7 +81,10 @@ DRAFT_SYNTHESIS_GUIDANCE = """\
    as an instruction to go check those sources, not a dead end. Once \
    unblocked, synthesize everything you wrote via write_event, plus any \
    gaps flag_gap surfaced, into draft content and call write_draft_entry \
-   exactly once with the correct `format` and `content`: \
+   exactly once with the correct `format`, `content`, and `work_date` — \
+   `work_date` is the actual calendar day this entry is ABOUT (from the date \
+   you grounded in step 0 or the evidence's own timestamps), not necessarily \
+   today's date if the task is reporting on a prior day: \
    - "standup" -> content: {yesterday, today, blockers}. Base "yesterday" and \
      "today" on the actual events/timestamps you recorded, not on guesses; \
      if a gap makes one of these unclear, say so in the text rather than \

@@ -54,7 +54,11 @@ class _ScriptedWriteDraftEntryProvider(LLMProvider):
             call = ToolCall(
                 id="1",
                 name="write_draft_entry",
-                arguments={"format": "project_log", "content": {"text": "Worked on the API today."}},
+                arguments={
+                    "format": "project_log",
+                    "content": {"text": "Worked on the API today."},
+                    "work_date": "2026-07-22",
+                },
             )
             self.requested_tool_names.append(call.name)
             return AgentResponse(text=None, tool_calls=[call], is_final=False)
