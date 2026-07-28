@@ -1,7 +1,7 @@
 """drop unused work_blocks table
 
 Revision ID: 6036065262b5
-Revises: ee68bb2ed4fb
+Revises: 6aff4d503b81
 Create Date: 2026-07-19 22:40:42.102837
 
 """
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '6036065262b5'
-down_revision: Union[str, None] = 'ee68bb2ed4fb'
+down_revision: Union[str, None] = '6aff4d503b81'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -17,7 +17,6 @@ auth failure and observes, with caplog, exactly what happens.
 import asyncio
 
 import aiosmtplib
-import pytest
 
 from app.auth.routers import _send_verification_email
 
@@ -47,8 +46,6 @@ class TestSendVerificationEmailSMTPFailure:
         monkeypatch.setattr("app.core.email.aiosmtplib.send", raise_connect_failure)
 
         with caplog.at_level("ERROR", logger="app.auth.routers"):
-            # Must not raise -- a failed background task should be logged and
-            # swallowed, never left to crash silently or propagate further.
             asyncio.run(_send_verification_email(user_id=456, email="other@example.com", token="anothertoken"))
 
         assert any("456" in r.message for r in caplog.records)

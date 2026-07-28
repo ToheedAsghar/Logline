@@ -11,7 +11,7 @@ from app.auth.constants import (
     EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, GOOGLE_LOGIN_STATE_PURPOSE, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
     TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE, TEXT_GOOGLE_SIGN_IN_FAILED, TEXT_LOGIN_EMAIL_NOT_VERIFIED,
     TEXT_LOGIN_INVALID_CREDENTIALS, TEXT_PASSWORD_RESET_SUBJECT, TEXT_PASSWORD_RESET_SUCCESSFULL,
-    TEXT_PASSWORD_TOKEN_ERROR,
+    TEXT_PASSWORD_TOKEN_ERROR, TEXT_SIGNUP_GENERIC_MESSAGE,
 )
 from app.auth.deps import get_current_user
 from app.auth.google_oauth import GoogleAuthError
@@ -26,7 +26,7 @@ from app.auth.security import (
     verify_password_reset_token,
 )
 from app.config import settings
-from app.core.email import get_email_provider
+from app.core.email import EmailDeliveryError, get_email_provider
 from app.core.oauth_state import OAuthStateError, consume_oauth_state, create_oauth_state
 from app.db.session import get_db
 
@@ -54,7 +54,7 @@ async def _send_verification_email(user_id: int, email: str, token: str) -> None
                 "This link expires in 24 hours."
             ),
         )
-    except Exception as exc:
+    except EmailDeliveryError as exc:
         logger.error(
             "Failed to send verification email to user_id=%s email=%s: %s", user_id, email, exc, exc_info=True
         )
@@ -82,7 +82,7 @@ async def _send_password_reset_email(user_id: int, email: str, token: str) -> No
                 "This link expires in 1 hour. If you didn't request this, you can ignore this email."
             ),
         )
-    except Exception as exc:
+    except EmailDeliveryError as exc:
         logger.error(
             "Failed to send password reset email to user_id=%s email=%s: %s", user_id, email, exc, exc_info=True
         )
@@ -98,18 +98,24 @@ def me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-@router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/signup", response_model=MessageResponse)
 def signup(payload: UserSignup, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Same enumeration principle as /forgot-password: the caller must not be able to
+    tell "email already registered" from "account created" by status, body, or shape.
+    """
+    generic_response = MessageResponse(message=TEXT_SIGNUP_GENERIC_MESSAGE)
+
     try:
         user = crud.create_user(
             db, email=payload.email, hashed_password=hash_password(payload.password), name=payload.name
         )
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+        return generic_response
 
     _issue_and_queue_verification_email(db, user, background_tasks)
-    return user
+    return generic_response
 
 
 @router.get("/verify-email", response_model=MessageResponse)
@@ -118,9 +124,7 @@ def verify_email(token: str, db: Session = Depends(get_db)):
         token_row = verify_email_verification_token(db, token)
     except EmailVerificationTokenError as exc:
         logger.info("Email verification failed: %s", exc.reason)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
 
     token_row.used_at = datetime.now(timezone.utc)
     user = db.query(User).filter(User.id == token_row.user_id).first()

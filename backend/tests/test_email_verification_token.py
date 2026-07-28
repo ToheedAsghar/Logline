@@ -110,9 +110,6 @@ class TestVerifyEmailVerificationToken:
         try:
             token = create_email_verification_token(db, real_db_user)
 
-            # -1 forces immediate expiry: itsdangerous's timestamp resolution
-            # is whole seconds, so age is 0 (not > 0) within the same
-            # second -- max_age must be negative to guarantee age > max_age.
             monkeypatch.setattr("app.auth.security.EMAIL_VERIFICATION_TOKEN_MAX_AGE_SECONDS", -1)
 
             with pytest.raises(EmailVerificationTokenError) as exc_info:

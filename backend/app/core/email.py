@@ -8,12 +8,21 @@ import aiosmtplib
 from app.config import settings
 
 
+class EmailDeliveryError(Exception):
+    """Raised by EmailProvider.send on delivery failure.
+
+    The provider-specific cause (SMTP auth failure, connection refused, a
+    future provider's own SDK error, ...) is wrapped in this so callers can
+    catch one bounded type without importing any concrete SDK.
+    """
+
+
 class EmailProvider(ABC):
     """Abstract boundary callers talk to -- never a concrete SDK."""
 
     @abstractmethod
     async def send(self, to: str, subject: str, body: str) -> None:
-        """Send a single email. Raises on delivery failure."""
+        """Send a single email. Raises EmailDeliveryError on delivery failure."""
 
 
 class SMTPProvider(EmailProvider):
@@ -31,13 +40,12 @@ class SMTPProvider(EmailProvider):
         message["Subject"] = subject
         message.set_content(body)
 
-        await aiosmtplib.send(
-            message,
-            hostname=self.host,
-            port=self.port,
-            username=self.username,
-            password=self.password,
-        )
+        try:
+            await aiosmtplib.send(
+                message, hostname=self.host, port=self.port, username=self.username, password=self.password
+            )
+        except aiosmtplib.SMTPException as exc:
+            raise EmailDeliveryError(str(exc)) from exc
 
 
 def get_email_provider() -> EmailProvider:

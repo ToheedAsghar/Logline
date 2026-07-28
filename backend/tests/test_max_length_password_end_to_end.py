@@ -9,8 +9,6 @@ test_login_rejects_unverified_user.py / test_reset_password.py.
 Hits the real test Postgres database (docker-compose, see backend/CLAUDE.md).
 """
 
-import asyncio
-
 import pytest
 from fastapi import BackgroundTasks
 
@@ -68,8 +66,9 @@ class TestMaximumLengthPasswordEndToEnd:
         try:
             payload = UserSignup(email=TEST_EMAIL, password=MAX_LENGTH_PASSWORD, name="Test User")
 
-            user = signup(payload, BackgroundTasks(), db=db)
+            signup(payload, BackgroundTasks(), db=db)
 
+            user = db.query(User).filter(User.email == TEST_EMAIL).first()
             assert user.email == TEST_EMAIL
             assert verify_password(MAX_LENGTH_PASSWORD, user.hashed_password)
         finally:
