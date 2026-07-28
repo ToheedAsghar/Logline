@@ -111,12 +111,10 @@ class OpenAIProvider(LLMProvider):
         if usage is None:
             return
         logger.info(
-            USAGE_LOG_FORMAT,
-            call_kind,
-            getattr(usage, "prompt_tokens", None),
-            getattr(usage, "completion_tokens", None),
+            USAGE_LOG_FORMAT, call_kind, getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None),
             getattr(usage, "total_tokens", None),
         )
+
 
     @staticmethod
     def _to_openai_tools(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
