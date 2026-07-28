@@ -11,7 +11,6 @@ from app.self_captures.models import SelfCapture
 from app.timeline.models import ConfidenceLevel, Event, WorkBlock
 from app.tracker_sync.models import LocalSession
 
-
 __all__ = [
     "Base",
     "User",
