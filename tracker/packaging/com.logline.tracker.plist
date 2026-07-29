@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template. install_agent.sh substitutes the __PLACEHOLDERS__ and installs the result to
+  ~/Library/LaunchAgents/com.logline.tracker.plist — do not load this file directly.
+
+  ProgramArguments points at the app bundle's executable rather than at `open -a` on
+  purpose. launchd must own the tracker process itself for KeepAlive to supervise it; an
+  `open` invocation would exit immediately and leave launchd restarting a launcher rather
+  than watching the tracker. Running the bundle executable directly and still resolving
+  window titles was verified empirically before this file was written.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.logline.tracker</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>__APP_EXECUTABLE__</string>
+	</array>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<!-- Without this Python block-buffers stdout because the log is not a TTY, so the
+	     run-loop output only lands in the file thousands of bytes late — leaving the
+	     agent undiagnosable in precisely the situation the logs exist for. -->
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PYTHONUNBUFFERED</key>
+		<string>1</string>
+	</dict>
+
+	<!-- Restart on crash, but not after a deliberate clean exit: a SIGKILLed or failing
+	     tracker comes back, while `launchctl bootout` and Ctrl-C stay stopped instead of
+	     being immediately undone. A second instance exits EX_TEMPFAIL (75), which counts
+	     as unsuccessful, so launchd keeps retrying until the instance holding the lock
+	     goes away — the intended behaviour for a transient conflict. -->
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+
+	<!-- Bounds the retry rate when something is persistently wrong (no venv, another
+	     instance holding the lock) so a failure loop cannot spin. -->
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+
+	<!-- Accessibility only exists in a GUI login session; loading this in any other
+	     session type would produce a tracker that records NULL titles forever. -->
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+
+	<!-- Not Background: that class is niced and subject to timer coalescing, which would
+	     stretch the 5s title poll and blur session boundaries. -->
+	<key>ProcessType</key>
+	<string>Interactive</string>
+
+	<key>StandardOutPath</key>
+	<string>__LOG_DIR__/tracker.log</string>
+	<key>StandardErrorPath</key>
+	<string>__LOG_DIR__/tracker.error.log</string>
+</dict>
+</plist>

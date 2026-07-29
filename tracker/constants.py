@@ -7,6 +7,41 @@ TITLE_POLL_INTERVAL_SECONDS = 5
 IDLE_CHECK_INTERVAL_SECONDS = 30
 IDLE_THRESHOLD_SECONDS = 4 * 60
 
+WATCHER_ERROR_MSG = "%s raised; tracker continues running"
+AX_GRANTED_MSG = "title watcher: Accessibility permission granted, tracking window titles."
+AX_NOT_GRANTED_MSG = (
+    "title watcher: Accessibility permission not granted — tracking at app level only "
+    "(window_title=NULL). Grant it in System Settings > Privacy & Security > Accessibility."
+)
+
+UNKNOWN_BUNDLE_ID = "unknown"
+UNKNOWN_APP_NAME = "Unknown"
+
+END_REASON_SWITCH = "switch"
+END_REASON_TITLE_CHANGE = "title_change"
+END_REASON_IDLE = "idle"
+END_REASON_SLEEP = "sleep"
+END_REASON_LOCK = "lock"
+END_REASON_QUIT = "quit"
+
+EVENT_KIND_SWITCH = "switch"
+EVENT_KIND_TITLE = "title"
+EVENT_KIND_IDLE_START = "idle_start"
+EVENT_KIND_IDLE_END = "idle_end"
+EVENT_KIND_SLEEP = "sleep"
+EVENT_KIND_WAKE = "wake"
+EVENT_KIND_LOCK = "lock"
+EVENT_KIND_UNLOCK = "unlock"
+
+AX_DOCUMENT_ATTRIBUTE = "AXDocument"
+
+TRACKER_RUNNING_MSG = "tracker running — watching for app switches. Ctrl+C to stop."
+REFUSING_TO_START_MSG = "tracker: refusing to start — %s"
+SEALED_SESSION_MSG = "sealed dangling session from previous run: %s (%s)"
+RESOLVER_ERROR_MSG = "context resolver failed for %s; continuing without context"
+AX_READ_ERROR_MSG = "AXDocument read failed for pid %s; continuing without it"
+RESOLVER_CAPABILITY_MSG = "context: %d resolver(s) registered (%s), AX document read wired in"
+
 KNOWN_TERMINAL_BUNDLE_IDS = frozenset(
     {
         "com.apple.Terminal",
@@ -25,6 +60,9 @@ SCREEN_UNLOCKED_NOTIFICATION = "com.apple.screenIsUnlocked"
 
 DB_DIR = Path.home() / "Library" / "Application Support" / "Logline"
 DB_PATH = DB_DIR / "tracker.db"
+LOCK_PATH = DB_DIR / "tracker.lock"
+
+EXIT_ALREADY_RUNNING = 75
 
 CONTEXT_COLUMNS = (("project_path", "TEXT"), ("context_detail", "TEXT"),)
 
