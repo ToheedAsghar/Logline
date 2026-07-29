@@ -80,12 +80,11 @@ def _apply_meet(result: ContextResult, window_title: Optional[str]) -> None:
 
 
 def resolve_generic(ctx: WindowContext, detect_meetings: bool = True) -> ContextResult:
-    """Fallback for every app without a dedicated resolver, and the shared base the others build on. Captures
-    the project/branch when the app exposes a document path, and normalizes any Meet-looking title.
+    """Fallback for every app without a dedicated resolver, and the shared base the others build on. Captures the
+    project/branch when the app exposes a document path, and normalizes any Meet-looking title.
 
-    `detect_meetings` defaults on because an unrecognized app may well be a browser, and missing a real
-    meeting costs more than an over-tagged one. Resolvers for apps that are definitely not browsers turn it
-    off.
+    `detect_meetings` defaults on because an unrecognized app may well be a browser, and missing a real meeting costs
+    more than an over-tagged one. Resolvers for apps that are definitely not browsers turn it off.
     """
     result = ContextResult()
     _apply_project(result, ctx.document_url)
@@ -139,8 +138,8 @@ def resolve_chrome(ctx: WindowContext) -> ContextResult:
 
 
 def resolve_firefox(ctx: WindowContext) -> ContextResult:
-    """Firefox lists AXDocument but returns kAXErrorNoValue on read, so only the title is available. Confirmed
-    live 2026-07-29 — the attribute being advertised is not evidence it has a value."""
+    """Firefox lists AXDocument but returns kAXErrorNoValue on read, so only the title is available. Confirmed live
+    2026-07-29 — the attribute being advertised is not evidence it has a value."""
     return _resolve_browser(ctx, exposes_url=False)
 
 

@@ -97,12 +97,20 @@ class TestForwardMigration:
         shutil.copy(DB_PATH, copy)
         conn = _open(copy)
         before = conn.execute("SELECT COUNT(*) c FROM sessions").fetchone()["c"]
+        non_null_before = (
+            conn.execute("SELECT COUNT(*) c FROM sessions WHERE project_path IS NOT NULL").fetchone()["c"]
+            if "project_path" in _columns(conn, "sessions")
+            else 0
+        )
 
         _migrate(conn)
 
         assert {"project_path", "context_detail"} <= _columns(conn, "sessions")
         assert conn.execute("SELECT COUNT(*) c FROM sessions").fetchone()["c"] == before
-        assert conn.execute("SELECT COUNT(*) c FROM sessions WHERE project_path IS NOT NULL").fetchone()["c"] == 0
+        assert (
+            conn.execute("SELECT COUNT(*) c FROM sessions WHERE project_path IS NOT NULL").fetchone()["c"]
+            == non_null_before
+        )
 
         session = Session(
             id="new-row", bundle_id="com.microsoft.VSCode", app_name="Code", window_title="db.py — logline",
