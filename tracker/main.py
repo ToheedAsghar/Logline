@@ -1,7 +1,10 @@
 """Entry point / run loop for the local activity tracker. Wiring only — no business logic."""
 
+from pathlib import Path
+
 from PyObjCTools import AppHelper
 
+from tracker import console
 from tracker.session.manager import SessionManager
 from tracker.storage import db
 from tracker.watchers.app_watcher import AppWatcher
@@ -15,36 +18,42 @@ def main():
     manager = SessionManager(conn)
 
     def on_app_activated(bundle_id, app_name):
-        print(f"switch: {bundle_id} ({app_name})")
+        print(console.event("switch", f"{app_name} ({bundle_id})"))
         idle_watcher.mark_active()
+        title_watcher.reset()
         manager.on_app_activated(bundle_id, app_name)
 
-    def on_title_changed(bundle_id, app_name, window_title):
-        print(f"title_change: {bundle_id} ({app_name}) — {window_title!r}")
+    def on_title_changed(bundle_id, app_name, window_title, context=None):
+        detail = dict(getattr(context, "detail", None) or {})
+        project = getattr(context, "project_path", None)
+        if project:
+            detail = {"project": Path(project).name, **detail}
+        headline = f"{app_name} {console.truncate(window_title or '')!r}"
+        print(console.event("title", headline, detail=detail))
         idle_watcher.resync()
-        manager.on_title_changed(bundle_id, app_name, window_title)
+        manager.on_title_changed(bundle_id, app_name, window_title, context=context)
 
     def on_idle_start(stopped_at):
-        print(f"idle_start: input stopped at {stopped_at.isoformat(timespec='seconds')}")
+        print(console.event("idle_start", f"input stopped at {stopped_at.strftime('%H:%M:%S')}"))
         manager.on_idle_start(stopped_at)
 
     def on_idle_end():
-        print("idle_end: input resumed")
+        print(console.event("idle_end", "input resumed"))
         manager.on_idle_end()
 
     def on_sleep():
-        print("sleep: system going to sleep")
+        print(console.event("sleep", "system going to sleep"))
         manager.on_sleep()
 
     def on_wake():
-        print("wake: system woke up")
+        print(console.event("wake", "system woke up"))
 
     def on_lock():
-        print("lock: screen locked")
+        print(console.event("lock", "screen locked"))
         manager.on_lock()
 
     def on_unlock():
-        print("unlock: screen unlocked")
+        print(console.event("unlock", "screen unlocked"))
 
     app_watcher = AppWatcher(callback=on_app_activated)
     title_watcher = TitleWatcher(callback=on_title_changed)

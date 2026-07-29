@@ -3,7 +3,7 @@ Any boundary event closes the open session and may open a new one."""
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from Foundation import NSTimer
 
@@ -33,6 +33,8 @@ class SessionManager:
         window_title: Optional[str] = None,
         started_at: Optional[str] = None,
         is_idle: bool = False,
+        project_path: Optional[str] = None,
+        context_detail: Optional[Dict[str, Any]] = None,
     ) -> None:
         when = started_at or _iso()
         self._open = Session(
@@ -43,8 +45,21 @@ class SessionManager:
             started_at=when,
             ended_at=when,
             is_idle=is_idle,
+            project_path=project_path,
+            context_detail=context_detail,
         )
         db.insert_open_session(self._conn, self._open)
+
+    def _carry_over(self) -> dict:
+        """The open session's identity, reused when a boundary reopens the same activity (idle start/end).
+        Context is carried too: an idle gap doesn't change which project was being worked on."""
+        return {
+            "bundle_id": self._open.bundle_id,
+            "app_name": self._open.app_name,
+            "window_title": self._open.window_title,
+            "project_path": self._open.project_path,
+            "context_detail": self._open.context_detail,
+        }
 
     def _close_open(self, end_reason: str, ended_at: Optional[str] = None) -> None:
         if self._open is None:
@@ -58,10 +73,25 @@ class SessionManager:
         self._close_open(end_reason="switch")
         self._open_session(bundle_id=bundle_id, app_name=app_name)
 
-    def on_title_changed(self, bundle_id: str, app_name: str, window_title: Optional[str]) -> None:
+    def on_title_changed(
+        self,
+        bundle_id: str,
+        app_name: str,
+        window_title: Optional[str],
+        context=None,
+    ) -> None:
+        """`context` is the ContextResult from TitleWatcher, kept as one optional argument so the watcher can
+        stay wired straight to this method. None means no context was resolvable — not an error."""
         was_idle = self._open.is_idle if self._open else False
         self._close_open(end_reason="title_change")
-        self._open_session(bundle_id=bundle_id, app_name=app_name, window_title=window_title, is_idle=was_idle)
+        self._open_session(
+            bundle_id=bundle_id,
+            app_name=app_name,
+            window_title=window_title,
+            is_idle=was_idle,
+            project_path=getattr(context, "project_path", None),
+            context_detail=(getattr(context, "detail", None) or None),
+        )
 
     def on_idle_start(self, stopped_at: datetime) -> None:
         """Closes the active session backdated to when input actually stopped, then
@@ -75,12 +105,10 @@ class SessionManager:
             self._open.is_idle = True
             db.update_open_session_is_idle(self._conn, self._open.id, True)
             return
-        bundle_id, app_name, window_title = self._open.bundle_id, self._open.app_name, self._open.window_title
+        carried = self._carry_over()
         backdated = _iso(stopped_at)
         self._close_open(end_reason="idle", ended_at=backdated)
-        self._open_session(
-            bundle_id=bundle_id, app_name=app_name, window_title=window_title, started_at=backdated, is_idle=True
-        )
+        self._open_session(started_at=backdated, is_idle=True, **carried)
 
     def on_sleep(self) -> None:
         """The system is about to sleep — close whatever's open immediately. Wake does
@@ -99,9 +127,9 @@ class SessionManager:
         user actually acted on a different app."""
         if self._open is None:
             return
-        bundle_id, app_name, window_title = self._open.bundle_id, self._open.app_name, self._open.window_title
+        carried = self._carry_over()
         self._close_open(end_reason="idle")
-        self._open_session(bundle_id=bundle_id, app_name=app_name, window_title=window_title)
+        self._open_session(**carried)
 
     def _on_heartbeat(self) -> None:
         """Keeps the open_session mirror's ended_at current so a crash seals a

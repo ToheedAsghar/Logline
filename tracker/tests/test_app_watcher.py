@@ -5,18 +5,18 @@ import sqlite3
 import pytest
 from AppKit import NSWorkspaceApplicationKey
 
-from tracker.constants import _CREATE_OPEN_SESSION, _CREATE_SESSIONS
+from tracker.constants import CREATE_OPEN_SESSION, CREATE_SESSIONS
 from tracker.session.manager import SessionManager
 from tracker.watchers.app_watcher import _ActivationObserver
 
 
 class _FakeApp:
     def __init__(self, bundle_id, name):
-        self._bundle_id = bundle_id
+        self.bundle_id = bundle_id
         self._name = name
 
     def bundleIdentifier(self):
-        return self._bundle_id
+        return self.bundle_id
 
     def localizedName(self):
         return self._name
@@ -41,8 +41,8 @@ def _make_observer(callback):
 def conn():
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
-    connection.execute(_CREATE_SESSIONS)
-    connection.execute(_CREATE_OPEN_SESSION)
+    connection.execute(CREATE_SESSIONS)
+    connection.execute(CREATE_OPEN_SESSION)
     connection.commit()
     yield connection
     connection.close()

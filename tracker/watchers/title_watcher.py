@@ -7,6 +7,7 @@ from AppKit import NSWorkspace
 from Foundation import NSTimer
 
 from tracker.constants import TITLE_POLL_INTERVAL_SECONDS
+from tracker.context import resolve_context
 from tracker.redaction import redact_title
 
 logger = logging.getLogger(__name__)
@@ -33,12 +34,13 @@ class TitleWatcher:
     """Notifies a callback whenever the frontmost window's (redacted) title differs
     from what was seen on the previous poll.
 
-    callback signature: callback(bundle_id: str, app_name: str, window_title: Optional[str]) -> None
+    callback signature:
+        callback(bundle_id: str, app_name: str, window_title: Optional[str], context: ContextResult) -> None
 
     Without Accessibility permission granted, degrades gracefully: window_title is
-    always None and tracking continues at the app level — never blocks or raises.
-    Permission is re-checked on every poll, so titles start flowing the moment it's
-    granted, without needing a restart.
+    always None, context is empty, and tracking continues at the app level — never
+    blocks or raises. Permission is re-checked on every poll, so titles start flowing
+    the moment it's granted, without needing a restart.
     """
 
     def __init__(self, callback):
@@ -63,6 +65,15 @@ class TitleWatcher:
             self._timer.invalidate()
             self._timer = None
 
+    def reset(self):
+        """Forces the next poll to emit even if the title is unchanged.
+
+        Called on app activation. Switching away and back inside one poll interval leaves the title
+        identical, so dedup would suppress the event — but the switch already opened a fresh session with
+        no context, and only a title_change carries context in.
+        """
+        self._last_key = UNSET
+
     def _poll(self):
         frontmost = NSWorkspace.sharedWorkspace().frontmostApplication()
         if frontmost is None:
@@ -70,11 +81,13 @@ class TitleWatcher:
         bundle_id = frontmost.bundleIdentifier() or "unknown"
         app_name = frontmost.localizedName() or "Unknown"
 
+        pid = frontmost.processIdentifier()
         title = None
-        if _is_trusted(prompt=False):
+        trusted = _is_trusted(prompt=False)
+        if trusted:
             try:
-                title = _focused_window_title(frontmost.processIdentifier())
-            except Exception:
+                title = _focused_window_title(pid)
+            except (ValueError, TypeError, RuntimeError, OSError, objc.error):
                 title = None
         title = redact_title(bundle_id, title)
 
@@ -82,7 +95,14 @@ class TitleWatcher:
         if key == self._last_key:
             return
         self._last_key = key
+
+        context = resolve_context(
+            bundle_id=bundle_id,
+            app_name=app_name,
+            window_title=title,
+            pid=pid if trusted else None,
+        )
         try:
-            self._callback(bundle_id=bundle_id, app_name=app_name, window_title=title)
-        except Exception:
+            self._callback(bundle_id=bundle_id, app_name=app_name, window_title=title, context=context)
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError, objc.error):
             logger.exception("TitleWatcher callback raised; tracker continues running")

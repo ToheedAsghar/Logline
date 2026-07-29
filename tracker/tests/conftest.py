@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from tracker.constants import _CREATE_OPEN_SESSION, _CREATE_SESSIONS
+from tracker.constants import CREATE_OPEN_SESSION, CREATE_SESSIONS
 
 
 @pytest.fixture
@@ -11,8 +11,8 @@ def conn():
     real on-disk database at DB_PATH."""
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
-    connection.execute(_CREATE_SESSIONS)
-    connection.execute(_CREATE_OPEN_SESSION)
+    connection.execute(CREATE_SESSIONS)
+    connection.execute(CREATE_OPEN_SESSION)
     connection.commit()
     yield connection
     connection.close()

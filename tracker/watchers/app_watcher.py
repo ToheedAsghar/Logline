@@ -26,7 +26,7 @@ class _ActivationObserver(NSObject):
             bundle_id = app.bundleIdentifier() or "unknown"
             app_name = app.localizedName() or "Unknown"
             self._callback(bundle_id=bundle_id, app_name=app_name)
-        except Exception:
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError, objc.error):
             logger.exception("AppWatcher callback raised; tracker continues running")
 
 

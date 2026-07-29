@@ -66,11 +66,11 @@ class IdleWatcher:
             stopped_at = datetime.now().astimezone() - timedelta(seconds=idle_for)
             try:
                 self._on_idle_start(stopped_at)
-            except Exception:
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError):
                 logger.exception("IdleWatcher on_idle_start callback raised; tracker continues running")
         elif self._is_idle and idle_for < self._idle_threshold_seconds:
             self._is_idle = False
             try:
                 self._on_idle_end()
-            except Exception:
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError):
                 logger.exception("IdleWatcher on_idle_end callback raised; tracker continues running")

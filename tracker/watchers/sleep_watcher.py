@@ -29,25 +29,25 @@ class _PowerObserver(NSObject):
     def willSleep_(self, notification):
         try:
             self._on_sleep()
-        except Exception:
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError, objc.error):
             logger.exception("SleepWatcher on_sleep callback raised; tracker continues running")
 
     def didWake_(self, notification):
         try:
             self._on_wake()
-        except Exception:
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError, objc.error):
             logger.exception("SleepWatcher on_wake callback raised; tracker continues running")
 
     def screenLocked_(self, notification):
         try:
             self._on_lock()
-        except Exception:
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError, objc.error):
             logger.exception("SleepWatcher on_lock callback raised; tracker continues running")
 
     def screenUnlocked_(self, notification):
         try:
             self._on_unlock()
-        except Exception:
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError, objc.error):
             logger.exception("SleepWatcher on_unlock callback raised; tracker continues running")
 
 
