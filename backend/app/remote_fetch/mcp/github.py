@@ -4,6 +4,7 @@ Supports fetching explicitly configured user repositories or discovering activit
 authored by the authenticated user.
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any, Callable, Optional
@@ -11,9 +12,9 @@ from typing import Any, Callable, Optional
 from mcp import ClientSession
 
 from app.integrations.config import get_user_github_repos
-from app.mcp.connection import mcp_result_to_json
 from app.remote_fetch.base import FetchedEvent, SourceFetchData, SourceFetcher
 from app.remote_fetch.constants import GITHUB_MAX_PAGES, GITHUB_PER_PAGE, MAX_EVENTS_PER_SOURCE
+from app.remote_fetch.mcp.connection import mcp_result_to_json
 from app.remote_fetch.parsing import first_non_empty_string, parse_iso_datetime, split_commit_message
 
 logger = logging.getLogger(__name__)
@@ -178,10 +179,13 @@ class GitHubFetcher(SourceFetcher):
             if not owner or not name:
                 logger.warning("github: skipping malformed repo identifier %r (want 'owner/repo')", repo)
                 continue
-            commit_events, commit_override = await self._fetch_repo_commits(session, owner, name, since)
+            (commit_events, commit_override), pr_events = await asyncio.gather(
+                self._fetch_repo_commits(session, owner, name, since),
+                self._fetch_repo_pull_requests(session, owner, name, since),
+            )
             events.extend(commit_events)
+            events.extend(pr_events)
             override = _combine_override(override, commit_override)
-            events.extend(await self._fetch_repo_pull_requests(session, owner, name, since))
         return events, override
 
     async def _fetch_repo_commits(

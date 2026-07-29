@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from mcp import ClientSession
 
-from app.mcp.connection import connect_mcp_source
+from app.remote_fetch.mcp.connection import connect_mcp_source
 
 logger = logging.getLogger(__name__)
 

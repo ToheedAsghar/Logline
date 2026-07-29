@@ -12,9 +12,9 @@ from typing import Any, Optional
 from mcp import ClientSession
 
 from app.integrations.config import get_mapped_remote_project_ids
-from app.mcp.connection import mcp_result_to_json
 from app.remote_fetch.base import FetchedEvent, SourceFetchData, SourceFetcher
 from app.remote_fetch.constants import JIRA_MAX_PAGES, JIRA_PAGE_LIMIT, MAX_EVENTS_PER_SOURCE
+from app.remote_fetch.mcp.connection import mcp_result_to_json
 from app.remote_fetch.parsing import first_non_empty_string, parse_iso_datetime
 
 logger = logging.getLogger(__name__)

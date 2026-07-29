@@ -1,4 +1,4 @@
-"""Fetches channel messages from Slack and converts them into normalized events.
+"""Provides Slack channel listing, ID resolution, and message fetch functions using MCP.
 
 Filters messages to include only those authored by the connected user and
 skips fetching when user identity resolution is unavailable.
@@ -6,15 +6,14 @@ skips fetching when user identity resolution is unavailable.
 
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 
 from mcp import ClientSession
 
 from app.integrations.config import get_mapped_remote_project_ids
-from app.mcp.connection import mcp_result_to_json
-from app.mcp.slack import list_member_slack_channels
 from app.remote_fetch.base import FetchedEvent, SourceFetchData, SourceFetcher
-from app.remote_fetch.constants import MAX_EVENTS_PER_SOURCE, SLACK_HISTORY_PAGE_LIMIT
+from app.remote_fetch.constants import MAX_EVENTS_PER_SOURCE, SLACK_CHANNELS_PAGE_LIMIT, SLACK_HISTORY_PAGE_LIMIT
+from app.remote_fetch.mcp.connection import mcp_result_to_json
 from app.remote_fetch.parsing import first_non_empty_string, parse_slack_ts
 
 logger = logging.getLogger(__name__)
@@ -32,6 +31,40 @@ IGNORED_MESSAGE_SUBTYPES = {
     "channel_unarchive",
     "bot_message",
 }
+
+
+async def iter_all_slack_channels(session: ClientSession) -> AsyncIterator[dict[str, Any]]:
+    cursor = None
+    while True:
+        args: dict[str, Any] = {"limit": SLACK_CHANNELS_PAGE_LIMIT}
+        if cursor:
+            args["cursor"] = cursor
+        result = await session.call_tool("slack_list_channels", arguments=args)
+        payload = mcp_result_to_json(result)
+        if not isinstance(payload, dict) or not payload.get("ok"):
+            return
+        for channel in payload.get("channels", []):
+            yield channel
+        cursor = (payload.get("response_metadata") or {}).get("next_cursor")
+        if not cursor:
+            return
+
+
+async def find_slack_channel_id(session: ClientSession, name: str) -> Optional[str]:
+    async for channel in iter_all_slack_channels(session):
+        if channel.get("name") == name:
+            return channel["id"]
+    return None
+
+
+async def list_member_slack_channels(session: ClientSession) -> list[dict[str, str]]:
+    """Return channels where the authenticated bot is a member."""
+
+    return [
+        {"id": channel["id"], "name": channel["name"]}
+        async for channel in iter_all_slack_channels(session)
+        if channel.get("is_member")
+    ]
 
 
 def resolve_connected_slack_user_id() -> Optional[str]:

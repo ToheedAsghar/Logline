@@ -10,12 +10,12 @@ from app.db.session import SessionLocal
 from app.auth.models import User
 from app.matching.models import RemoteEvent
 from app.remote_fetch.base import SourceUnavailable
-from app.remote_fetch.calendar import CalendarFetcher
-from app.remote_fetch.github import GitHubFetcher
-from app.remote_fetch.jira import JiraFetcher
+from app.remote_fetch.mcp.calendar import CalendarFetcher
+from app.remote_fetch.mcp.github import GitHubFetcher
+from app.remote_fetch.mcp.jira import JiraFetcher
+from app.remote_fetch.mcp.slack import SlackFetcher
 from app.remote_fetch.models import RemoteFetchState
 from app.remote_fetch.orchestrator import fetch_all_sources
-from app.remote_fetch.slack import SlackFetcher
 
 RUN_LIVE = os.environ.get("RUN_LIVE_REMOTE_FETCH_TESTS") == "1"
 live_only = pytest.mark.skipif(

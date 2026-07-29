@@ -9,9 +9,9 @@ from typing import Any, Optional
 
 from mcp import ClientSession
 
-from app.mcp.connection import mcp_result_to_json
 from app.remote_fetch.base import FetchedEvent, SourceFetchData, SourceFetcher
 from app.remote_fetch.constants import CALENDAR_LIST_EVENTS_PAGE_SIZE, MAX_EVENTS_PER_SOURCE
+from app.remote_fetch.mcp.connection import mcp_result_to_json
 from app.remote_fetch.parsing import first_non_empty_string, parse_iso_datetime, to_naive_utc_isoformat
 
 logger = logging.getLogger(__name__)
@@ -140,11 +140,12 @@ class CalendarFetcher(SourceFetcher):
 
 
 def _events_from_payload(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, list):
-        return [item for item in payload if isinstance(item, dict)]
+    """Extract raw event dicts from the list-events MCP response."""
+
     if isinstance(payload, dict):
-        for key in ("events", "items"):
-            value = payload.get(key)
-            if isinstance(value, list):
-                return [item for item in value if isinstance(item, dict)]
+        items = payload.get("items") or payload.get("events") or []
+        if isinstance(items, list):
+            return [item for item in items if isinstance(item, dict)]
+    elif isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
     return []
