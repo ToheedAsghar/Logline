@@ -65,20 +65,14 @@ class EntryTag(str, enum.Enum):
 ReminderSource = Literal["github", "jira", "slack", "calendar"]
 
 
-# Spelled-out cardinals, assembled so multi-word tens ("forty-five") match as one quantity rather than
-# relying on the trailing word ("five") happening to match on its own.
 _ONES = r"one|two|three|four|five|six|seven|eight|nine"
 _TEENS = r"ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen"
 _TENS = r"twenty|thirty|forty|fourty|fifty|sixty|seventy|eighty|ninety"
 # Order matters: the compound tens form is tried before the bare ones so "forty-five" is not read as "forty".
 _NUMBER_WORD = rf"(?:{_TENS})(?:[\s-](?:{_ONES}))?|{_TEENS}|{_ONES}"
 
-# Named periods that stand in for a duration when claimed whole ("all morning", "the entire afternoon").
 _PERIOD = r"(?:day|morning|afternoon|evening)"
 
-# "spend"/"spending" are also nouns in this product's own vocabulary ("ad spend", "marketing spend" under the
-# Marketing Campaigns and Account Management tags), so the verb forms are matched by context rather than by the
-# bare word. "spent" has no noun sense and is matched unconditionally.
 _VERBAL_SUBJECT = r"(?:did|didn't|do|don't|does|doesn't|you|i|we|they|to|would|should|could|will|can|might)"
 
 DURATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
