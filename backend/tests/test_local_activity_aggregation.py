@@ -9,7 +9,7 @@ Coverage follows the two things that must never happen: merging across
 projects, and merging across a gap of MERGE_GAP_THRESHOLD_MINUTES or more.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.local_activity.aggregation import LocalActivityBlock, RawSessionRow, aggregate_local_activity
 from app.local_activity.constants import MERGE_GAP_THRESHOLD_MINUTES
@@ -173,3 +173,40 @@ class TestLargeGapWithinSameProject:
         assert len(blocks) == 2
         assert blocks[0].duration == timedelta(minutes=30)
         assert blocks[1].duration == timedelta(minutes=30)
+
+
+class TestTimezoneAwareDatetimes:
+    """Every other test above uses naive datetimes for brevity, but
+    tracker_sync's real rows come from a DateTime(timezone=True) column, so
+    they'll be timezone-aware in production. Comparing an aware and a naive
+    datetime raises TypeError, so this confirms merging (and the strict gap
+    boundary) works correctly end to end when every datetime involved is
+    aware, not just that it happens to work with naive ones."""
+
+    @staticmethod
+    def _aware_at(minute_offset: int) -> datetime:
+        return datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc) + timedelta(minutes=minute_offset)
+
+    def test_aware_rows_with_small_gap_merge_into_one_block(self):
+        rows = [
+            _row(PROJECT_A, "vscode", self._aware_at(0), self._aware_at(10)),
+            _row(PROJECT_A, "terminal", self._aware_at(12), self._aware_at(20)),
+        ]
+
+        blocks = aggregate_local_activity(rows)
+
+        assert len(blocks) == 1
+        assert blocks[0].start_time == self._aware_at(0)
+        assert blocks[0].end_time == self._aware_at(20)
+
+    def test_aware_rows_with_gap_of_exactly_threshold_split(self):
+        first_end = self._aware_at(0)
+        second_start = first_end + timedelta(minutes=MERGE_GAP_THRESHOLD_MINUTES)
+        rows = [
+            _row(PROJECT_A, "vscode", self._aware_at(-10), first_end),
+            _row(PROJECT_A, "terminal", second_start, second_start + timedelta(minutes=5)),
+        ]
+
+        blocks = aggregate_local_activity(rows)
+
+        assert len(blocks) == 2

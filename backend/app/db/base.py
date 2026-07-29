@@ -7,6 +7,7 @@ from app.auth.models import User
 from app.db.session import Base
 from app.entries.models import Entry, EntryFormat, EntryStatus
 from app.integrations.models import Integration, IntegrationSource, IntegrationStatus, OAuthToken
+from app.matching.models import ProjectMapping, RemoteEvent
 from app.self_captures.models import SelfCapture
 from app.timeline.models import ConfidenceLevel, Event, WorkBlock
 from app.tracker_sync.models import LocalSession
@@ -25,5 +26,7 @@ __all__ = [
     "EntryFormat",
     "EntryStatus",
     "SelfCapture",
+    "RemoteEvent",
+    "ProjectMapping",
     "LocalSession",
 ]
