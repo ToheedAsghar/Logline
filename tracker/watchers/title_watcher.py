@@ -6,7 +6,10 @@ import ApplicationServices as AS
 from AppKit import NSWorkspace
 from Foundation import NSTimer
 
-from tracker.constants import TITLE_POLL_INTERVAL_SECONDS
+from tracker.constants import (
+    AX_GRANTED_MSG, AX_NOT_GRANTED_MSG, TITLE_POLL_INTERVAL_SECONDS, UNKNOWN_APP_NAME, UNKNOWN_BUNDLE_ID,
+    WATCHER_ERROR_MSG,
+)
 from tracker.context import resolve_context
 from tracker.redaction import redact_title
 
@@ -31,16 +34,15 @@ def _focused_window_title(pid: int):
 
 
 class TitleWatcher:
-    """Notifies a callback whenever the frontmost window's (redacted) title differs
-    from what was seen on the previous poll.
+    """Notifies a callback whenever the frontmost window's (redacted) title differs from what was seen on the
+    previous poll.
 
     callback signature:
         callback(bundle_id: str, app_name: str, window_title: Optional[str], context: ContextResult) -> None
 
-    Without Accessibility permission granted, degrades gracefully: window_title is
-    always None, context is empty, and tracking continues at the app level — never
-    blocks or raises. Permission is re-checked on every poll, so titles start flowing
-    the moment it's granted, without needing a restart.
+    Without Accessibility permission granted, degrades gracefully: window_title is always None, context is empty, and
+    tracking continues at the app level — never blocks or raises. Permission is re-checked on every poll, so titles
+    start flowing the moment it's granted, without needing a restart.
     """
 
     def __init__(self, callback):
@@ -50,12 +52,9 @@ class TitleWatcher:
 
     def start(self):
         if _is_trusted(prompt=True):
-            print("title watcher: Accessibility permission granted, tracking window titles.")
+            print(AX_GRANTED_MSG)
         else:
-            print(
-                "title watcher: Accessibility permission not granted — tracking at app level only "
-                "(window_title=NULL). Grant it in System Settings > Privacy & Security > Accessibility."
-            )
+            print(AX_NOT_GRANTED_MSG)
         self._timer = NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
             TITLE_POLL_INTERVAL_SECONDS, True, lambda timer: self._poll()
         )
@@ -68,9 +67,9 @@ class TitleWatcher:
     def reset(self):
         """Forces the next poll to emit even if the title is unchanged.
 
-        Called on app activation. Switching away and back inside one poll interval leaves the title
-        identical, so dedup would suppress the event — but the switch already opened a fresh session with
-        no context, and only a title_change carries context in.
+        Called on app activation. Switching away and back inside one poll interval leaves the title identical, so dedup
+        would suppress the event — but the switch already opened a fresh session with no context, and only a
+        title_change carries context in.
         """
         self._last_key = UNSET
 
@@ -78,8 +77,8 @@ class TitleWatcher:
         frontmost = NSWorkspace.sharedWorkspace().frontmostApplication()
         if frontmost is None:
             return
-        bundle_id = frontmost.bundleIdentifier() or "unknown"
-        app_name = frontmost.localizedName() or "Unknown"
+        bundle_id = frontmost.bundleIdentifier() or UNKNOWN_BUNDLE_ID
+        app_name = frontmost.localizedName() or UNKNOWN_APP_NAME
 
         pid = frontmost.processIdentifier()
         title = None
@@ -87,7 +86,7 @@ class TitleWatcher:
         if trusted:
             try:
                 title = _focused_window_title(pid)
-            except (ValueError, TypeError, RuntimeError, OSError, objc.error):
+            except Exception:
                 title = None
         title = redact_title(bundle_id, title)
 
@@ -104,5 +103,5 @@ class TitleWatcher:
         )
         try:
             self._callback(bundle_id=bundle_id, app_name=app_name, window_title=title, context=context)
-        except (ValueError, TypeError, KeyError, RuntimeError, OSError, objc.error):
-            logger.exception("TitleWatcher callback raised; tracker continues running")
+        except Exception:
+            logger.exception(WATCHER_ERROR_MSG, "TitleWatcher callback")

@@ -9,6 +9,8 @@ from typing import Optional
 
 import ApplicationServices as AS
 
+from tracker.constants import AX_DOCUMENT_ATTRIBUTE, AX_READ_ERROR_MSG
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,10 +23,10 @@ def focused_document_url(pid: int) -> Optional[str]:
         err, window_ref = AS.AXUIElementCopyAttributeValue(app_element, AS.kAXFocusedWindowAttribute, None)
         if err != AS.kAXErrorSuccess or window_ref is None:
             return None
-        err, document = AS.AXUIElementCopyAttributeValue(window_ref, "AXDocument", None)
+        err, document = AS.AXUIElementCopyAttributeValue(window_ref, AX_DOCUMENT_ATTRIBUTE, None)
         if err != AS.kAXErrorSuccess or not document:
             return None
         return str(document)
-    except (ValueError, TypeError, RuntimeError, OSError, objc.error):
-        logger.debug("AXDocument read failed for pid %s; continuing without it", pid, exc_info=True)
+    except Exception:
+        logger.debug(AX_READ_ERROR_MSG, pid, exc_info=True)
         return None
