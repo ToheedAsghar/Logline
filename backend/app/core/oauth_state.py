@@ -66,6 +66,21 @@ class OAuthStateError(Exception):
         super().__init__(message)
 
 
+def cleanup_expired_oauth_states(db: Session) -> int:
+    """Delete all expired oauth_states rows (both used and abandoned/bounced).
+
+    Returns the number of deleted rows.
+    """
+    now = datetime.now(timezone.utc)
+    deleted = (
+        db.query(OAuthState)
+        .filter(OAuthState.expires_at < now)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return deleted
+
+
 def create_oauth_state(db: Session, *, purpose: str) -> str:
     """Issue a signed, single-use state token for `purpose`.
 
@@ -74,6 +89,8 @@ def create_oauth_state(db: Session, *, purpose: str) -> str:
     do that, since a JWT is stateless and would otherwise be replayable
     until it expires.
     """
+    cleanup_expired_oauth_states(db)
+
     jti = uuid.uuid4().hex
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(seconds=OAUTH_STATE_TTL_SECONDS)
@@ -123,6 +140,8 @@ def consume_oauth_state(db: Session, *, token: str, expected_purpose: str) -> No
 
 def create_oauth_exchange_code(db: Session, *, user_id: int) -> str:
     """Issue a short-lived, single-use token that the frontend can exchange for a JWT access token."""
+    cleanup_expired_oauth_states(db)
+
     jti = uuid.uuid4().hex
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(seconds=60)
