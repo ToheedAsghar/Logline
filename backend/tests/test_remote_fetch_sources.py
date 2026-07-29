@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.remote_fetch.calendar import CalendarFetcher
 from app.remote_fetch.constants import CALENDAR_LIST_EVENTS_PAGE_SIZE, GITHUB_MAX_PAGES, GITHUB_PER_PAGE
-from app.remote_fetch.github import GitHubFetcher
-from app.remote_fetch.jira import JiraFetcher
-from app.remote_fetch.slack import SlackFetcher, resolve_connected_slack_user_id
+from app.remote_fetch.mcp.calendar import CalendarFetcher
+from app.remote_fetch.mcp.github import GitHubFetcher
+from app.remote_fetch.mcp.jira import JiraFetcher
+from app.remote_fetch.mcp.slack import SlackFetcher, resolve_connected_slack_user_id
 
 SINCE = datetime(2026, 7, 1, tzinfo=timezone.utc)
 
@@ -83,7 +83,7 @@ class TestGitHubFetcher:
         return asyncio.run(GitHubFetcher().fetch_with_session(session, user_id, since)), session
 
     def test_commit_summary_is_subject_and_description_is_body(self, monkeypatch):
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
         data, _ = self._fetch({"list_commits": [GITHUB_COMMIT], "list_pull_requests": []})
 
         commit = next(event for event in data.events if event.event_type == "commit")
@@ -94,7 +94,7 @@ class TestGitHubFetcher:
         assert "treat a missing identity" not in commit.description
 
     def test_commit_without_a_body_has_no_description(self, monkeypatch):
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
         data, _ = self._fetch({"list_commits": [GITHUB_COMMIT_NO_BODY], "list_pull_requests": []})
 
         commit = next(event for event in data.events if event.event_type == "commit")
@@ -103,13 +103,13 @@ class TestGitHubFetcher:
         assert commit.description is None
 
     def test_remote_project_id_is_the_repo_we_queried(self, monkeypatch):
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
         data, _ = self._fetch({"list_commits": [GITHUB_COMMIT], "list_pull_requests": [GITHUB_PULL_REQUEST]})
 
         assert {event.remote_project_id for event in data.events} == {"Toheed/logline"}
 
     def test_commit_occurred_at_uses_committer_date(self, monkeypatch):
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
         data, _ = self._fetch({"list_commits": [GITHUB_COMMIT], "list_pull_requests": []})
 
         commit = next(event for event in data.events if event.event_type == "commit")
@@ -117,7 +117,7 @@ class TestGitHubFetcher:
         assert commit.external_id == "a1b2c3d4e5f6"
 
     def test_pull_request_summary_is_structural_and_description_is_the_body(self, monkeypatch):
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
         data, _ = self._fetch({"list_commits": [], "list_pull_requests": [GITHUB_PULL_REQUEST]})
 
         pull_request = next(event for event in data.events if event.event_type == "pull_request")
@@ -129,7 +129,7 @@ class TestGitHubFetcher:
         assert pull_request.occurred_at == datetime(2026, 7, 22, 16, 45, tzinfo=timezone.utc)
 
     def test_merged_pull_request_reports_merged_not_closed(self, monkeypatch):
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
         merged = {**GITHUB_PULL_REQUEST, "state": "closed", "merged_at": "2026-07-22T16:45:00Z"}
         data, _ = self._fetch({"list_commits": [], "list_pull_requests": [merged]})
 
@@ -137,14 +137,14 @@ class TestGitHubFetcher:
         assert "[merged]" in pull_request.summary
 
     def test_pull_requests_older_than_since_are_dropped(self, monkeypatch):
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
         stale = {**GITHUB_PULL_REQUEST, "number": 7, "updated_at": "2026-06-01T10:00:00Z"}
         data, _ = self._fetch({"list_commits": [], "list_pull_requests": [stale]})
 
         assert data.events == []
 
     def test_since_is_passed_to_list_commits(self, monkeypatch):
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
         _, session = self._fetch({"list_commits": [], "list_pull_requests": []})
 
         commit_call = next(
@@ -157,7 +157,7 @@ class TestGitHubFetcher:
     def test_discovery_path_scopes_search_to_the_authenticated_user(self, monkeypatch):
         """With no configured repos, scope comes from get_me -- never unscoped."""
 
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: None)
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: None)
         search_commit = {
             **GITHUB_COMMIT,
             "repository": {"full_name": "Arbisoft/other-repo"},
@@ -183,7 +183,7 @@ class TestGitHubFetcher:
         assert data.events[0].remote_project_id == "Arbisoft/other-repo"
 
     def test_discovery_recovers_repo_from_repository_url(self, monkeypatch):
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: None)
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: None)
         pr_hit = {
             **GITHUB_PULL_REQUEST,
             "repository_url": "https://api.github.com/repos/Arbisoft/logline",
@@ -200,7 +200,7 @@ class TestGitHubFetcher:
         assert data.events[0].remote_project_id == "Arbisoft/logline"
 
     def test_no_login_means_no_events_rather_than_an_unscoped_search(self, monkeypatch):
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: None)
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: None)
         session = _session_returning({"get_me": {}})
 
         data = asyncio.run(GitHubFetcher().fetch_with_session(session, 1, SINCE))
@@ -215,7 +215,7 @@ class TestGitHubFetcher:
         `_fetch_repo_commits`.
         """
 
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
         base = datetime(2026, 7, 20, 9, 0, tzinfo=timezone.utc)
         full_page = [
             {
@@ -237,7 +237,7 @@ class TestGitHubFetcher:
         assert data.fetched_through_override == base
 
     def test_a_single_partial_page_of_commits_does_not_hold_the_mark_back(self, monkeypatch):
-        monkeypatch.setattr("app.remote_fetch.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
         data, _ = self._fetch({"list_commits": [GITHUB_COMMIT], "list_pull_requests": []})
 
         assert data.fetched_through_override is None
@@ -262,7 +262,7 @@ JIRA_ISSUE = {
 class TestJiraFetcher:
     def _fetch(self, issues, user_id=1, since=SINCE, mapped=None, monkeypatch=None):
         monkeypatch.setattr(
-            "app.remote_fetch.jira.get_mapped_remote_project_ids", lambda user_id, source: mapped or []
+            "app.remote_fetch.mcp.jira.get_mapped_remote_project_ids", lambda user_id, source: mapped or []
         )
         session = _session_returning({"jira_search": {"issues": issues}})
         return asyncio.run(JiraFetcher().fetch_with_session(session, user_id, since)), session
@@ -370,11 +370,11 @@ CONNECTED_SLACK_USER_ID = "U04TOHEED"
 class TestSlackFetcher:
     def _fetch(self, messages, monkeypatch, mapped=None, since=SINCE, connected_user_id=CONNECTED_SLACK_USER_ID):
         monkeypatch.setattr(
-            "app.remote_fetch.slack.get_mapped_remote_project_ids",
+            "app.remote_fetch.mcp.slack.get_mapped_remote_project_ids",
             lambda user_id, source: mapped or ["C123LOGLINE"],
         )
         monkeypatch.setattr(
-            "app.remote_fetch.slack.resolve_connected_slack_user_id", lambda: connected_user_id
+            "app.remote_fetch.mcp.slack.resolve_connected_slack_user_id", lambda: connected_user_id
         )
         session = _session_returning({"slack_get_channel_history": {"ok": True, "messages": messages}})
         return asyncio.run(SlackFetcher().fetch_with_session(session, 1, since)), session
@@ -415,11 +415,11 @@ class TestSlackFetcher:
 
     def test_unreadable_channel_is_skipped_not_fatal(self, monkeypatch):
         monkeypatch.setattr(
-            "app.remote_fetch.slack.get_mapped_remote_project_ids",
+            "app.remote_fetch.mcp.slack.get_mapped_remote_project_ids",
             lambda user_id, source: ["C_PRIVATE"],
         )
         monkeypatch.setattr(
-            "app.remote_fetch.slack.resolve_connected_slack_user_id",
+            "app.remote_fetch.mcp.slack.resolve_connected_slack_user_id",
             lambda: CONNECTED_SLACK_USER_ID,
         )
         session = _session_returning(
@@ -451,7 +451,7 @@ class TestSlackFetcher:
         """
 
         monkeypatch.setattr(
-            "app.remote_fetch.slack.get_mapped_remote_project_ids",
+            "app.remote_fetch.mcp.slack.get_mapped_remote_project_ids",
             lambda user_id, source: ["C123LOGLINE"],
         )
         session = _session_returning({"slack_get_channel_history": {"ok": True, "messages": [SLACK_MESSAGE]}})
@@ -651,7 +651,7 @@ class TestEveryFetcherProducesSchemaShapedEvents:
     def test_required_columns_are_populated(self, fetcher_name, monkeypatch):
         if fetcher_name == "github":
             monkeypatch.setattr(
-                "app.remote_fetch.github.get_user_github_repos", lambda user_id: ["Toheed/logline"]
+                "app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: ["Toheed/logline"]
             )
             session = _session_returning(
                 {"list_commits": [GITHUB_COMMIT], "list_pull_requests": [GITHUB_PULL_REQUEST]}
@@ -659,17 +659,17 @@ class TestEveryFetcherProducesSchemaShapedEvents:
             fetcher = GitHubFetcher()
         elif fetcher_name == "jira":
             monkeypatch.setattr(
-                "app.remote_fetch.jira.get_mapped_remote_project_ids", lambda user_id, source: []
+                "app.remote_fetch.mcp.jira.get_mapped_remote_project_ids", lambda user_id, source: []
             )
             session = _session_returning({"jira_search": {"issues": [JIRA_ISSUE]}})
             fetcher = JiraFetcher()
         elif fetcher_name == "slack":
             monkeypatch.setattr(
-                "app.remote_fetch.slack.get_mapped_remote_project_ids",
+                "app.remote_fetch.mcp.slack.get_mapped_remote_project_ids",
                 lambda user_id, source: ["C123LOGLINE"],
             )
             monkeypatch.setattr(
-                "app.remote_fetch.slack.resolve_connected_slack_user_id",
+                "app.remote_fetch.mcp.slack.resolve_connected_slack_user_id",
                 lambda: CONNECTED_SLACK_USER_ID,
             )
             session = _session_returning(
