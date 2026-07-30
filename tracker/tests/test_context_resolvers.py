@@ -152,13 +152,24 @@ class TestUnknownApps:
 
 class TestResolverIsolation:
     def test_resolver_exception_degrades_to_empty(self, monkeypatch):
-        """A broken resolver must never take the tracker down."""
+        """Expected environmental failures (e.g. OSError / AX bridge) degrade to empty context."""
         import tracker.context as context_pkg
 
         def boom(ctx):
-            raise RuntimeError("resolver exploded")
+            raise OSError("AX read failed")
 
         monkeypatch.setattr(context_pkg, "resolver_for", lambda bundle_id: boom)
         result = resolve_context("com.any.App", "App", "title", document_url=None)
         assert result.project_path is None
         assert result.detail == {}
+
+    def test_programming_error_in_resolver_surfaces(self, monkeypatch):
+        """Programming errors in resolvers (KeyError, TypeError, etc.) must surface."""
+        import tracker.context as context_pkg
+
+        def boom(ctx):
+            raise KeyError("missing_key")
+
+        monkeypatch.setattr(context_pkg, "resolver_for", lambda bundle_id: boom)
+        with pytest.raises(KeyError):
+            resolve_context("com.any.App", "App", "title", document_url=None)

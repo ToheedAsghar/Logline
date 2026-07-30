@@ -8,6 +8,7 @@ import logging
 from typing import Optional
 
 import ApplicationServices as AS
+import objc
 
 from tracker.constants import AX_DOCUMENT_ATTRIBUTE, AX_READ_ERROR_MSG
 
@@ -27,6 +28,6 @@ def focused_document_url(pid: int) -> Optional[str]:
         if err != AS.kAXErrorSuccess or not document:
             return None
         return str(document)
-    except Exception:
+    except (objc.error, OSError):
         logger.debug(AX_READ_ERROR_MSG, pid, exc_info=True)
         return None
