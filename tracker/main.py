@@ -4,6 +4,7 @@ import signal
 import sys
 from pathlib import Path
 
+import libdispatch
 from PyObjCTools import AppHelper
 
 from tracker import console
@@ -19,6 +20,24 @@ from tracker.watchers.app_watcher import AppWatcher
 from tracker.watchers.idle_watcher import IdleWatcher
 from tracker.watchers.sleep_watcher import SleepWatcher
 from tracker.watchers.title_watcher import TitleWatcher
+
+
+def _install_sigterm_runloop_source():
+    """launchd stops agents with SIGTERM. A plain signal.signal() handler only runs when the interpreter executes
+    bytecode, but runConsoleEventLoop blocks the main thread inside CFRunLoop (mach_msg), so the handler sits pending
+    until launchd escalates to SIGKILL and strands open sessions. A GCD signal source delivers a block on the main
+    queue, which the run loop drains immediately — stopEventLoop fires at delivery time and the `finally` path runs.
+    Returns the source; the caller MUST hold a reference or GCD will deallocate it."""
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    source = libdispatch.dispatch_source_create(
+        libdispatch.DISPATCH_SOURCE_TYPE_SIGNAL,
+        signal.SIGTERM,
+        0,
+        libdispatch.dispatch_get_main_queue(),
+    )
+    libdispatch.dispatch_source_set_event_handler(source, AppHelper.stopEventLoop)
+    libdispatch.dispatch_resume(source)
+    return source
 
 
 def main():
@@ -89,10 +108,7 @@ def _run():
     sleep_watcher.start()
     manager.start_heartbeat()
 
-    # launchd stops an agent with SIGTERM, whose default action kills the process outright
-    # and strands the open session for the next start to seal. Stopping the run loop instead
-    # lets the shutdown path in the `finally` below run.
-    signal.signal(signal.SIGTERM, lambda *_: AppHelper.stopEventLoop())
+    sigterm_source = _install_sigterm_runloop_source()
 
     print(TRACKER_RUNNING_MSG)
     try:
@@ -100,6 +116,7 @@ def _run():
     except KeyboardInterrupt:
         pass
     finally:
+        del sigterm_source
         manager.stop_heartbeat()
         sleep_watcher.stop()
         idle_watcher.stop()

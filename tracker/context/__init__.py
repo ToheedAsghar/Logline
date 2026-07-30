@@ -39,8 +39,8 @@ def resolve_context(
     Accessibility read (tests do this); otherwise it is read from `pid` when one is given.
 
     Redacted apps resolve to empty context, checked here rather than at the call site so a future caller
-    cannot reintroduce the leak. Never raises: an AX read or resolver blowing up degrades to empty context
-    rather than taking down the tracker.
+    cannot reintroduce the leak. Degrades to empty context on expected AX read or OS environmental failures
+    (objc.error, OSError); programming errors in resolvers raise.
     """
     if is_redacted(bundle_id):
         return ContextResult()
@@ -59,6 +59,6 @@ def resolve_context(
             document_url=document_url,
         )
         return resolver_for(bundle_id)(ctx)
-    except RESOLVER_RESCUE_EXCEPTIONS:
+    except (objc.error, OSError):
         logger.exception(RESOLVER_ERROR_MSG, bundle_id)
         return ContextResult()
