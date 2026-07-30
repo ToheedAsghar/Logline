@@ -84,10 +84,10 @@ fix:
 # Re-aggregate existing findings without re-reviewing:
 
 report:
-	python3 scripts/render_review.py
+	python3 ~/.gemini/config/skills/review-all/scripts/render_review.py
 
 blockers:
-	python3 scripts/render_review.py --important
+	python3 ~/.gemini/config/skills/review-all/scripts/render_review.py --important
 
 # ---------- setup ----------
 
