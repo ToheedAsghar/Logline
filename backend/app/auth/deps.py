@@ -1,3 +1,5 @@
+import hmac
+
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -33,33 +35,33 @@ def get_current_user(
     return user
 
 
-def get_tracker_user(
+def get_tracker_device(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
     db: Session = Depends(get_db),
-) -> User:
-    """Authenticates a local tracker daemon using a long-lived device token.
-    
-    This is used by the tracker sync endpoint instead of the standard JWT-based
-    `get_current_user` since the tracker runs unattended and doesn't have a UI to
-    complete a web login flow.
+) -> TrackerDevice:
+    """Authenticates a local tracker daemon using a long-lived device token. Returns the authenticated TrackerDevice
+    model. Uses constant-time comparison to verify the device secret token against timing attacks.
     """
     unauthorized = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid tracker device token",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     try:
         device_id_str, secret = credentials.credentials.split(":", 1)
     except ValueError:
         raise unauthorized
 
     device = db.query(TrackerDevice).filter(TrackerDevice.device_id == device_id_str).first()
-    if device is None or device.token != secret:
+    if device is None or not hmac.compare_digest(device.token, secret):
         raise unauthorized
 
-    user = db.query(User).filter(User.id == device.user_id).first()
-    if user is None:
-        raise unauthorized
+    return device
 
-    return user
+
+def get_tracker_user(
+    device: TrackerDevice = Depends(get_tracker_device),
+) -> User:
+    """Convenience dependency returning the User owning the authenticated tracker device."""
+    return device.user
