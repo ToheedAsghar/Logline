@@ -41,7 +41,6 @@ def upsert_sessions(db: Session, rows: list[dict]) -> tuple[set[UUID], set[UUID]
         ]),
     ).returning(LocalSession.id, literal_column("(xmax = 0)").label("inserted"))
     result = db.execute(stmt)
-    db.commit()
 
     inserted_ids: set[UUID] = set()
     conflicted_ids: set[UUID] = set()

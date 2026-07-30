@@ -9,6 +9,7 @@ from app.entries import routers as entries
 from app.integrations import routers as integrations
 from app.self_captures import routers as self_captures
 from app.timeline import routers as timeline
+from app.tracker_sync import routers as tracker_sync
 
 app = FastAPI(title="Logline")
 
@@ -26,6 +27,7 @@ app.include_router(entries.router)
 app.include_router(timeline.router)
 app.include_router(self_captures.router)
 app.include_router(agent.router)
+app.include_router(tracker_sync.router)
 
 
 @app.get("/health")
