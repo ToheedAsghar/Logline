@@ -66,3 +66,5 @@ htmlcov/
 # -- temp folders --- 
 Logline.html
 logline-frontend-build
+.review/
+
