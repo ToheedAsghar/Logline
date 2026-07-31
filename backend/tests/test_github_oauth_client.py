@@ -118,8 +118,8 @@ class TestExchangeCodeForAccessToken:
 
 class TestRefreshGitHubUserToken:
     def test_refresh_raises_without_making_a_network_call(self):
-        """GitHub OAuth Apps don't issue refresh tokens or expiring access tokens -- refresh() is a documented no-op that
-        raises rather than silently succeeding or hitting a nonexistent endpoint.
+        """GitHub OAuth Apps don't issue refresh tokens or expiring access tokens -- refresh() is a documented
+        no-op that raises rather than silently succeeding or hitting a nonexistent endpoint.
         """
         with patch("httpx.AsyncClient.post", AsyncMock()) as mock_post:
             with pytest.raises(GitHubOAuthError) as exc_info:
@@ -138,4 +138,3 @@ class TestGitHubCallbackErrorDetail:
     def test_unknown_error_code_falls_back_to_generic_message(self):
         detail = provider.callback_error_detail("some_unrecognized_code")
         assert "some_unrecognized_code" not in detail
-

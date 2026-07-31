@@ -94,31 +94,32 @@ async def integration_callback(
 
     if state is None:
         return RedirectResponse(
-            url=_result_redirect(source, result_status="error", detail=provider.missing_params_message)
+            url=_result_redirect(source, result_status="error", reason="missing_params")
         )
 
     try:
         user_id = consume_connect_state(db, token=state, expected_source=source)
     except OAuthStateError as exc:
         logger.info("%s connect state validation failed: %s", source.value, exc.message)
-        return RedirectResponse(url=_result_redirect(source, result_status="error", detail=exc.message))
+        return RedirectResponse(url=_result_redirect(source, result_status="error", reason="invalid_state"))
 
     if error is not None:
         logger.info("%s connect callback reported an error: %s", source.value, error)
+        reason = "access_denied" if error == "access_denied" else "provider_error"
         return RedirectResponse(
-            url=_result_redirect(source, result_status="error", detail=provider.callback_error_detail(error))
+            url=_result_redirect(source, result_status="error", reason=reason)
         )
 
     if code is None:
         return RedirectResponse(
-            url=_result_redirect(source, result_status="error", detail=provider.missing_params_message)
+            url=_result_redirect(source, result_status="error", reason="missing_params")
         )
 
     try:
         tokens = await provider.exchange_code(code)
     except TokenRefreshError as exc:
         logger.info("%s OAuth exchange failed: %s", source.value, exc)
-        return RedirectResponse(url=_result_redirect(source, result_status="error", detail=str(exc)))
+        return RedirectResponse(url=_result_redirect(source, result_status="error", reason="exchange_failed"))
 
     integration = _get_or_create_integration(db, user_id, source)
     _upsert_oauth_token(db, integration.id, tokens)
@@ -140,10 +141,10 @@ def disconnect_integration(
     crud.delete_integration(db, integration)
 
 
-def _result_redirect(source: IntegrationSource, *, result_status: str, detail: str | None = None) -> str:
+def _result_redirect(source: IntegrationSource, *, result_status: str, reason: str | None = None) -> str:
     params = {"integration": source.value, "status": result_status}
-    if detail is not None:
-        params["detail"] = detail
+    if reason is not None:
+        params["reason"] = reason
     return f"{settings.frontend_base_url}/settings?{urlencode(params)}"
 
 

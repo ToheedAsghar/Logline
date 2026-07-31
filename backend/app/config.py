@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -65,11 +66,26 @@ class Settings:
 
 settings = Settings()
 
-_is_dev_mode = settings.environment.lower() in ("development", "dev", "local", "test") or settings.backend_base_url.startswith(
-    ("http://localhost", "http://127.0.0.1", "http://0.0.0.0")
-)
-if not _is_dev_mode and not settings.backend_base_url.startswith("https://"):
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+ALLOW_INSECURE = os.getenv("ALLOW_INSECURE_BASE_URLS", "").strip().lower() in ("1", "true", "yes")
+
+
+def _require_secure_url(name: str, url: str) -> None:
+    """Fail closed: only https, loopback http, or an explicit opt-out (ALLOW_INSECURE_BASE_URLS=true) is accepted."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise RuntimeError(f"{name} must be an absolute http(s) URL (got {url!r})")
+    if parsed.scheme == "https":
+        return
+    if parsed.hostname in LOOPBACK_HOSTS:
+        return
+    if ALLOW_INSECURE:
+        return
     raise RuntimeError(
-        f"BACKEND_BASE_URL must start with 'https://' in non-dev environment {settings.environment!r} "
-        f"(got {settings.backend_base_url!r})"
+        f"{name} must use https:// (got {url!r}). "
+        f"Set ALLOW_INSECURE_BASE_URLS=true only for non-production, non-loopback setups."
     )
+
+
+_require_secure_url("BACKEND_BASE_URL", settings.backend_base_url)
+_require_secure_url("FRONTEND_BASE_URL", settings.frontend_base_url)

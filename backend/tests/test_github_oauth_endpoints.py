@@ -373,4 +373,3 @@ class TestIntegrationCallback:
             )
         finally:
             db.close()
-

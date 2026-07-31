@@ -8,7 +8,7 @@ alembic
 anthropic
 cryptography
 mcp
-openai
+openai>=2.44.0
 bcrypt
 pyjwt
 email-validator

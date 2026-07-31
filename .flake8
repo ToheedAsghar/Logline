@@ -1,5 +1,16 @@
 [flake8]
 exclude = .git,__pycache__,__init__.py,local.py,docs,old,build,dist,static,media,venv,.venv,*/migrations
 max-line-length = 120
-ignore = E203, E266, E501, W503, F403
+ignore = E203, E266, W503, F403
 max-complexity = 18
+
+# max-doc-length turns on W505 (doc line too long), which checks docstrings and
+# comments. Without this key W505 never fires, no matter what max-line-length says.
+#
+#   E501  code line too long  — now ENFORCED (removed from ignore above)
+#   W505  doc line too long   — enforced by the key below
+#
+# W505 catches docstring lines OVER 120. Nothing mechanical can catch a docstring
+# line that stops at 70 when it could have run to 120 — that's a judgement call,
+# which is why the review-docstrings pass exists.
+max-doc-length = 120

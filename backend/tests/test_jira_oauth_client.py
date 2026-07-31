@@ -309,4 +309,3 @@ class TestJiraOAuthScopes:
     def test_does_not_request_write_scopes(self):
         assert "write:jira-work" not in JIRA_OAUTH_SCOPES
         assert not any(scope.startswith("manage:") for scope in JIRA_OAUTH_SCOPES)
-

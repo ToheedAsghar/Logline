@@ -178,4 +178,3 @@ class SlackOAuthProvider(OAuthProvider):
         return SLACK_OAUTH_CALLBACK_ERROR_MESSAGES.get(
             error_code, SLACK_OAUTH_UNKNOWN_CALLBACK_ERROR_MESSAGE
         )
-

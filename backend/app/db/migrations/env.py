@@ -4,10 +4,6 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.config import settings
-
-# app.db.base imports every domain's models module, registering all of them
-# on Base.metadata before autogenerate runs, regardless of which folder a
-# model physically lives in.
 from app.db import base
 
 config = context.config

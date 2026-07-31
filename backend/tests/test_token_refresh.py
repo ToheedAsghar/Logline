@@ -165,4 +165,3 @@ class TestEnsureTokenFreshErrors:
 
         assert "invalid_refresh_token" in str(exc_info.value)
         db.commit.assert_not_called()
-

@@ -12,10 +12,6 @@ import sys
 
 import pytest
 
-# Valid dummy values for every var app.config._require_env guards, so each
-# parametrized case blanks exactly one var against an otherwise-complete,
-# hermetic baseline instead of depending on whatever happens to be in the
-# developer's local .env.
 BASELINE_ENV = {
     "JWT_SECRET_KEY": "test-jwt-secret",
     "ITSDANGEROUS_SECRET_KEY": "test-itsdangerous-secret",
@@ -72,3 +68,40 @@ def test_app_starts_when_all_required_vars_present():
         f"app.main failed to import with a normal environment.\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
+
+
+def test_insecure_non_loopback_base_url_fails_startup():
+    env = os.environ.copy()
+    env.update(BASELINE_ENV)
+    env["BACKEND_BASE_URL"] = "http://api.example.com"
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.main"],
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode != 0
+    assert "RuntimeError" in result.stderr
+    assert "BACKEND_BASE_URL must use https://" in result.stderr
+
+
+def test_allow_insecure_base_urls_override():
+    env = os.environ.copy()
+    env.update(BASELINE_ENV)
+    env["BACKEND_BASE_URL"] = "http://api.example.com"
+    env["ALLOW_INSECURE_BASE_URLS"] = "true"
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.main"],
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0

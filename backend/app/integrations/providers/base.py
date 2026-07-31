@@ -78,4 +78,3 @@ class OAuthProvider(ABC):
         """Map a provider-reported callback `error` code (e.g. Slack's `access_denied`) to a fixed, internal-facing
         user message. The raw provider string is never reflected into the redirect directly.
         """
-

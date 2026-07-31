@@ -24,7 +24,7 @@ from app.config import settings
 from app.core.oauth_state import OAuthState, OAuthStateError
 from app.db.session import SessionLocal, engine
 from app.integrations.connect_state import CONNECT_STATE_SALT, consume_connect_state, create_connect_state
-from app.integrations.constants import SLACK_OAUTH_ACCESS_DENIED_MESSAGE, SLACK_OAUTH_USER_SCOPES
+from app.integrations.constants import SLACK_OAUTH_USER_SCOPES
 from app.integrations.models import Integration, IntegrationSource, IntegrationStatus, OAuthToken
 from app.integrations.providers.base import OAuthTokens
 from app.integrations.providers.slack import SlackOAuthError, SlackOAuthProvider
@@ -326,8 +326,7 @@ class TestIntegrationCallback:
 
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["error"]
-            assert query["detail"] == [SLACK_OAUTH_ACCESS_DENIED_MESSAGE]
-            assert "access_denied" not in query["detail"][0]
+            assert query["reason"] == ["access_denied"]
         finally:
             db.close()
 
@@ -364,7 +363,7 @@ class TestIntegrationCallback:
             mock_exchange.assert_not_called()
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["error"]
-            assert query["detail"] == [SLACK_OAUTH_ACCESS_DENIED_MESSAGE]
+            assert query["reason"] == ["access_denied"]
         finally:
             db.close()
 
@@ -374,6 +373,7 @@ class TestIntegrationCallback:
             response = asyncio.run(integration_callback(source=IntegrationSource.slack, db=db))
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["error"]
+            assert query["reason"] == ["missing_params"]
         finally:
             db.close()
 
@@ -393,7 +393,7 @@ class TestIntegrationCallback:
 
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["error"]
-            assert "invalid_code" in query["detail"][0]
+            assert query["reason"] == ["exchange_failed"]
 
             assert (
                 db.query(Integration)
@@ -406,4 +406,3 @@ class TestIntegrationCallback:
             )
         finally:
             db.close()
-

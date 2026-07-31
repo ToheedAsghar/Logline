@@ -63,6 +63,10 @@ coverage/
 htmlcov/
 
 
-# -- temp folders --- 
+# -- temp / agent folders --- 
 Logline.html
 logline-frontend-build
+.review/
+scripts/
+
+

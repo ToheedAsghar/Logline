@@ -36,6 +36,8 @@ TEXT_GOOGLE_MISSING_SUB_CLAIM = "Google ID token did not include a sub claim"
 TEXT_PASSWORD_TOKEN_ERROR = "Invalid or expired reset link"
 TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE = "If that email exists, a password reset link has been sent."
 TEXT_PASSWORD_RESET_SUCCESSFULL = "Password has been reset successfully"
-FORGOT_PASSWORD_WAIT_MESSAGE = "A password reset email was already sent recently. Please wait before requesting another."
+FORGOT_PASSWORD_WAIT_MESSAGE = (
+    "A password reset email was already sent recently. Please wait before requesting another."
+)
 PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS = 60 * 60  # 1 hour
 PASSWORD_RESET_RESEND_COOLDOWN_SECONDS = 60
