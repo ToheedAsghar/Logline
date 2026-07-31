@@ -86,4 +86,19 @@ describe("Settings", () => {
 
     expect(screen.queryByText(/needs attention/)).not.toBeInTheDocument();
   });
+
+  it("parses OAuth callback query parameters and renders a success notice", () => {
+    delete (window as any).location;
+    window.location = new URL("http://localhost/settings?integration=github&status=connected") as any;
+
+    vi.mocked(useIntegrations).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [mockIntegration({ source: "github", status: "connected" })],
+    } as any);
+
+    render(<Settings />);
+
+    expect(screen.getByText("Successfully connected GitHub!")).toBeInTheDocument();
+  });
 });

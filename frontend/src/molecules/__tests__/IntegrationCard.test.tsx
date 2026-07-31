@@ -75,7 +75,7 @@ describe("IntegrationCard", () => {
     render(<IntegrationCard integration={mockIntegration({ source: "calendar", status: "error" })} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
-    expect(connectMutate).toHaveBeenCalledWith("calendar");
+    expect(connectMutate).toHaveBeenCalledWith("calendar", expect.anything());
   });
 
   it("handles Connect button click gracefully with a mocked 501 response", async () => {
@@ -94,9 +94,24 @@ describe("IntegrationCard", () => {
     const connectBtn = screen.getByRole("button", { name: "Connect" });
     fireEvent.click(connectBtn);
     
-    expect(connectMutate).toHaveBeenCalledWith("github");
+    expect(connectMutate).toHaveBeenCalledWith("github", expect.anything());
     
     // The "not available yet" message should be shown based on connectNotAvailable logic
+    expect(screen.getByText(/isn't available yet — coming soon/)).toBeInTheDocument();
+  });
+
+  it("handles Connect button click gracefully with a mocked 404 response", async () => {
+    const connectMutate = vi.fn();
+    vi.mocked(useConnectIntegration).mockReturnValue({
+      mutate: connectMutate,
+      isPending: false,
+      isError: true,
+      error: new ApiError(404, { detail: "OAuth connect flow for 'calendar' is not available" }),
+    } as any);
+    vi.mocked(useDisconnectIntegration).mockReturnValue({ mutate: vi.fn(), isPending: false } as any);
+
+    render(<IntegrationCard integration={mockIntegration({ source: "calendar", status: "disconnected" })} />);
+    
     expect(screen.getByText(/isn't available yet — coming soon/)).toBeInTheDocument();
   });
 

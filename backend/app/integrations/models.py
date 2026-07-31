@@ -52,3 +52,18 @@ class OAuthToken(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     integration = relationship("Integration", back_populates="oauth_tokens")
+
+
+class ConnectLinkToken(Base):
+    """Database row that backs a one-time pass for browser navigation. Once the
+    pass is used (consumed by connect_link_token.py), the used_at timestamp is
+    set and it can never be used again.
+    """
+
+    __tablename__ = "connect_link_tokens"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    source = Column(Enum(IntegrationSource, name="integration_source"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    used_at = Column(DateTime(timezone=True), nullable=True)

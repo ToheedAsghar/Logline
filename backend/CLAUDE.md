@@ -61,12 +61,48 @@ Shape depends on `entries.format`:
 - `standup` → `{yesterday, today, blockers}`
 - `project_log` → `{text}`
 
-Validated via Pydantic schemas in `app/schemas/entry.py`. Don't assume `content`
+Validated via Pydantic schemas in `app/entries/schemas.py`. Don't assume `content`
 is a plain string anywhere.
 
 ## Stack
 
 FastAPI, SQLAlchemy, PostgreSQL, Pydantic, Alembic for migrations.
+
+### Postgres enum types are shared DB objects, not per-table
+
+A `sa.Enum(...)`/`postgresql.ENUM(...)` column creates a named type at the
+Postgres level, not a per-column constraint -- if a second table's migration
+declares the same enum inline, Alembic tries to `CREATE TYPE` it again and
+fails on a duplicate. Only the original owning migration (`5eea9c691db5`,
+which first added it for `integrations.source`) should create the
+`integration_source` type. Any later table that needs the same set of values
+must reference it with `create_type=False` instead of falling back to a plain
+`String` column.
+
+Use the shared helper in `app/db/pg_enums.py::integration_source_enum()`
+rather than hand-rolling `postgresql.ENUM(...)` again:
+
+```python
+from app.db.pg_enums import integration_source_enum
+
+sa.Column("source", integration_source_enum(create_type=False), nullable=False)
+```
+
+The helper's value list is a frozen literal snapshot, not an import of the
+live `IntegrationSource` app enum -- migration files must stay self-contained
+so they don't silently drift if the app enum changes later. Adding a new
+source value means writing a separate `ALTER TYPE integration_source ADD
+VALUE ...` migration, not just editing the app-code enum.
+
+## Pre-commit checks
+
+Before committing, always run isort and flake8 across any files touched:
+
+    isort <touched files or .>
+    flake8 <touched files or the relevant package>
+
+Fix anything either tool flags before committing — do not commit code with
+import-ordering or lint issues, even if tests pass.
 
 ## LLM API: OpenAI, behind a provider abstraction (decided 2026-07-06)
 

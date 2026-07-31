@@ -11,12 +11,16 @@ export function useIntegrations() {
   });
 }
 
-/** Always 501s today (see `connectIntegration`) — `isError`/`error` reflect that
- * until real OAuth lands, not a transport failure. */
 export function useConnectIntegration() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (source: IntegrationId) => connectIntegration(source),
+    mutationFn: async (source: IntegrationId) => {
+      const res = await connectIntegration(source);
+      if (res?.connect_url) {
+        window.location.href = res.connect_url;
+      }
+      return res;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [INTEGRATIONS_KEY] });
     },

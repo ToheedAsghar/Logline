@@ -6,14 +6,17 @@ export function listIntegrations(): Promise<Integration[]> {
   return apiRequest<Integration[]>("/integrations");
 }
 
-// The backend stub (see backend/app/api/integrations.py) always answers 501 —
-// real per-source OAuth isn't built yet. Callers (IntegrationCard) are expected
-// to catch that via ApiError and render a "not yet available" state rather than
-// treating it as an unexpected failure.
-export function connectIntegration(source: IntegrationId): Promise<{ detail: string }> {
-  return apiRequest<{ detail: string }>(`/integrations/${source}/connect`, { method: "POST" });
+// Requests a one-time OAuth authorization URL for the specified source.
+// Returns { connect_url } when supported, or throws ApiError (404/501) if not yet available.
+export function createConnectLink(source: IntegrationId): Promise<{ connect_url: string }> {
+  return apiRequest<{ connect_url: string }>(`/integrations/${source}/connect-link`, { method: "POST" });
+}
+
+export function connectIntegration(source: IntegrationId): Promise<{ connect_url: string }> {
+  return createConnectLink(source);
 }
 
 export function disconnectIntegration(source: IntegrationId): Promise<void> {
   return apiRequest<void>(`/integrations/${source}`, { method: "DELETE" });
 }
+

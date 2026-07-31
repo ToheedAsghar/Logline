@@ -13,3 +13,7 @@ class IntegrationResponse(BaseModel):
     status: IntegrationStatus
     last_synced_at: datetime | None = None
     created_at: datetime
+
+
+class ConnectLinkResponse(BaseModel):
+    connect_url: str

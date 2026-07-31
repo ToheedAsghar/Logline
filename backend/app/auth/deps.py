@@ -3,6 +3,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.auth.constants import TEXT_UNAUTHORIZED
 from app.auth.models import User
 from app.auth.security import decode_access_token
 from app.db.session import get_db
@@ -16,7 +17,7 @@ def get_current_user(
 ) -> User:
     unauthorized = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail=TEXT_UNAUTHORIZED,
         headers={"WWW-Authenticate": "Bearer"},
     )
 
@@ -26,7 +27,7 @@ def get_current_user(
         raise unauthorized
 
     user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
+    if user is None or not user.is_active:
         raise unauthorized
 
     return user

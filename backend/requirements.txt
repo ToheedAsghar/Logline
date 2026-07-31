@@ -12,3 +12,6 @@ openai>=2.44.0
 bcrypt
 pyjwt
 email-validator
+aiosmtplib
+itsdangerous
+authlib==1.7.2

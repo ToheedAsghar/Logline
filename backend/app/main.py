@@ -4,6 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.agent import routers as agent
 from app.auth import routers as auth
 from app.config import settings
+# Registers every domain's models on Base.metadata before any request can
+# trigger SQLAlchemy's configure_mappers() -- without this, a domain with no
+# router importing its models would never get registered, and the first
+# cross-domain relationship() lookup would fail at request time.
 from app.db import base  # noqa: F401
 from app.entries import routers as entries
 from app.integrations import routers as integrations
