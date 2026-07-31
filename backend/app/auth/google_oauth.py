@@ -9,6 +9,7 @@ import time
 from threading import Lock
 from urllib.parse import urlencode
 
+from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import OAuth2Client
 from authlib.jose import jwt as jose_jwt
 from authlib.jose.errors import JoseError
@@ -58,7 +59,7 @@ def exchange_code_for_id_token(code: str) -> str:
             grant_type="authorization_code",
             redirect_uri=settings.google_redirect_uri,
         )
-    except Exception as exc:
+    except (HTTPError, OAuthError, ValueError) as exc:
         raise GoogleAuthError(f"Failed to exchange authorization code: {exc}") from exc
 
     id_token = token.get("id_token")
@@ -90,9 +91,11 @@ def _get_jwks(*, force_refresh: bool = False) -> dict:
 
     jwks = _fetch_jwks()
     with _jwks_cache_lock:
-        _jwks_cache["jwks"] = jwks
-        _jwks_cache["fetched_at"] = time.monotonic()
-    return jwks
+        is_still_stale = (time.monotonic() - _jwks_cache["fetched_at"]) >= JWKS_CACHE_TTL_SECONDS
+        if _jwks_cache["jwks"] is None or is_still_stale or force_refresh:
+            _jwks_cache["jwks"] = jwks
+            _jwks_cache["fetched_at"] = time.monotonic()
+        return _jwks_cache["jwks"]
 
 
 def _extract_kid(id_token_str: str) -> str | None:
@@ -106,7 +109,7 @@ def _extract_kid(id_token_str: str) -> str | None:
         padded = header_b64 + "=" * (-len(header_b64) % 4)
         header = json.loads(base64.urlsafe_b64decode(padded))
         return header.get("kid")
-    except Exception:
+    except (ValueError, KeyError, TypeError, AttributeError, json.JSONDecodeError):
         return None
 
 
