@@ -32,6 +32,19 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://logline:logline@localhost:5432/logline
+      # Placeholder values for settings app.config.Settings requires at import
+      # time (_require_env) -- this job never sends mail or talks to Google,
+      # it just needs Settings() to construct successfully.
+      JWT_SECRET_KEY: ci-placeholder
+      ITSDANGEROUS_SECRET_KEY: ci-placeholder
+      SMTP_HOST: localhost
+      SMTP_PORT: "587"
+      SMTP_USERNAME: ci-placeholder
+      SMTP_PASSWORD: ci-placeholder
+      SMTP_FROM_ADDRESS: ci@example.com
+      GOOGLE_CLIENT_ID: ci-placeholder
+      GOOGLE_CLIENT_SECRET: ci-placeholder
+      GOOGLE_REDIRECT_URI: http://localhost/callback
     defaults:
       run:
         working-directory: backend
