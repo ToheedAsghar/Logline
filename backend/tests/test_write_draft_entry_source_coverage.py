@@ -155,7 +155,7 @@ class TestWriteDraftEntrySucceedsOnceAllConnectedSourcesAttempted:
         result = asyncio.run(toolbelt.dispatch(WRITE_DRAFT_ENTRY_CALL))
 
         assert result == {"success": True, "status": "created", "entry_id": 777}
-        assert fake_db.add.call_count == 1
+        assert fake_db.add.call_count == 2  # Entry row, then its ai_draft EntryVersion row
 
     def test_only_requires_sources_that_actually_connected(self, monkeypatch):
         """A source with no live MCP connection this run (e.g. a missing
@@ -170,7 +170,7 @@ class TestWriteDraftEntrySucceedsOnceAllConnectedSourcesAttempted:
         result = asyncio.run(toolbelt.dispatch(WRITE_DRAFT_ENTRY_CALL))
 
         assert result == {"success": True, "status": "created", "entry_id": 999}
-        assert fake_db.add.call_count == 1
+        assert fake_db.add.call_count == 2  # Entry row, then its ai_draft EntryVersion row
 
     def test_succeeds_when_no_mcp_sources_connected_at_all(self, monkeypatch):
         """Mirrors the dev/test setup in test_agent_runner_created_entry_id.py
@@ -181,7 +181,7 @@ class TestWriteDraftEntrySucceedsOnceAllConnectedSourcesAttempted:
         result = asyncio.run(toolbelt.dispatch(WRITE_DRAFT_ENTRY_CALL))
 
         assert result == {"success": True, "status": "created", "entry_id": 888}
-        assert fake_db.add.call_count == 1
+        assert fake_db.add.call_count == 2  # Entry row, then its ai_draft EntryVersion row
 
 
 class TestSystemPromptDraftEntrySourceCoverageGuidance:

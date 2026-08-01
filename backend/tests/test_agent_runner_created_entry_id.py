@@ -94,7 +94,7 @@ class TestRunAgentReturnsCreatedEntryId:
         result = asyncio.run(run_agent(user_id=1, task="Log today's work as a project log."))
 
         assert provider.requested_tool_names == ["write_draft_entry"]
-        assert fake_db.add.call_count == 1
+        assert fake_db.add.call_count == 2  # Entry row, then its ai_draft EntryVersion row
         assert result.response_text == "Draft entry created."
         assert result.created_entry_id == 555
 
