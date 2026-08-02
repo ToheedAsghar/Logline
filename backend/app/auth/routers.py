@@ -1,5 +1,7 @@
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Callable
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
@@ -35,62 +37,73 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
 
-async def _send_verification_email(user_id: int, email: str, token: str) -> None:
-    """Runs as a FastAPI BackgroundTask, which awaits this coroutine with no
-    try/except of its own (starlette.background.BackgroundTask.__call__).
-    A failure here never reaches the original HTTP request -- the response
-    was already sent -- so it must be caught and logged here, or it vanishes
+@dataclass(frozen=True)
+class _TokenEmail:
+    """The four things that differ between the verification and password-reset emails."""
+
+    kind: str
+    path: str
+    subject: str
+    body: str
+    create_token: Callable[[Session, int], str]
+
+
+_VERIFICATION_EMAIL = _TokenEmail(
+    kind="verification",
+    path="verify-email",
+    subject="Verify your Logline email",
+    body="Click the link below to verify your email address:\n\n{url}\n\nThis link expires in 24 hours.",
+    create_token=create_email_verification_token,
+)
+
+_PASSWORD_RESET_EMAIL = _TokenEmail(
+    kind="password reset",
+    path="reset-password",
+    subject=TEXT_PASSWORD_RESET_SUBJECT,
+    body=(
+        "Click the link below to choose a new password:\n\n{url}\n\n"
+        "This link expires in 1 hour. If you didn't request this, you can ignore this email."
+    ),
+    create_token=create_password_reset_token,
+)
+
+
+async def _send_token_email(user_id: int, email: str, subject: str, body: str, kind: str) -> None:
+    """Runs as a FastAPI BackgroundTask, which awaits this coroutine with no try/except of its own
+    (starlette.background.BackgroundTask.__call__). A failure here never reaches the original HTTP
+    request -- the response was already sent -- so it must be caught and logged here, or it vanishes
     with no record anywhere.
     """
-    verify_url = f"{settings.frontend_base_url}/verify-email?token={token}"
     provider = get_email_provider()
     try:
-        await provider.send(
-            to=email,
-            subject="Verify your Logline email",
-            body=(
-                "Click the link below to verify your email address:\n\n"
-                f"{verify_url}\n\n"
-                "This link expires in 24 hours."
-            ),
-        )
+        await provider.send(to=email, subject=subject, body=body)
     except EmailDeliveryError as exc:
-        logger.error(
-            "Failed to send verification email to user_id=%s email=%s: %s", user_id, email, exc, exc_info=True
-        )
+        logger.error("Failed to send %s email to user_id=%s email=%s: %s", kind, user_id, email, exc, exc_info=True)
 
 
-def _issue_and_queue_verification_email(db: Session, user: User, background_tasks: BackgroundTasks) -> None:
-    token = create_email_verification_token(db, user.id)
-    background_tasks.add_task(_send_verification_email, user.id, user.email, token)
+def _issue_and_queue_email(db: Session, user: User, background_tasks: BackgroundTasks, spec: _TokenEmail) -> None:
+    token = spec.create_token(db, user.id)
+    url = f"{settings.frontend_base_url}/{spec.path}?token={token}"
+    body = spec.body.format(url=url)
+    background_tasks.add_task(_send_token_email, user.id, user.email, spec.subject, body, spec.kind)
 
 
-async def _send_password_reset_email(user_id: int, email: str, token: str) -> None:
-    """Runs as a FastAPI BackgroundTask -- see _send_verification_email for
-    why failures must be caught and logged here rather than left to
-    propagate.
-    """
-    reset_url = f"{settings.frontend_base_url}/reset-password?token={token}"
-    provider = get_email_provider()
-    try:
-        await provider.send(
-            to=email,
-            subject=TEXT_PASSWORD_RESET_SUBJECT,
-            body=(
-                "Click the link below to choose a new password:\n\n"
-                f"{reset_url}\n\n"
-                "This link expires in 1 hour. If you didn't request this, you can ignore this email."
-            ),
-        )
-    except EmailDeliveryError as exc:
-        logger.error(
-            "Failed to send password reset email to user_id=%s email=%s: %s", user_id, email, exc, exc_info=True
-        )
+def _latest_token(db: Session, model: type[EmailVerificationToken] | type[PasswordResetToken], user_id: int):
+    """Return the most recently created `model` row for `user_id`, or None if there is none."""
+    return (
+        db.query(model)
+        .filter(model.user_id == user_id)
+        .order_by(model.created_at.desc())
+        .first()
+    )
 
 
-def _issue_and_queue_password_reset_email(db: Session, user: User, background_tasks: BackgroundTasks) -> None:
-    token = create_password_reset_token(db, user.id)
-    background_tasks.add_task(_send_password_reset_email, user.id, user.email, token)
+def _under_cooldown(last_token, cooldown_seconds: int) -> bool:
+    """Whether `last_token` was issued recently enough that another email should be skipped."""
+    if last_token is None:
+        return False
+    elapsed_seconds = (datetime.now(timezone.utc) - last_token.created_at).total_seconds()
+    return elapsed_seconds < cooldown_seconds
 
 
 @router.get("/me", response_model=UserResponse)
@@ -114,7 +127,7 @@ def signup(payload: UserSignup, background_tasks: BackgroundTasks, db: Session =
         db.rollback()
         return generic_response
 
-    _issue_and_queue_verification_email(db, user, background_tasks)
+    _issue_and_queue_email(db, user, background_tasks, _VERIFICATION_EMAIL)
     return generic_response
 
 
@@ -153,18 +166,11 @@ def resend_verification(
     if user is None or user.is_active:
         return generic_response
 
-    last_token = (
-        db.query(EmailVerificationToken)
-        .filter(EmailVerificationToken.user_id == user.id)
-        .order_by(EmailVerificationToken.created_at.desc())
-        .first()
-    )
-    if last_token is not None:
-        elapsed_seconds = (datetime.now(timezone.utc) - last_token.created_at).total_seconds()
-        if elapsed_seconds < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS:
-            return generic_response
+    last_token = _latest_token(db, EmailVerificationToken, user.id)
+    if _under_cooldown(last_token, EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS):
+        return generic_response
 
-    _issue_and_queue_verification_email(db, user, background_tasks)
+    _issue_and_queue_email(db, user, background_tasks, _VERIFICATION_EMAIL)
     return generic_response
 
 
@@ -185,20 +191,11 @@ def forgot_password(payload: ForgotPasswordRequest, background_tasks: Background
     if not eligible:
         return generic_response
 
-    cooldown_user_id = user.id if user is not None else -1
-    last_token = (
-        db.query(PasswordResetToken)
-        .filter(PasswordResetToken.user_id == cooldown_user_id)
-        .order_by(PasswordResetToken.created_at.desc())
-        .first()
-    )
+    last_token = _latest_token(db, PasswordResetToken, user.id)
+    if _under_cooldown(last_token, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS):
+        return generic_response
 
-    if last_token is not None:
-        elapsed_seconds = (datetime.now(timezone.utc) - last_token.created_at).total_seconds()
-        if elapsed_seconds < PASSWORD_RESET_RESEND_COOLDOWN_SECONDS:
-            return generic_response
-
-    _issue_and_queue_password_reset_email(db, user, background_tasks)
+    _issue_and_queue_email(db, user, background_tasks, _PASSWORD_RESET_EMAIL)
     return generic_response
 
 

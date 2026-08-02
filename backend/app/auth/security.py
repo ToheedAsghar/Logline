@@ -1,6 +1,7 @@
 import base64
 import hashlib
 from datetime import datetime, timedelta, timezone
+from typing import TypeVar
 
 import bcrypt
 import jwt
@@ -53,8 +54,8 @@ def decode_access_token(token: str) -> int:
         raise jwt.InvalidTokenError("Token 'sub' claim is not numeric") from None
 
 
-class EmailVerificationTokenError(Exception):
-    """Raised by verify_email_verification_token.
+class SignedTokenError(Exception):
+    """Base for the signed-token verification errors.
 
     `reason` is one of "expired" / "tampered" / "already_used" / "not_found"
     """
@@ -64,97 +65,80 @@ class EmailVerificationTokenError(Exception):
         super().__init__(reason)
 
 
-def _email_verification_serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(settings.itsdangerous_secret_key, salt=EMAIL_VERIFICATION_SALT)
+class EmailVerificationTokenError(SignedTokenError):
+    """Raised by verify_email_verification_token."""
+
+
+class PasswordResetTokenError(SignedTokenError):
+    """Raised by verify_password_reset_token."""
+
+
+TokenRow = TypeVar("TokenRow", EmailVerificationToken, PasswordResetToken)
+
+
+def _serializer(salt: str) -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(settings.itsdangerous_secret_key, salt=salt)
+
+
+def _create_signed_token(db: Session, user_id: int, salt: str, model: type[TokenRow]) -> str:
+    """Create a `model` row for `user_id` and return an opaque, signed token string embedding
+    {user_id, token_id} for later verification.
+    """
+    token_row = model(user_id=user_id)
+    db.add(token_row)
+    db.flush()
+
+    token = _serializer(salt).dumps({"user_id": user_id, "token_id": token_row.id})
+    db.commit()
+    return token
+
+
+def _verify_signed_token(
+    db: Session, token: str, salt: str, model: type[TokenRow], max_age_seconds: int,
+    error_class: type[SignedTokenError],
+) -> TokenRow:
+    """Unsign `token` (checking signature + max age), look up the row it names, and confirm it
+    hasn't already been used.
+
+    Returns the `model` row (its `.user_id` is the verified user) on success. Raises `error_class`
+    with a specific `.reason` otherwise -- the signature guarantees the decoded payload wasn't
+    forged, so a valid signature is trusted without re-deriving user_id from the row.
+    """
+    try:
+        data = _serializer(salt).loads(token, max_age=max_age_seconds)
+    # SignatureExpired subclasses BadSignature, so it must stay the first branch to keep its own reason.
+    except SignatureExpired:
+        raise error_class("expired") from None
+    except BadSignature:
+        raise error_class("tampered") from None
+
+    token_id = data.get("token_id")
+    token_row = db.query(model).filter(model.id == token_id).first()
+    if token_row is None:
+        raise error_class("not_found")
+    if token_row.used_at is not None:
+        raise error_class("already_used")
+
+    return token_row
 
 
 def create_email_verification_token(db: Session, user_id: int) -> str:
-    """Create an EmailVerificationToken row for `user_id` and return an opaque,
-    signed token string embedding {user_id, token_id} for later verification.
-    """
-    token_row = EmailVerificationToken(user_id=user_id)
-    db.add(token_row)
-    db.flush()
-
-    serializer = _email_verification_serializer()
-    token = serializer.dumps({"user_id": user_id, "token_id": token_row.id})
-    db.commit()
-    return token
+    return _create_signed_token(db, user_id, EMAIL_VERIFICATION_SALT, EmailVerificationToken)
 
 
 def verify_email_verification_token(db: Session, token: str) -> EmailVerificationToken:
-    """Unsign `token` (checking signature + max age), look up the row it names,
-    and confirm it hasn't already been used.
-
-    Returns the EmailVerificationToken row (its `.user_id` is the verified
-    user) on success. Raises EmailVerificationTokenError with a specific
-    `.reason` otherwise -- the signature guarantees the decoded payload wasn't
-    forged, so a valid signature is trusted without re-deriving user_id from
-    the row.
-    """
-    serializer = _email_verification_serializer()
-    try:
-        data = serializer.loads(token, max_age=EMAIL_VERIFICATION_TOKEN_MAX_AGE_SECONDS)
-    except SignatureExpired:
-        raise EmailVerificationTokenError("expired") from None
-    except BadSignature:
-        raise EmailVerificationTokenError("tampered") from None
-
-    token_id = data.get("token_id")
-    token_row = db.query(EmailVerificationToken).filter(EmailVerificationToken.id == token_id).first()
-    if token_row is None:
-        raise EmailVerificationTokenError("not_found")
-    if token_row.used_at is not None:
-        raise EmailVerificationTokenError("already_used")
-
-    return token_row
-
-
-class PasswordResetTokenError(Exception):
-    """Raised by verify_password_reset_token.
-
-    `reason` is one of "expired" / "tampered" / "already_used" / "not_found"
-    """
-
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
-        super().__init__(reason)
-
-
-def _password_reset_serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(settings.itsdangerous_secret_key, salt=PASSWORD_RESET_SALT)
+    return _verify_signed_token(
+        db, token, EMAIL_VERIFICATION_SALT, EmailVerificationToken,
+        EMAIL_VERIFICATION_TOKEN_MAX_AGE_SECONDS, EmailVerificationTokenError,
+    )
 
 
 def create_password_reset_token(db: Session, user_id: int) -> str:
-    """Create a PasswordResetToken row for `user_id` and return an opaque,
-    signed token string embedding {user_id, token_id} for later verification.
-    """
-    token_row = PasswordResetToken(user_id=user_id)
-    db.add(token_row)
-    db.flush()
-
-    serializer = _password_reset_serializer()
-    token = serializer.dumps({"user_id": user_id, "token_id": token_row.id})
-    db.commit()
-    return token
+    return _create_signed_token(db, user_id, PASSWORD_RESET_SALT, PasswordResetToken)
 
 
 def verify_password_reset_token(db: Session, token: str) -> PasswordResetToken:
-    """Check the token, find the reset row, and make sure it was not used."""
-
-    serializer = _password_reset_serializer()
-    try:
-        data = serializer.loads(token, max_age=PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS)
-    except SignatureExpired:
-        raise PasswordResetTokenError("expired") from None
-    except BadSignature:
-        raise PasswordResetTokenError("tampered") from None
-
-    token_id = data.get("token_id")
-    token_row = db.query(PasswordResetToken).filter(PasswordResetToken.id == token_id).first()
-    if token_row is None:
-        raise PasswordResetTokenError("not_found")
-    if token_row.used_at is not None:
-        raise PasswordResetTokenError("already_used")
-
-    return token_row
+    return _verify_signed_token(
+        db, token, PASSWORD_RESET_SALT, PasswordResetToken,
+        PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS, PasswordResetTokenError,
+    )
