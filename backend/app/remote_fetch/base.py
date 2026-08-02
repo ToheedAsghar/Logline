@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from mcp import ClientSession
 
+from app.integrations.config import RemoteFetchConfig
 from app.remote_fetch.mcp.connection import connect_mcp_source
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,9 @@ class SourceFetcher(ABC):
     """Abstract base class for remote source fetchers."""
 
     source: str
+
+    def __init__(self) -> None:
+        self.remote_fetch_config: Optional[RemoteFetchConfig] = None
 
     async def fetch(self, user_id: int, since: Optional[datetime]) -> SourceFetchData:
         """Connect to source and fetch all events occurring after since timestamp."""

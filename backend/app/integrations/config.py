@@ -1,5 +1,6 @@
 """Provides functions to query user integration settings and project mappings."""
 
+from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -7,6 +8,39 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.integrations.models import Integration, IntegrationSource
 from app.matching.models import ProjectMapping
+
+
+@dataclass(frozen=True)
+class RemoteFetchConfig:
+    """Immutable integration configuration shared by one remote-fetch run."""
+
+    github_repos: Optional[tuple[str, ...]]
+    mapped_remote_project_ids: dict[str, tuple[str, ...]]
+
+    def projects_for(self, source: str) -> tuple[str, ...]:
+        return self.mapped_remote_project_ids.get(source, ())
+
+
+def load_remote_fetch_config(db: Session, user_id: int) -> RemoteFetchConfig:
+    """Load all remote-fetch configuration through the supplied session."""
+
+    github_repos = _query_user_github_repos(db, user_id)
+    mappings = (
+        db.query(ProjectMapping.source, ProjectMapping.remote_project_id)
+        .filter(ProjectMapping.user_id == user_id)
+        .distinct()
+        .all()
+    )
+    mapped_remote_project_ids: dict[str, tuple[str, ...]] = {}
+    for source, remote_project_id in mappings:
+        source_name = source.value if isinstance(source, IntegrationSource) else str(source)
+        existing = mapped_remote_project_ids.get(source_name, ())
+        mapped_remote_project_ids[source_name] = (*existing, remote_project_id)
+
+    return RemoteFetchConfig(
+        github_repos=tuple(github_repos) if github_repos else None,
+        mapped_remote_project_ids=mapped_remote_project_ids,
+    )
 
 
 def get_user_github_repos(user_id: int, db: Optional[Session] = None) -> Optional[list[str]]:

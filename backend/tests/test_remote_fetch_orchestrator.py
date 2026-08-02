@@ -300,6 +300,27 @@ class TestHighWaterMark:
         assert "nope" in state.last_error
         assert state.last_attempted_at > previous
 
+    def test_an_older_state_update_cannot_move_the_mark_backward(self, real_db_user):
+        newer = NOW
+        older = NOW - timedelta(hours=1)
+        with SessionLocal() as db:
+            record_fetch_state(db, real_db_user, "github", newer, newer, None)
+            db.commit()
+        with SessionLocal() as db:
+            record_fetch_state(db, real_db_user, "github", older, older, "stale failure")
+            db.commit()
+
+        with SessionLocal() as db:
+            state = (
+                db.query(RemoteFetchState)
+                .filter(RemoteFetchState.user_id == real_db_user, RemoteFetchState.source == "github")
+                .one()
+            )
+
+        assert state.last_attempted_at == newer
+        assert state.last_fetched_through == newer
+        assert state.last_error is None
+
     def test_a_fetcher_may_hold_the_mark_back_but_never_push_it_forward(
         self, monkeypatch, real_db_user
     ):

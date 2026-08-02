@@ -12,7 +12,9 @@ from mcp import ClientSession
 
 from app.integrations.config import get_mapped_remote_project_ids
 from app.remote_fetch.base import FetchedEvent, SourceFetchData, SourceFetcher
-from app.remote_fetch.constants import MAX_EVENTS_PER_SOURCE, SLACK_CHANNELS_PAGE_LIMIT, SLACK_HISTORY_PAGE_LIMIT
+from app.remote_fetch.constants import (
+    IGNORED_SLACK_MESSAGE_SUBTYPES, MAX_EVENTS_PER_SOURCE, SLACK_CHANNELS_PAGE_LIMIT, SLACK_HISTORY_PAGE_LIMIT,
+)
 from app.remote_fetch.mcp.connection import mcp_result_to_json
 from app.remote_fetch.parsing import first_non_empty_string, parse_slack_ts
 
@@ -20,17 +22,6 @@ logger = logging.getLogger(__name__)
 
 SOURCE = "slack"
 EVENT_TYPE_MESSAGE = "message"
-
-IGNORED_MESSAGE_SUBTYPES = {
-    "channel_join",
-    "channel_leave",
-    "channel_topic",
-    "channel_purpose",
-    "channel_name",
-    "channel_archive",
-    "channel_unarchive",
-    "bot_message",
-}
 
 
 async def iter_all_slack_channels(session: ClientSession) -> AsyncIterator[dict[str, Any]]:
@@ -84,7 +75,7 @@ def _message_event(
     Returns None for system/bot subtypes or messages from other authors.
     """
 
-    if message.get("subtype") in IGNORED_MESSAGE_SUBTYPES:
+    if message.get("subtype") in IGNORED_SLACK_MESSAGE_SUBTYPES:
         return None
 
     ts = first_non_empty_string(message.get("ts"))
@@ -167,7 +158,11 @@ class SlackFetcher(SourceFetcher):
     async def _resolve_channels(
         self, session: ClientSession, user_id: int
     ) -> list[tuple[str, Optional[str]]]:
-        mapped = get_mapped_remote_project_ids(user_id, SOURCE)
+        mapped = (
+            self.remote_fetch_config.projects_for(SOURCE)
+            if self.remote_fetch_config is not None
+            else get_mapped_remote_project_ids(user_id, SOURCE)
+        )
         if mapped:
             return [(channel_id, None) for channel_id in mapped]
 
@@ -205,7 +200,7 @@ class SlackFetcher(SourceFetcher):
         oldest_in_page: Optional[datetime] = None
 
         for message in messages:
-            if message.get("subtype") in IGNORED_MESSAGE_SUBTYPES:
+            if message.get("subtype") in IGNORED_SLACK_MESSAGE_SUBTYPES:
                 continue
             ts = first_non_empty_string(message.get("ts"))
             message_occurred_at = parse_slack_ts(ts) if ts is not None else None
@@ -222,10 +217,10 @@ class SlackFetcher(SourceFetcher):
             events.append(event)
 
         truncated = len(messages) >= SLACK_HISTORY_PAGE_LIMIT
-        if truncated and since is not None and oldest_in_page is not None and oldest_in_page > since:
+        if truncated and oldest_in_page is not None:
             logger.warning(
-                "slack: channel %s returned a full page of %d messages all newer than the last "
-                "fetch (oldest seen %s) -- older messages in this window cannot be paged to, "
+                "slack: channel %s returned a full page of %d messages (oldest seen %s) -- "
+                "older messages in this window cannot be paged to, "
                 "since slack_get_channel_history exposes no cursor. Holding the high-water mark "
                 "at the oldest message seen so the next run re-covers this range.",
                 channel_id,

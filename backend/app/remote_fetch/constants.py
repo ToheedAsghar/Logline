@@ -39,6 +39,18 @@ JIRA_MAX_PAGES = 10
 
 SLACK_HISTORY_PAGE_LIMIT = 200
 SLACK_CHANNELS_PAGE_LIMIT = 200
+IGNORED_SLACK_MESSAGE_SUBTYPES = frozenset(
+    {
+        "channel_join",
+        "channel_leave",
+        "channel_topic",
+        "channel_purpose",
+        "channel_name",
+        "channel_archive",
+        "channel_unarchive",
+        "bot_message",
+    }
+)
 
 CALENDAR_LIST_EVENTS_PAGE_SIZE = 250
 

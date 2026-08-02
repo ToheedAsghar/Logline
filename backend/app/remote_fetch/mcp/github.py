@@ -144,7 +144,11 @@ class GitHubFetcher(SourceFetcher):
     async def fetch_with_session(
         self, session: ClientSession, user_id: int, since: Optional[datetime]
     ) -> SourceFetchData:
-        repos = get_user_github_repos(user_id)
+        repos = (
+            self.remote_fetch_config.github_repos
+            if self.remote_fetch_config is not None
+            else get_user_github_repos(user_id)
+        )
         if repos:
             events, override = await self._fetch_configured_repos(session, repos, since)
         else:
@@ -179,13 +183,14 @@ class GitHubFetcher(SourceFetcher):
             if not owner or not name:
                 logger.warning("github: skipping malformed repo identifier %r (want 'owner/repo')", repo)
                 continue
-            (commit_events, commit_override), pr_events = await asyncio.gather(
+            (commit_events, commit_override), (pr_events, pr_override) = await asyncio.gather(
                 self._fetch_repo_commits(session, owner, name, since),
                 self._fetch_repo_pull_requests(session, owner, name, since),
             )
             events.extend(commit_events)
             events.extend(pr_events)
             override = _combine_override(override, commit_override)
+            override = _combine_override(override, pr_override)
         return events, override
 
     async def _fetch_repo_commits(
@@ -234,11 +239,12 @@ class GitHubFetcher(SourceFetcher):
 
     async def _fetch_repo_pull_requests(
         self, session: ClientSession, owner: str, name: str, since: Optional[datetime]
-    ) -> list[FetchedEvent]:
+    ) -> tuple[list[FetchedEvent], Optional[datetime]]:
         """Fetch pull requests for a repository updated since the given timestamp."""
 
         repo = f"{owner}/{name}"
         events: list[FetchedEvent] = []
+        truncated = False
 
         for page in range(1, GITHUB_MAX_PAGES + 1):
             result = await session.call_tool(
@@ -262,13 +268,19 @@ class GitHubFetcher(SourceFetcher):
                 if event is None:
                     continue
                 if since is not None and event.occurred_at <= since:
-                    return events
+                    return events, None
                 events.append(event)
 
             if len(items) < GITHUB_PER_PAGE:
                 break
+            if page == GITHUB_MAX_PAGES:
+                truncated = True
 
-        return events
+        override = None
+        if truncated and events:
+            events.sort(key=lambda event: event.occurred_at)
+            override = events[0].occurred_at
+        return events, override
 
     async def _search_paginated(
         self,

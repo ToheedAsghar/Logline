@@ -6,7 +6,7 @@ narrowed by mapped project keys.
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from mcp import ClientSession
@@ -23,8 +23,6 @@ SOURCE = "jira"
 EVENT_TYPE_ISSUE_UPDATED = "issue_updated"
 
 JIRA_FIELDS = "summary,description,status,issuetype,assignee,reporter,priority,labels,created,updated"
-
-JQL_DATETIME_FORMAT = "%Y-%m-%d %H:%M"
 
 PROJECT_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9]+$")
 
@@ -70,7 +68,7 @@ def _issue_event(issue: dict[str, Any]) -> Optional[FetchedEvent]:
     return FetchedEvent(
         source=SOURCE,
         event_type=EVENT_TYPE_ISSUE_UPDATED,
-        external_id=f"{issue_key}@{occurred_at.isoformat()}",
+        external_id=issue_key,
         occurred_at=occurred_at,
         summary=" ".join(summary_parts),
         description=_issue_description(fields),
@@ -108,8 +106,7 @@ class JiraFetcher(SourceFetcher):
         self, session: ClientSession, user_id: int, since: Optional[datetime]
     ) -> SourceFetchData:
         jql = self._build_jql(user_id, since)
-        events: list[FetchedEvent] = []
-        seen_keys: set[str] = set()
+        events_by_key: dict[str, FetchedEvent] = {}
 
         for page in range(JIRA_MAX_PAGES):
             result = await session.call_tool(
@@ -127,14 +124,16 @@ class JiraFetcher(SourceFetcher):
 
             for issue in issues:
                 event = _issue_event(issue)
-                if event is None or event.external_id in seen_keys:
+                if event is None:
                     continue
-                seen_keys.add(event.external_id)
-                events.append(event)
+                previous = events_by_key.get(event.external_id)
+                if previous is None or event.occurred_at > previous.occurred_at:
+                    events_by_key[event.external_id] = event
 
-            if len(issues) < JIRA_PAGE_LIMIT or len(events) >= MAX_EVENTS_PER_SOURCE:
+            if len(issues) < JIRA_PAGE_LIMIT or len(events_by_key) >= MAX_EVENTS_PER_SOURCE:
                 break
 
+        events = sorted(events_by_key.values(), key=lambda event: event.occurred_at)
         return SourceFetchData(events=events[:MAX_EVENTS_PER_SOURCE])
 
     def _build_jql(self, user_id: int, since: Optional[datetime]) -> str:
@@ -148,7 +147,11 @@ class JiraFetcher(SourceFetcher):
 
         clauses: list[str] = []
 
-        project_keys = get_mapped_remote_project_ids(user_id, SOURCE)
+        project_keys = (
+            self.remote_fetch_config.projects_for(SOURCE)
+            if self.remote_fetch_config is not None
+            else get_mapped_remote_project_ids(user_id, SOURCE)
+        )
         valid_project_keys = []
         for key in project_keys:
             if PROJECT_KEY_PATTERN.match(key):
@@ -167,9 +170,10 @@ class JiraFetcher(SourceFetcher):
         clauses.append("assignee = currentUser()")
 
         if since is not None:
-            clauses.append(f'updated >= "{since.strftime(JQL_DATETIME_FORMAT)}"')
+            since_utc = since.astimezone(timezone.utc)
+            clauses.append(f'updated >= "{since_utc.isoformat(timespec="seconds")}"')
 
-        return " AND ".join(clauses) + " ORDER BY updated ASC"
+        return " AND ".join(clauses) + " ORDER BY updated ASC, key ASC"
 
 
 def _issues_from_payload(payload: Any) -> list[dict[str, Any]]:

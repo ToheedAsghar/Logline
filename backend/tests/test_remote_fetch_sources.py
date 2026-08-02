@@ -7,7 +7,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.remote_fetch.constants import CALENDAR_LIST_EVENTS_PAGE_SIZE, GITHUB_MAX_PAGES, GITHUB_PER_PAGE
+from app.remote_fetch.constants import (
+    CALENDAR_LIST_EVENTS_PAGE_SIZE, GITHUB_MAX_PAGES, GITHUB_PER_PAGE, SLACK_HISTORY_PAGE_LIMIT,
+)
 from app.remote_fetch.mcp.calendar import CalendarFetcher
 from app.remote_fetch.mcp.github import GitHubFetcher
 from app.remote_fetch.mcp.jira import JiraFetcher
@@ -242,6 +244,23 @@ class TestGitHubFetcher:
 
         assert data.fetched_through_override is None
 
+    def test_pull_request_page_cap_holds_the_high_water_mark(self, monkeypatch):
+        monkeypatch.setattr("app.remote_fetch.mcp.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
+        base = datetime(2026, 7, 20, 9, 0, tzinfo=timezone.utc)
+        full_page = [
+            {
+                **GITHUB_PULL_REQUEST,
+                "number": 100 + index,
+                "updated_at": (base + timedelta(minutes=index)).isoformat(),
+            }
+            for index in range(GITHUB_PER_PAGE)
+        ]
+        data, session = self._fetch({"list_commits": [], "list_pull_requests": full_page})
+
+        pr_calls = [call for call in session.call_tool.call_args_list if call.args[0] == "list_pull_requests"]
+        assert len(pr_calls) == GITHUB_MAX_PAGES
+        assert data.fetched_through_override == base
+
 
 # --- Jira -------------------------------------------------------------------
 
@@ -285,14 +304,16 @@ class TestJiraFetcher:
         # 14:30 at +0500 is 09:30 UTC -- a naive parse would be five hours off.
         assert data.events[0].occurred_at == datetime(2026, 7, 23, 9, 30, tzinfo=timezone.utc)
 
-    def test_external_id_distinguishes_two_updates_to_one_issue(self, monkeypatch):
+    def test_external_id_is_stable_across_two_updates_to_one_issue(self, monkeypatch):
         second_update = {
             "key": "LOG-14",
             "fields": {**JIRA_ISSUE["fields"], "updated": "2026-07-24T10:00:00.000+0500"},
         }
         data, _ = self._fetch([JIRA_ISSUE, second_update], monkeypatch=monkeypatch)
 
-        assert len({event.external_id for event in data.events}) == 2
+        assert len(data.events) == 1
+        assert data.events[0].external_id == "LOG-14"
+        assert data.events[0].occurred_at == datetime(2026, 7, 24, 5, 0, tzinfo=timezone.utc)
 
     def test_jql_falls_back_to_current_user_when_nothing_is_mapped(self, monkeypatch):
         _, session = self._fetch([], monkeypatch=monkeypatch)
@@ -300,9 +321,9 @@ class TestJiraFetcher:
         jql = session.call_tool.call_args_list[0].kwargs["arguments"]["jql"]
         assert "assignee = currentUser()" in jql
         assert "project in" not in jql
-        assert 'updated >= "2026-07-01 00:00"' in jql
+        assert 'updated >= "2026-07-01T00:00:00+00:00"' in jql
         # Stable pagination requires a deterministic order.
-        assert jql.endswith("ORDER BY updated ASC")
+        assert jql.endswith("ORDER BY updated ASC, key ASC")
 
     def test_jql_scopes_to_mapped_projects_when_configured(self, monkeypatch):
         _, session = self._fetch([], mapped=["LOG", "OPS"], monkeypatch=monkeypatch)
@@ -468,8 +489,6 @@ class TestSlackFetcher:
         past the oldest one actually seen, or they are skipped forever.
         """
 
-        from app.remote_fetch.constants import SLACK_HISTORY_PAGE_LIMIT
-
         messages = [
             {**SLACK_MESSAGE, "ts": f"{1784799000 + index}.000000"}
             for index in range(SLACK_HISTORY_PAGE_LIMIT)
@@ -478,6 +497,19 @@ class TestSlackFetcher:
 
         assert len(data.events) == SLACK_HISTORY_PAGE_LIMIT
         assert data.fetched_through_override == datetime.fromtimestamp(1784799000.0, tz=timezone.utc)
+
+    def test_a_mixed_full_page_holds_the_mark_at_the_oldest_message(self, monkeypatch):
+        old_timestamp = 1751328000.0
+        messages = [
+            {**SLACK_MESSAGE, "ts": f"{old_timestamp:.6f}"},
+            *[
+                {**SLACK_MESSAGE, "ts": f"{1784799000 + index}.000000"}
+                for index in range(1, SLACK_HISTORY_PAGE_LIMIT)
+            ],
+        ]
+        data, _ = self._fetch(messages, monkeypatch)
+
+        assert data.fetched_through_override == datetime.fromtimestamp(old_timestamp, tz=timezone.utc)
 
     def test_a_partial_page_does_not_hold_the_mark_back(self, monkeypatch):
         data, _ = self._fetch([SLACK_MESSAGE], monkeypatch)

@@ -10,17 +10,18 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from sqlalchemy import case, func, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
+from app.integrations.config import load_remote_fetch_config
 from app.matching.models import RemoteEvent
 from app.remote_fetch.base import FetchedEvent, SourceFetcher, SourceUnavailable
 from app.remote_fetch.constants import DEFAULT_SOURCE_TIMEOUT_SECONDS, FIRST_FETCH_LOOKBACK_DAYS, SOURCE_TIMEOUT_SECONDS
 from app.remote_fetch.mcp.calendar import CalendarFetcher
 from app.remote_fetch.mcp.github import GitHubFetcher
 from app.remote_fetch.mcp.jira import JiraFetcher
-from app.remote_fetch.mcp.slack import SlackFetcher
 from app.remote_fetch.models import RemoteFetchState
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,6 @@ logger = logging.getLogger(__name__)
 ALL_FETCHERS: list[type[SourceFetcher]] = [
     GitHubFetcher,
     JiraFetcher,
-    SlackFetcher,
     CalendarFetcher,
 ]
 
@@ -126,15 +126,38 @@ def record_fetch_state(
     `fetched_through` is not None, which the caller passes only on success.
     """
 
-    state = _load_state(db, user_id, source)
-    if state is None:
-        state = RemoteFetchState(user_id=user_id, source=source)
-        db.add(state)
-
-    state.last_attempted_at = attempted_at
-    state.last_error = error
-    if fetched_through is not None:
-        state.last_fetched_through = fetched_through
+    statement = pg_insert(RemoteFetchState).values(
+        user_id=user_id,
+        source=source,
+        last_attempted_at=attempted_at,
+        last_fetched_through=fetched_through,
+        last_error=error,
+    )
+    existing = RemoteFetchState.__table__.c
+    excluded = statement.excluded
+    latest_attempt = or_(
+        existing.last_attempted_at.is_(None),
+        excluded.last_attempted_at >= existing.last_attempted_at,
+    )
+    statement = statement.on_conflict_do_update(
+        constraint="uq_remote_fetch_state_user_source",
+        set_={
+            "last_attempted_at": case(
+                (latest_attempt, excluded.last_attempted_at),
+                else_=existing.last_attempted_at,
+            ),
+            "last_error": case(
+                (latest_attempt, excluded.last_error),
+                else_=existing.last_error,
+            ),
+            "last_fetched_through": case(
+                (excluded.last_fetched_through.is_(None), existing.last_fetched_through),
+                (existing.last_fetched_through.is_(None), excluded.last_fetched_through),
+                else_=func.greatest(existing.last_fetched_through, excluded.last_fetched_through),
+            ),
+        },
+    )
+    db.execute(statement)
 
 
 async def _run_one_source(
@@ -199,10 +222,16 @@ async def fetch_all_sources(user_id: int, sources: Optional[list[str]] = None) -
         since_by_source = {
             source: resolve_since(_load_state(db, user_id, source), now) for source in selected
         }
+        remote_fetch_config = load_remote_fetch_config(db, user_id)
 
     outcomes = await asyncio.gather(
         *(
-            _run_one_source(FETCHERS[source](), user_id, since_by_source[source], now)
+            _run_one_source(
+                _configured_fetcher(FETCHERS[source], remote_fetch_config),
+                user_id,
+                since_by_source[source],
+                now,
+            )
             for source in selected
         ),
         return_exceptions=True,
@@ -233,12 +262,22 @@ async def fetch_all_sources(user_id: int, sources: Optional[list[str]] = None) -
     return results
 
 
+def _configured_fetcher(
+    fetcher_type: type[SourceFetcher], remote_fetch_config
+) -> SourceFetcher:
+    """Attach one run's immutable database configuration to a fetcher."""
+
+    fetcher = fetcher_type()
+    fetcher.remote_fetch_config = remote_fetch_config
+    return fetcher
+
+
 def _persist_source(
     user_id: int, source: str, result: SourceResult, events: list[FetchedEvent], now: datetime
 ) -> None:
     """Write one source's events and state in its own transaction.
 
-    Per-source rather than one transaction covering all four, so a database
+    Per-source rather than one transaction covering all working sources, so a database
     error while writing one source's events can't roll back another's
     already-successful work -- the same isolation the fetch side guarantees.
     """

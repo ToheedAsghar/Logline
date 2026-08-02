@@ -84,7 +84,10 @@ def calendar_server_params() -> StdioServerParameters:
     return StdioServerParameters(
         command="npx",
         args=["-y", "@cocal/google-calendar-mcp"],
-        env={**os.environ, ENV_GOOGLE_OAUTH_CREDENTIALS: str(resolved_credentials_path)},
+        env={
+            "PATH": os.environ.get("PATH", ""),
+            ENV_GOOGLE_OAUTH_CREDENTIALS: str(resolved_credentials_path),
+        },
     )
 
 
@@ -157,7 +160,7 @@ async def connect_mcp_source(
         read, write = await exit_stack.enter_async_context(stdio_client(server_params))
         session = await exit_stack.enter_async_context(ClientSession(read, write))
         await session.initialize()
-    except (RuntimeError, OSError, Exception) as exc:
+    except (RuntimeError, OSError) as exc:
         logger.warning("could not connect '%s' MCP server: %s", source, exc)
         return None
 
