@@ -1,6 +1,6 @@
-"""Per-activity context capture: what project, branch, file, meeting or URL a session was actually about.
+"""Capture the project, branch, file, meeting, or URL for each activity.
 
-`resolve_context` is the only entry point watchers/session code should use.
+Watchers and session code should use `resolve_context` as the only entry point.
 """
 
 import logging
@@ -8,8 +8,11 @@ from typing import Optional
 
 import objc
 
-from tracker.constants import RESOLVER_CAPABILITY_MSG, RESOLVER_ERROR_MSG
-from tracker.context.models import ContextResult, WindowContext
+from tracker.constants import (
+    RESOLVER_CAPABILITY_MSG, RESOLVER_ERROR_MSG, TERMINAL_BRANCH_KEY, TERMINAL_CWD_KEY, TERMINAL_TOOL_KEY,
+    TERMINAL_TOOL_REGISTRY,
+)
+from tracker.context.models import ContextResult, TerminalToolContext, WindowContext
 from tracker.context.resolvers import REGISTRY, resolver_for
 from tracker.redaction import is_redacted
 
@@ -17,35 +20,66 @@ logger = logging.getLogger(__name__)
 
 UNSET = object()
 
-__all__ = ["ContextResult", "WindowContext", "resolve_context", "resolver_capability_summary"]
+__all__ = [
+    "ContextResult", "TerminalToolContext", "WindowContext", "resolve_context", "resolver_capability_summary",
+]
 
 
 def resolver_capability_summary() -> str:
-    """One-line startup confirmation that the context layer loaded as expected: the resolver registry and the
-    AX read it depends on. A process still running an old build would show a stale or missing line here
-    instead of only surfacing later as unexplained NULL project_path rows.
-    """
-    from tracker.context.ax import focused_document_url  # noqa: F401 — import failure alone is diagnostic
+    """Return a startup line that confirms the context resolvers and AX read loaded.
 
-    return RESOLVER_CAPABILITY_MSG % (len(REGISTRY), ", ".join(sorted(REGISTRY)))
+    This makes an old or incomplete running build visible before it creates rows with missing project paths.
+    """
+    from tracker.context.ax import focused_document_url  # noqa: F401 — importing it is the check
+    from tracker.context.terminal import resolve_terminal_tool  # noqa: F401 — importing it is the check
+
+    return RESOLVER_CAPABILITY_MSG % (
+        len(REGISTRY),
+        ", ".join(sorted(REGISTRY)),
+        len(TERMINAL_TOOL_REGISTRY),
+        ", ".join(sorted(TERMINAL_TOOL_REGISTRY)),
+    )
+
+
+def _resolve_redacted_terminal(pid: Optional[int]) -> ContextResult:
+    """Return `{tool, cwd, branch}` for one known foreground tool, or empty context.
+
+    A redacted app must never expose its title. This function takes only a PID and copies fields from
+    `TerminalToolContext`, which has no place for title text. Anything short of one confident match keeps full
+    redaction.
+    """
+    if pid is None:
+        return ContextResult()
+    try:
+        from tracker.context.terminal import project_root_for, resolve_terminal_tool
+
+        detected = resolve_terminal_tool(pid)
+    except (objc.error, OSError):
+        logger.exception(RESOLVER_ERROR_MSG, "terminal")
+        return ContextResult()
+    if detected is None:
+        return ContextResult()
+
+    result = ContextResult(project_path=project_root_for(detected.cwd))
+    result.set(TERMINAL_TOOL_KEY, detected.tool)
+    result.set(TERMINAL_CWD_KEY, detected.cwd)
+    result.set(TERMINAL_BRANCH_KEY, detected.branch)
+    return result
 
 
 def resolve_context(
-    bundle_id: str,
-    app_name: str,
-    window_title: Optional[str] = None,
-    pid: Optional[int] = None,
-    document_url=UNSET,
+    bundle_id: str, app_name: str, window_title: Optional[str] = None, pid: Optional[int] = None, document_url=UNSET,
 ) -> ContextResult:
-    """Resolves context for one frontmost-window observation. Pass `document_url` explicitly to skip the
-    Accessibility read (tests do this); otherwise it is read from `pid` when one is given.
+    """Resolve context for one frontmost-window observation.
 
-    Redacted apps resolve to empty context, checked here rather than at the call site so a future caller
-    cannot reintroduce the leak. Degrades to empty context on expected AX read or OS environmental failures
-    (objc.error, OSError); programming errors in resolvers raise.
+    Pass `document_url` to skip the Accessibility read, as tests do. Otherwise read it from `pid` when available.
+
+    Check redacted apps here so future callers cannot send their titles to title-based resolvers. Use
+    `_resolve_redacted_terminal`, which sees only the PID and finds `{tool, cwd, branch}` from process data. On
+    expected Accessibility or OS errors, return empty context. Let programming errors raise.
     """
     if is_redacted(bundle_id):
-        return ContextResult()
+        return _resolve_redacted_terminal(pid)
     try:
         if document_url is UNSET:
             document_url = None

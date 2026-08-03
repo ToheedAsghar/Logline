@@ -2,6 +2,7 @@
 and the bundle-identity-aware dedup fix."""
 
 import tracker.watchers.title_watcher as title_watcher_module
+from tracker.context.models import ContextResult
 from tracker.session.manager import SessionManager
 from tracker.tests.conftest import all_sessions
 from tracker.watchers.title_watcher import TitleWatcher
@@ -175,3 +176,51 @@ class TestTitleDedupIncludesAppIdentity:
         watcher._poll()
 
         assert len(calls) == 1
+
+
+class TestTerminalDetectionPolling:
+    def test_redacted_terminal_rechecks_detection_each_poll(self, monkeypatch):
+        calls = []
+        resolver_calls = []
+        state = [{"tool": "codex", "cwd": "/one"}, {"tool": "codex", "cwd": "/two"}]
+
+        def fake_resolve(**kwargs):
+            resolver_calls.append(kwargs["pid"])
+            detail = state[min(len(resolver_calls) - 1, len(state) - 1)]
+            result = ContextResult()
+            for key, value in detail.items():
+                result.set(key, value)
+            return result
+
+        watcher = TitleWatcher(callback=lambda **kwargs: calls.append(kwargs))
+        monkeypatch.setattr(title_watcher_module, "_is_trusted", lambda prompt: False)
+        monkeypatch.setattr(title_watcher_module, "resolve_context", fake_resolve)
+        monkeypatch.setattr(
+            title_watcher_module, "NSWorkspace", _StubNSWorkspace(_FakeFrontmost("com.apple.Terminal", "Terminal"))
+        )
+
+        watcher._poll()
+        watcher._poll()
+
+        assert resolver_calls == [1, 1]
+        assert len(calls) == 2
+        assert calls[0]["context"].detail["cwd"] == "/one"
+        assert calls[1]["context"].detail["cwd"] == "/two"
+
+    def test_unexpected_context_error_does_not_escape_poll(self, monkeypatch):
+        calls = []
+        watcher = TitleWatcher(callback=lambda **kwargs: calls.append(kwargs))
+        monkeypatch.setattr(title_watcher_module, "_is_trusted", lambda prompt: False)
+
+        def fail(**kwargs):
+            raise RuntimeError()
+
+        monkeypatch.setattr(title_watcher_module, "resolve_context", fail)
+        monkeypatch.setattr(
+            title_watcher_module, "NSWorkspace", _StubNSWorkspace(_FakeFrontmost("com.example.App", "App"))
+        )
+
+        watcher._poll()
+
+        assert len(calls) == 1
+        assert calls[0]["context"].detail == {}

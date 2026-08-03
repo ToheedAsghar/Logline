@@ -40,7 +40,10 @@ REFUSING_TO_START_MSG = "tracker: refusing to start — %s"
 SEALED_SESSION_MSG = "sealed dangling session from previous run: %s (%s)"
 RESOLVER_ERROR_MSG = "context resolver failed for %s; continuing without context"
 AX_READ_ERROR_MSG = "AXDocument read failed for pid %s; continuing without it"
-RESOLVER_CAPABILITY_MSG = "context: %d resolver(s) registered (%s), AX document read wired in"
+RESOLVER_CAPABILITY_MSG = (
+    "context: %d resolver(s) registered (%s), AX document read wired in; "
+    "terminal dev-tool detection over %d tool(s) (%s)"
+)
 
 KNOWN_TERMINAL_BUNDLE_IDS = frozenset(
     {
@@ -52,6 +55,44 @@ KNOWN_TERMINAL_BUNDLE_IDS = frozenset(
         "org.alacritty",
         "com.github.wez.wezterm",
         "co.zeit.hyper",
+    }
+)
+
+TERMINAL_TOOL_REGISTRY = {
+    "claude-code": frozenset({"claude"}),
+    "codex": frozenset({"codex"}),
+    "aider": frozenset({"aider"}),
+    "gemini-cli": frozenset({"gemini"}),
+    "opencode": frozenset({"opencode"}),
+}
+
+SCRIPT_INTERPRETER_NAMES = frozenset({"node", "bun", "deno", "ruby", "perl", "env"})
+
+MULTIPLEXER_PROCESS_NAMES = frozenset({"tmux", "screen", "tmate", "zellij", "byobu", "dvtm"})
+
+PROC_WALK_MAX_DEPTH = 8
+PROC_WALK_MAX_PIDS = 512
+
+PROC_PIDTBSDINFO = 3
+PROC_PIDVNODEPATHINFO = 9
+BSDINFO_SIZE = 136
+VNODEPATHINFO_SIZE = 2352
+VIP_PATH_OFFSET = 152
+VIP_PATH_SIZE = 1024
+NODEV = 0xFFFFFFFF
+CTL_KERN = 1
+KERN_PROCARGS2 = 49
+
+GIT_BRANCH_MAX_LENGTH = 255
+
+TERMINAL_TOOL_KEY = "tool"
+TERMINAL_CWD_KEY = "cwd"
+TERMINAL_BRANCH_KEY = "branch"
+
+CONTEXT_DETAIL_KEYS = frozenset(
+    {
+        "active_file", "branch", "browser", "cwd", "git_branch", "is_meeting", "meeting_name", "project_name",
+        "tool", "url",
     }
 )
 
