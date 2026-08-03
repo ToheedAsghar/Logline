@@ -6,7 +6,7 @@ import subprocess
 import pytest
 
 from tracker.context import resolve_context
-from tracker.context.git import current_branch, find_project_root
+from tracker.context.git import _ttl_cache, current_branch, find_project_root
 from tracker.context.resolvers import VSCODE_BUNDLE_ID
 
 
@@ -98,3 +98,34 @@ class TestProjectPathFromDocument:
         target.write_text("")
         result = resolve_context(VSCODE_BUNDLE_ID, "Code", "loose.txt", document_url=f"file://{target}")
         assert result.project_path is None
+
+
+class TestTtlCache:
+    def test_caches_value_within_ttl(self, monkeypatch):
+        calls = []
+        now = [0.0]
+        monkeypatch.setattr("tracker.context.git.time.monotonic", lambda: now[0])
+
+        @_ttl_cache(ttl_seconds=5.0)
+        def compute(x):
+            calls.append(x)
+            return x * 2
+
+        assert compute(3) == 6
+        assert compute(3) == 6
+        assert calls == [3]
+
+        now[0] = 6.0  # past the TTL
+        assert compute(3) == 6
+        assert calls == [3, 3]
+
+    def test_different_keys_cached_separately(self, monkeypatch):
+        now = [0.0]
+        monkeypatch.setattr("tracker.context.git.time.monotonic", lambda: now[0])
+
+        @_ttl_cache(ttl_seconds=10.0)
+        def compute(x):
+            return x
+
+        assert compute("a") == "a"
+        assert compute("b") == "b"

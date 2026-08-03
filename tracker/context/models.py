@@ -26,9 +26,12 @@ class TerminalToolContext:
     These are the only fields on purpose. Terminal titles are redacted because command lines can contain secrets.
     The values here come from process data or the filesystem. Adding a title, command, or argument field would
     defeat that protection.
+
+    `tool` is None when the foreground process is not a known development tool (e.g. a plain shell). The cwd and
+    branch are still reported in that case so regular terminal work inside a project is attributed correctly.
     """
 
-    tool: str
+    tool: Optional[str]
     cwd: str
     branch: Optional[str] = None
 

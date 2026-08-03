@@ -38,7 +38,7 @@ tracker/.venv/bin/python -m tracker.ax_probe
 titles and per-app context. Until then it still runs and records app-level sessions, but
 `window_title`, `project_path`, and `context_detail` all stay NULL.
 
-Logs: `~/Library/Logs/Logline/tracker.log` and `tracker.error.log`. Status and uninstall:
+Logs: `~/Library/Logs/Logline/tracker.log` (diagnostics), `tracker.error.log` (warnings/errors), and `activity.log` / `activity.error.log` (stdout/stderr from launchd). Status and uninstall:
 
 ```sh
 launchctl print gui/$(id -u)/com.logline.tracker
