@@ -15,10 +15,6 @@ from tracker.constants import GIT_BRANCH_MAX_LENGTH
 FORBIDDEN_BRANCH_CHARACTERS = set(" ~^:?*[\\\x7f")
 GIT_FILE_MAX_BYTES = 4096
 
-# Note: this validator intentionally mirrors git-check-ref-format, not filesystem-specific protections.
-# It therefore allows non-ASCII whitespace (e.g., U+00A0, U+200B) that git accepts. These are legal in JSON/SQLite
-# but can be invisible in UI; downstream display code should treat branch names as untrusted text. (N2)
-
 
 def _is_valid_branch_name(ref: str) -> bool:
     """Return whether `ref` follows git's branch-name rules.
@@ -36,11 +32,6 @@ def _is_valid_branch_name(ref: str) -> bool:
     if ".." in ref or "//" in ref or "@{" in ref:
         return False
     return all(part and not part.startswith(".") and not part.endswith(".lock") for part in ref.split("/"))
-
-
-# Note: symlink loops in cwd or .git pointers are not handled locally here; they rely on resolve_context's
-# outer OSError handler to degrade to empty context. Adding local defensively-caught traversal limits is future
-# work. (N6)
 
 
 def _read_git_file(path: Path) -> Optional[str]:
@@ -62,6 +53,7 @@ def _read_git_file(path: Path) -> Optional[str]:
             fd = None
             return handle.read()
     except (OSError, ValueError):
+        # Any read failure fails closed, degrade to no context, never propagate.
         return None
     finally:
         if fd is not None:
@@ -124,9 +116,9 @@ def current_branch(project_root: Path) -> Optional[str]:
         return None
     head = head.strip()
     if not head.startswith("ref:"):
-        return None  # A detached HEAD contains a commit ID, not a branch name.
-    # Only the first line is the ref. Anything after it is not part of the branch name.
-    ref = head[len("ref:") :].splitlines()[0].strip() if head[len("ref:") :].strip() else ""
-    if ref.startswith("refs/heads/"):
-        ref = ref[len("refs/heads/") :]
-    return ref if _is_valid_branch_name(ref) else None
+        return None
+    ref_content = head[len("ref:") :]
+    ref_line = ref_content.splitlines()[0].strip() if ref_content.strip() else ""
+    branch_prefix = "refs/heads/"
+    branch_name = ref_line[len(branch_prefix) :] if ref_line.startswith(branch_prefix) else ref_line
+    return branch_name if _is_valid_branch_name(branch_name) else None
