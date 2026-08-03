@@ -41,7 +41,7 @@ def truncate(text: str, limit: int = TITLE_MAX) -> str:
 def _detail_summary(detail: Optional[Dict[str, Any]]) -> str:
     if not detail:
         return ""
-    return " ".join(f"{key}={value}" for key, value in detail.items())
+    return " ".join(f"{key}={truncate(str(value))!r}" for key, value in detail.items())
 
 
 def event(kind: str, headline: str, *, detail: Optional[Dict[str, Any]] = None) -> str:

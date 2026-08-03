@@ -5,7 +5,9 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Any, Dict, Optional
 
-from tracker.constants import CONTEXT_COLUMNS, CREATE_OPEN_SESSION, CREATE_SESSIONS, DB_DIR, DB_PATH, END_REASON_QUIT
+from tracker.constants import (
+    CONTEXT_COLUMNS, CONTEXT_DETAIL_KEYS, CREATE_OPEN_SESSION, CREATE_SESSIONS, DB_DIR, DB_PATH, END_REASON_QUIT,
+)
 from tracker.session.models import Session
 
 
@@ -38,6 +40,9 @@ def _encode_context(context_detail: Optional[Dict[str, Any]]) -> Optional[str]:
     lone surrogate that json.dumps accepts but sqlite3 rejects at INSERT time, which would abort the write; escaping
     it keeps the data instead of dropping the whole document.
     """
+    if not context_detail:
+        return None
+    context_detail = {key: value for key, value in context_detail.items() if key in CONTEXT_DETAIL_KEYS}
     if not context_detail:
         return None
     try:
