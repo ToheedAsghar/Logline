@@ -1,6 +1,13 @@
 """Tuning constants — no magic numbers inline elsewhere."""
 
 from pathlib import Path
+import objc
+import re
+
+RESOLVER_RESCUE_EXCEPTIONS = (
+    ValueError, TypeError, KeyError, IndexError, AttributeError,
+    RuntimeError, OSError, objc.error, re.error
+)
 
 HEARTBEAT_INTERVAL_SECONDS = 5
 TITLE_POLL_INTERVAL_SECONDS = 5

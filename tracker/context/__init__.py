@@ -6,9 +6,7 @@
 import logging
 from typing import Optional
 
-import objc
-
-from tracker.constants import RESOLVER_CAPABILITY_MSG, RESOLVER_ERROR_MSG
+from tracker.constants import RESOLVER_CAPABILITY_MSG, RESOLVER_ERROR_MSG, RESOLVER_RESCUE_EXCEPTIONS
 from tracker.context.models import ContextResult, WindowContext
 from tracker.context.resolvers import REGISTRY, resolver_for
 from tracker.redaction import is_redacted
