@@ -29,7 +29,6 @@ def update_entry(
     the prior approved content is recoverable from the append-only history. Edits to draft or pending entries do not
     create a version row — only generation (ai_draft) and post-approval moments are tracked.
     """
-    # Captured before mutation so the status check reflects the pre-edit state.
     is_post_approval_edit = content is not None and entry.status == EntryStatus.approved
 
     if content is not None:
