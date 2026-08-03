@@ -1,10 +1,10 @@
-"""Tests for app/auth/routers.py::_send_verification_email under a genuine
-SMTP failure.
+"""Tests for app/auth/routers.py::_send_token_email under a genuine SMTP
+failure, exercised with the verification-email spec.
 
-_send_verification_email runs as a FastAPI BackgroundTask (see
-_issue_and_queue_verification_email), which Starlette awaits with no
-try/except of its own (starlette.background.BackgroundTask.__call__ just
-does `await self.func(...)`). If the coroutine raises, nothing in our stack
+_send_token_email runs as a FastAPI BackgroundTask (see
+_issue_and_queue_email), which Starlette awaits with no try/except of its
+own (starlette.background.BackgroundTask.__call__ just does
+`await self.func(...)`). If the coroutine raises, nothing in our stack
 catches it -- it is not surfaced to the original HTTP request (the response
 was already sent) and, before this fix, nothing in the app's own logging
 recorded that a verification email failed to send.
@@ -17,12 +17,22 @@ auth failure and observes, with caplog, exactly what happens.
 import asyncio
 
 import aiosmtplib
-import pytest
 
-from app.auth.routers import _send_verification_email
+from app.auth.routers import _VERIFICATION_EMAIL, _send_token_email
 
 
-class TestSendVerificationEmailSMTPFailure:
+def _verification_email_args(user_id: int, email: str, token: str) -> dict:
+    """Build the exact _send_token_email arguments _issue_and_queue_email would queue for a verification email."""
+    return {
+        "user_id": user_id,
+        "email": email,
+        "subject": _VERIFICATION_EMAIL.subject,
+        "body": _VERIFICATION_EMAIL.body.format(url=f"https://example.test/verify-email?token={token}"),
+        "kind": _VERIFICATION_EMAIL.kind,
+    }
+
+
+class TestSendTokenEmailSMTPFailure:
     def test_smtp_failure_is_logged_at_error_level_and_not_raised(self, monkeypatch, caplog):
         async def raise_auth_failure(*args, **kwargs):
             raise aiosmtplib.SMTPAuthenticationError(535, b"Authentication failed")
@@ -30,7 +40,7 @@ class TestSendVerificationEmailSMTPFailure:
         monkeypatch.setattr("app.core.email.aiosmtplib.send", raise_auth_failure)
 
         with caplog.at_level("ERROR", logger="app.auth.routers"):
-            asyncio.run(_send_verification_email(user_id=123, email="someone@example.com", token="faketoken"))
+            asyncio.run(_send_token_email(**_verification_email_args(123, "someone@example.com", "faketoken")))
 
         assert len(caplog.records) == 1
         record = caplog.records[0]
@@ -47,8 +57,6 @@ class TestSendVerificationEmailSMTPFailure:
         monkeypatch.setattr("app.core.email.aiosmtplib.send", raise_connect_failure)
 
         with caplog.at_level("ERROR", logger="app.auth.routers"):
-            # Must not raise -- a failed background task should be logged and
-            # swallowed, never left to crash silently or propagate further.
-            asyncio.run(_send_verification_email(user_id=456, email="other@example.com", token="anothertoken"))
+            asyncio.run(_send_token_email(**_verification_email_args(456, "other@example.com", "anothertoken")))
 
         assert any("456" in r.message for r in caplog.records)

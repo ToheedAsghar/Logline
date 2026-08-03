@@ -1,17 +1,16 @@
-"""Tests for the ee68bb2ed4fb migration (backfill is_active for existing
-users, normalize existing emails). Proves the actual migration module's
-upgrade() -- not a reimplementation of its SQL -- against rows inserted via
-raw SQL to mimic the pre-migration state: is_active=false and (for one row)
-mixed-case email, exactly what every user looked like before the email
-verification flow and normalize_email (app/auth/crud.py) existed.
+"""Tests for the user-data fixup in migration 6aff4d503b81 (add password
+reset and email verification support).
 
-alembic.op only resolves inside an active MigrationContext, so
-_run_migration_upgrade binds one to the real test connection and calls the
-module's upgrade() directly -- see _run_migration_upgrade. downgrade() is
-intentionally a no-op (see the migration file's docstring: backfilling
-is_active and normalizing casing are one-way, there's no reliable prior
-state to restore), so round-trip verification here means "upgrade() is safe
-to run again," which every case below exercises implicitly.
+That migration adds email verification, which means: every user now needs
+is_active=true to log in, and every email is now stored lowercase. Existing
+users predate both rules, so the migration also updates their rows directly:
+marks them all active (they signed up before verification existed, so
+there's nothing for them to verify) and lowercases their emails.
+
+These tests insert rows via raw SQL to look like a user from before the
+migration (is_active=false, one with a mixed-case email), then call the
+migration's own update function directly -- not a rewritten copy of it -- and
+check the users can still log in and be found by email afterward.
 
 Hits the real test Postgres database (docker-compose, see backend/CLAUDE.md).
 """
@@ -19,8 +18,6 @@ Hits the real test Postgres database (docker-compose, see backend/CLAUDE.md).
 import importlib
 
 import pytest
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy import text
 
@@ -31,7 +28,7 @@ from app.auth.schemas import UserLogin, UserSignup
 from app.auth.security import hash_password
 from app.db.session import SessionLocal, engine
 
-MIGRATION_MODULE = "app.db.migrations.versions.ee68bb2ed4fb_backfill_is_active_for_existing_users_"
+MIGRATION_MODULE = "app.db.migrations.versions.6aff4d503b81_add_password_reset_and_email_"
 
 PRE_EXISTING_PASSWORD = "grandfathered-user-password"
 PRE_EXISTING_EMAIL = "pre-existing-migration-backfill-test@example.com"
@@ -42,12 +39,10 @@ NEW_SIGNUP_EMAIL = "new-signup-after-migration-test@example.com"
 NEW_SIGNUP_PASSWORD = "a-brand-new-correct-horse"
 
 
-def _run_migration_upgrade():
+def _run_backfill():
     migration = importlib.import_module(MIGRATION_MODULE)
     with engine.begin() as conn:
-        context = MigrationContext.configure(conn)
-        migration.op = Operations(context)
-        migration.upgrade()
+        migration.backfill_is_active_and_normalize_email(conn)
 
 
 def _insert_pre_migration_row(db, email, password_hash):
@@ -93,7 +88,7 @@ def pre_existing_users():
 
 class TestMigrationBackfillsExistingUsers:
     def test_pre_existing_user_can_log_in_without_any_verification_step(self, pre_existing_users):
-        _run_migration_upgrade()
+        _run_backfill()
 
         db = SessionLocal()
         try:
@@ -103,7 +98,7 @@ class TestMigrationBackfillsExistingUsers:
             db.close()
 
     def test_pre_existing_mixed_case_email_is_still_findable_after_normalization(self, pre_existing_users):
-        _run_migration_upgrade()
+        _run_backfill()
 
         db = SessionLocal()
         try:

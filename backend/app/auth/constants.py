@@ -33,6 +33,9 @@ TEXT_GOOGLE_MISSING_EMAIL_CLAIM = "Google ID token did not include an email clai
 TEXT_GOOGLE_MISSING_SUB_CLAIM = "Google ID token did not include a sub claim"
 
 # Password Reset
+TEXT_SIGNUP_GENERIC_MESSAGE = (
+    "If this email isn't already registered, we've sent a verification link to it. Please check your inbox."
+)
 TEXT_PASSWORD_TOKEN_ERROR = "Invalid or expired reset link"
 TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE = "If that email exists, a password reset link has been sent."
 TEXT_PASSWORD_RESET_SUCCESSFULL = "Password has been reset successfully"

@@ -16,7 +16,7 @@ Hits the real test Postgres database (docker-compose, see backend/CLAUDE.md).
 import asyncio
 
 import pytest
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import BackgroundTasks
 
 from app.auth.models import EmailVerificationToken, User
 from app.auth.routers import signup
@@ -73,8 +73,9 @@ class TestSignupQueuesVerificationEmail:
             payload = UserSignup(email=TEST_EMAIL, password="correct-horse-battery", name="Test User")
             background_tasks = BackgroundTasks()
 
-            user = signup(payload, background_tasks, db=db)
+            signup(payload, background_tasks, db=db)
 
+            user = db.query(User).filter(User.email == TEST_EMAIL).first()
             assert user.is_active is False
         finally:
             db.close()
@@ -85,8 +86,9 @@ class TestSignupQueuesVerificationEmail:
             payload = UserSignup(email=TEST_EMAIL, password="correct-horse-battery", name="Test User")
             background_tasks = BackgroundTasks()
 
-            user = signup(payload, background_tasks, db=db)
+            signup(payload, background_tasks, db=db)
 
+            user = db.query(User).filter(User.email == TEST_EMAIL).first()
             token_row = (
                 db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user.id).first()
             )
@@ -115,19 +117,21 @@ class TestSignupQueuesVerificationEmail:
         finally:
             db.close()
 
-    def test_duplicate_signup_returns_409_and_does_not_queue_a_second_email(
+    def test_duplicate_signup_returns_the_same_generic_message_and_does_not_queue_a_second_email(
         self, clean_test_user, fake_email_provider
     ):
         db = SessionLocal()
         try:
             payload = UserSignup(email=TEST_EMAIL, password="correct-horse-battery", name="Test User")
-            signup(payload, BackgroundTasks(), db=db)
+            original = signup(payload, BackgroundTasks(), db=db)
 
             duplicate_background_tasks = BackgroundTasks()
-            with pytest.raises(HTTPException) as exc_info:
-                signup(payload, duplicate_background_tasks, db=db)
+            duplicate = signup(payload, duplicate_background_tasks, db=db)
 
-            assert exc_info.value.status_code == 409
+            assert duplicate.message == original.message
             assert duplicate_background_tasks.tasks == []
+
+            users = db.query(User).filter(User.email == TEST_EMAIL).all()
+            assert len(users) == 1
         finally:
             db.close()
