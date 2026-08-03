@@ -21,7 +21,15 @@ class LocalSessionIn(BaseModel):
     bundle_id: str
     app_name: str
     window_title: str | None = None
+    project_path: str | None = None
+    context_detail: str | None = None
     started_at: datetime
     ended_at: datetime | None = None
     end_reason: str | None = None
     is_idle: bool
+
+
+class SyncPayload(BaseModel):
+    """Payload for the tracker sync endpoint."""
+    device_id: UUID
+    sessions: list[LocalSessionIn]

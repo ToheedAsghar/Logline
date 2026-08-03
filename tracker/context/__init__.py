@@ -6,11 +6,9 @@ Watchers and session code should use `resolve_context` as the only entry point.
 import logging
 from typing import Optional
 
-import objc
-
 from tracker.constants import (
-    RESOLVER_CAPABILITY_MSG, RESOLVER_ERROR_MSG, TERMINAL_BRANCH_KEY, TERMINAL_CWD_KEY, TERMINAL_TOOL_KEY,
-    TERMINAL_TOOL_REGISTRY,
+    RESOLVER_CAPABILITY_MSG, RESOLVER_ERROR_MSG, RESOLVER_RESCUE_EXCEPTIONS, TERMINAL_BRANCH_KEY,
+    TERMINAL_CWD_KEY, TERMINAL_TOOL_KEY, TERMINAL_TOOL_REGISTRY,
 )
 from tracker.context.models import ContextResult, TerminalToolContext, WindowContext
 from tracker.context.resolvers import REGISTRY, resolver_for
@@ -54,7 +52,7 @@ def _resolve_redacted_terminal(pid: Optional[int]) -> ContextResult:
         from tracker.context.terminal import project_root_for, resolve_terminal_tool
 
         detected = resolve_terminal_tool(pid)
-    except (objc.error, OSError):
+    except RESOLVER_RESCUE_EXCEPTIONS:
         logger.exception(RESOLVER_ERROR_MSG, "terminal")
         return ContextResult()
     if detected is None:
@@ -76,7 +74,7 @@ def resolve_context(
 
     Check redacted apps here so future callers cannot send their titles to title-based resolvers. Use
     `_resolve_redacted_terminal`, which sees only the PID and finds `{tool, cwd, branch}` from process data. On
-    expected Accessibility or OS errors, return empty context. Let programming errors raise.
+    configured resolver or environment failures, return empty context.
     """
     if is_redacted(bundle_id):
         return _resolve_redacted_terminal(pid)
@@ -95,6 +93,6 @@ def resolve_context(
             document_url=document_url,
         )
         return resolver_for(bundle_id)(ctx)
-    except (objc.error, OSError):
+    except RESOLVER_RESCUE_EXCEPTIONS:
         logger.exception(RESOLVER_ERROR_MSG, bundle_id)
         return ContextResult()
