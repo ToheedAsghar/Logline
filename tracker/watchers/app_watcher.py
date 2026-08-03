@@ -6,6 +6,8 @@ import objc
 from AppKit import NSWorkspace, NSWorkspaceApplicationKey, NSWorkspaceDidActivateApplicationNotification
 from Foundation import NSObject
 
+from tracker.constants import UNKNOWN_APP_NAME, UNKNOWN_BUNDLE_ID, WATCHER_ERROR_MSG
+
 logger = logging.getLogger(__name__)
 
 
@@ -23,11 +25,11 @@ class _ActivationObserver(NSObject):
             app = user_info.get(NSWorkspaceApplicationKey) if user_info else None
             if app is None:
                 return
-            bundle_id = app.bundleIdentifier() or "unknown"
-            app_name = app.localizedName() or "Unknown"
+            bundle_id = app.bundleIdentifier() or UNKNOWN_BUNDLE_ID
+            app_name = app.localizedName() or UNKNOWN_APP_NAME
             self._callback(bundle_id=bundle_id, app_name=app_name)
         except Exception:
-            logger.exception("AppWatcher callback raised; tracker continues running")
+            logger.exception(WATCHER_ERROR_MSG, "AppWatcher callback")
 
 
 class AppWatcher:

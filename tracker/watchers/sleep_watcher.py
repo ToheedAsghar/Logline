@@ -1,10 +1,8 @@
 """Watches for system sleep/wake and screen lock/unlock.
 
-Sleep and lock are kept as distinct events even though both close the open session
-the same way: a screen lock can happen without the system ever sleeping (manual lock,
-screensaver), so collapsing them into one reason would lose a real distinction. Wake
-and unlock intentionally do nothing here — the next real event naturally opens the
-next session.
+Sleep and lock are kept as distinct events even though both close the open session the same way: a screen lock can
+happen without the system ever sleeping (manual lock, screensaver), so collapsing them into one reason would lose a
+real distinction. Wake and unlock intentionally do nothing here — the next real event naturally opens the next session.
 """
 
 import logging
@@ -13,7 +11,7 @@ import objc
 from AppKit import NSWorkspace, NSWorkspaceDidWakeNotification, NSWorkspaceWillSleepNotification
 from Foundation import NSDistributedNotificationCenter, NSObject
 
-from tracker.constants import SCREEN_LOCKED_NOTIFICATION, SCREEN_UNLOCKED_NOTIFICATION
+from tracker.constants import SCREEN_LOCKED_NOTIFICATION, SCREEN_UNLOCKED_NOTIFICATION, WATCHER_ERROR_MSG
 
 logger = logging.getLogger(__name__)
 
@@ -30,25 +28,25 @@ class _PowerObserver(NSObject):
         try:
             self._on_sleep()
         except Exception:
-            logger.exception("SleepWatcher on_sleep callback raised; tracker continues running")
+            logger.exception(WATCHER_ERROR_MSG, "SleepWatcher on_sleep callback")
 
     def didWake_(self, notification):
         try:
             self._on_wake()
         except Exception:
-            logger.exception("SleepWatcher on_wake callback raised; tracker continues running")
+            logger.exception(WATCHER_ERROR_MSG, "SleepWatcher on_wake callback")
 
     def screenLocked_(self, notification):
         try:
             self._on_lock()
         except Exception:
-            logger.exception("SleepWatcher on_lock callback raised; tracker continues running")
+            logger.exception(WATCHER_ERROR_MSG, "SleepWatcher on_lock callback")
 
     def screenUnlocked_(self, notification):
         try:
             self._on_unlock()
         except Exception:
-            logger.exception("SleepWatcher on_unlock callback raised; tracker continues running")
+            logger.exception(WATCHER_ERROR_MSG, "SleepWatcher on_unlock callback")
 
 
 class SleepWatcher:

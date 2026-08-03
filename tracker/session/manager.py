@@ -3,11 +3,14 @@ Any boundary event closes the open session and may open a new one."""
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from Foundation import NSTimer
 
-from tracker.constants import HEARTBEAT_INTERVAL_SECONDS
+from tracker.constants import (
+    END_REASON_IDLE, END_REASON_LOCK, END_REASON_SLEEP, END_REASON_SWITCH, END_REASON_TITLE_CHANGE,
+    HEARTBEAT_INTERVAL_SECONDS, SEALED_SESSION_MSG,
+)
 from tracker.session.models import Session
 from tracker.storage import db
 
@@ -24,15 +27,11 @@ class SessionManager:
 
         sealed = db.seal_dangling_session(self._conn)
         if sealed is not None:
-            print(f"sealed dangling session from previous run: {sealed.app_name} ({sealed.bundle_id})")
+            print(SEALED_SESSION_MSG % (sealed.app_name, sealed.bundle_id))
 
     def _open_session(
-        self,
-        bundle_id: str,
-        app_name: str,
-        window_title: Optional[str] = None,
-        started_at: Optional[str] = None,
-        is_idle: bool = False,
+        self, bundle_id: str, app_name: str, window_title: Optional[str] = None, started_at: Optional[str] = None,
+        is_idle: bool = False, project_path: Optional[str] = None, context_detail: Optional[Dict[str, Any]] = None,
     ) -> None:
         when = started_at or _iso()
         self._open = Session(
@@ -43,8 +42,21 @@ class SessionManager:
             started_at=when,
             ended_at=when,
             is_idle=is_idle,
+            project_path=project_path,
+            context_detail=context_detail,
         )
         db.insert_open_session(self._conn, self._open)
+
+    def _carry_over(self) -> dict:
+        """The open session's identity, reused when a boundary reopens the same activity (idle start/end).
+        Context is carried too: an idle gap doesn't change which project was being worked on."""
+        return {
+            "bundle_id": self._open.bundle_id,
+            "app_name": self._open.app_name,
+            "window_title": self._open.window_title,
+            "project_path": self._open.project_path,
+            "context_detail": self._open.context_detail,
+        }
 
     def _close_open(self, end_reason: str, ended_at: Optional[str] = None) -> None:
         if self._open is None:
@@ -55,19 +67,27 @@ class SessionManager:
         self._open = None
 
     def on_app_activated(self, bundle_id: str, app_name: str) -> None:
-        self._close_open(end_reason="switch")
+        self._close_open(end_reason=END_REASON_SWITCH)
         self._open_session(bundle_id=bundle_id, app_name=app_name)
 
-    def on_title_changed(self, bundle_id: str, app_name: str, window_title: Optional[str]) -> None:
+    def on_title_changed(self, bundle_id: str, app_name: str, window_title: Optional[str], context=None) -> None:
+        """`context` is the ContextResult from TitleWatcher, kept as one optional argument so the watcher can
+        stay wired straight to this method. None means no context was resolvable — not an error."""
         was_idle = self._open.is_idle if self._open else False
-        self._close_open(end_reason="title_change")
-        self._open_session(bundle_id=bundle_id, app_name=app_name, window_title=window_title, is_idle=was_idle)
+        self._close_open(end_reason=END_REASON_TITLE_CHANGE)
+        self._open_session(
+            bundle_id=bundle_id,
+            app_name=app_name,
+            window_title=window_title,
+            is_idle=was_idle,
+            project_path=getattr(context, "project_path", None),
+            context_detail=(getattr(context, "detail", None) or None),
+        )
 
     def on_idle_start(self, stopped_at: datetime) -> None:
-        """Closes the active session backdated to when input actually stopped, then
-        opens an idle session starting at that same moment. Reuses the just-closed
-        session's identity: nothing else could have become frontmost during a span
-        with no keyboard/mouse input to trigger a switch."""
+        """Closes the active session backdated to when input actually stopped, then opens an idle session starting at
+        that same moment. Reuses the just-closed session's identity: nothing else could have become frontmost during a
+        span with no keyboard/mouse input to trigger a switch."""
         if self._open is None:
             return
         opened_at = datetime.fromisoformat(self._open.started_at)
@@ -75,38 +95,33 @@ class SessionManager:
             self._open.is_idle = True
             db.update_open_session_is_idle(self._conn, self._open.id, True)
             return
-        bundle_id, app_name, window_title = self._open.bundle_id, self._open.app_name, self._open.window_title
+        carried = self._carry_over()
         backdated = _iso(stopped_at)
-        self._close_open(end_reason="idle", ended_at=backdated)
-        self._open_session(
-            bundle_id=bundle_id, app_name=app_name, window_title=window_title, started_at=backdated, is_idle=True
-        )
+        self._close_open(end_reason=END_REASON_IDLE, ended_at=backdated)
+        self._open_session(started_at=backdated, is_idle=True, **carried)
 
     def on_sleep(self) -> None:
-        """The system is about to sleep — close whatever's open immediately. Wake does
-        nothing; the next real event naturally opens the next session."""
-        self._close_open(end_reason="sleep")
+        """The system is about to sleep — close whatever's open immediately. Wake does nothing; the next real event
+        naturally opens the next session."""
+        self._close_open(end_reason=END_REASON_SLEEP)
 
     def on_lock(self) -> None:
-        """The screen locked (independent of sleep — e.g. a manual lock or
-        screensaver) — close whatever's open immediately. Unlock does nothing, same
-        reasoning as wake."""
-        self._close_open(end_reason="lock")
+        """The screen locked (independent of sleep — e.g. a manual lock or screensaver) — close whatever's open
+        immediately. Unlock does nothing, same reasoning as wake."""
+        self._close_open(end_reason=END_REASON_LOCK)
 
     def on_idle_end(self) -> None:
-        """Closes the idle session and immediately resumes normal tracking under the
-        same identity — the next switch/title-change event will correct it if the
-        user actually acted on a different app."""
+        """Closes the idle session and immediately resumes normal tracking under the same identity — the next
+        switch/title-change event will correct it if the user actually acted on a different app."""
         if self._open is None:
             return
-        bundle_id, app_name, window_title = self._open.bundle_id, self._open.app_name, self._open.window_title
-        self._close_open(end_reason="idle")
-        self._open_session(bundle_id=bundle_id, app_name=app_name, window_title=window_title)
+        carried = self._carry_over()
+        self._close_open(end_reason=END_REASON_IDLE)
+        self._open_session(**carried)
 
     def _on_heartbeat(self) -> None:
-        """Keeps the open_session mirror's ended_at current so a crash seals a
-        realistic duration instead of started_at. Never closes or opens a session —
-        that's only ever triggered by watcher callbacks."""
+        """Keeps the open_session mirror's ended_at current so a crash seals a realistic duration instead of
+        started_at. Never closes or opens a session — that's only ever triggered by watcher callbacks."""
         if self._open is None:
             return
         now = _iso()

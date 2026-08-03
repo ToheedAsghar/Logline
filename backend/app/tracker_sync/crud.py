@@ -8,16 +8,26 @@ from sqlalchemy.orm import Session
 from app.entries.models import Entry, EntryStatus
 from app.tracker_sync.models import LocalSession
 
-UPSERT_FIELDS = ("bundle_id", "app_name", "window_title", "started_at", "ended_at", "end_reason", "is_idle")
+UPSERT_FIELDS = (
+    "bundle_id",
+    "app_name",
+    "window_title",
+    "project_path",
+    "context_detail",
+    "started_at",
+    "ended_at",
+    "end_reason",
+    "is_idle",
+)
 
 
 def upsert_sessions(db: Session, rows: list[dict]) -> tuple[set[UUID], set[UUID]]:
     """Save a batch of tracker sessions using an "upsert" (insert if new, update if it already exists).
 
     If a session matching (user_id, id) already exists, all of its mutable fields (bundle_id,
-    app_name, window_title, started_at, ended_at, end_reason, is_idle) are updated. This allows
-    sessions to be re-sent with corrected information after they finish, ensuring the database
-    holds the latest version rather than dropping new info.
+    app_name, window_title, project_path, context_detail, started_at, ended_at, end_reason,
+    is_idle) are updated. This allows sessions to be re-sent with corrected information after
+    they finish, ensuring the database holds the latest version rather than dropping new info.
 
     Returns (inserted_ids, conflicted_ids):
       - inserted_ids: set of UUIDs for newly inserted sessions.
@@ -41,7 +51,6 @@ def upsert_sessions(db: Session, rows: list[dict]) -> tuple[set[UUID], set[UUID]
         ]),
     ).returning(LocalSession.id, literal_column("(xmax = 0)").label("inserted"))
     result = db.execute(stmt)
-    db.commit()
 
     inserted_ids: set[UUID] = set()
     conflicted_ids: set[UUID] = set()

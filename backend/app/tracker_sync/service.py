@@ -113,6 +113,8 @@ def _row_dict(session: LocalSessionIn, user_id: int, started_at_utc: datetime, e
         "bundle_id": session.bundle_id,
         "app_name": session.app_name,
         "window_title": session.window_title,
+        "project_path": session.project_path,
+        "context_detail": session.context_detail,
         "started_at": started_at_utc,
         "ended_at": ended_at_utc,
         "end_reason": session.end_reason,
