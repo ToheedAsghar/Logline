@@ -19,6 +19,12 @@ class EntryStatus(str, enum.Enum):
     approved = "approved"
 
 
+class EntryVersionSource(str, enum.Enum):
+    ai_draft = "ai_draft"
+    human_approved = "human_approved"
+    human_revision = "human_revision"
+
+
 class Entry(Base):
     __tablename__ = "entries"
 
@@ -32,3 +38,23 @@ class Entry(Base):
     approved_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User", back_populates="entries")
+    versions = relationship(
+        "EntryVersion", back_populates="entry", cascade="all, delete-orphan", order_by="EntryVersion.created_at"
+    )
+
+
+class EntryVersion(Base):
+    """One immutable snapshot of an entry's content -- the AI draft as generated, the content as approved, or a
+    human edit made after approval. Never updated in place; a new row is appended at each of those three moments
+    instead. `entries.content` remains the current-state row; this table is the append-only history alongside it.
+    """
+
+    __tablename__ = "entry_versions"
+
+    id = Column(Integer, primary_key=True)
+    entry_id = Column(Integer, ForeignKey("entries.id", ondelete="CASCADE"), nullable=False, index=True)
+    source = Column(Enum(EntryVersionSource, name="entry_version_source"), nullable=False)
+    content = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    entry = relationship("Entry", back_populates="versions")
