@@ -82,6 +82,10 @@ def _get_jwks(*, force_refresh: bool = False) -> dict:
     """In-process TTL cache for Google's JWKS. `force_refresh` bypasses a
     fresh cache entry -- used by verify_google_id_token when a token's `kid`
     isn't among the cached keys, in case of an actual key rotation.
+
+    Uses double-checked locking: the fast path is under the lock, the network
+    fetch is outside the lock so other threads aren't blocked, and the lock is
+    re-acquired before writing so a concurrent refresh doesn't get overwritten.
     """
     with _jwks_cache_lock:
         cached = _jwks_cache["jwks"]
@@ -90,12 +94,18 @@ def _get_jwks(*, force_refresh: bool = False) -> dict:
             return cached
 
     jwks = _fetch_jwks()
+
     with _jwks_cache_lock:
-        is_still_stale = (time.monotonic() - _jwks_cache["fetched_at"]) >= JWKS_CACHE_TTL_SECONDS
-        if _jwks_cache["jwks"] is None or is_still_stale or force_refresh:
-            _jwks_cache["jwks"] = jwks
-            _jwks_cache["fetched_at"] = time.monotonic()
-        return _jwks_cache["jwks"]
+
+        now_fresh = _jwks_cache["jwks"] is not None and (
+            time.monotonic() - _jwks_cache["fetched_at"]
+        ) < JWKS_CACHE_TTL_SECONDS
+        if now_fresh and not force_refresh:
+            return _jwks_cache["jwks"]
+
+        _jwks_cache["jwks"] = jwks
+        _jwks_cache["fetched_at"] = time.monotonic()
+        return jwks
 
 
 def _extract_kid(id_token_str: str) -> str | None:

@@ -293,7 +293,7 @@ def google_callback(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=TEXT_INACTIVE_USER_ACCOUNT)
 
     exchange_code = create_oauth_exchange_code(db, user_id=user.id)
-    return RedirectResponse(f"{settings.frontend_base_url}/oauth/callback?code={exchange_code}")
+    return RedirectResponse(f"{settings.frontend_base_url}/oauth/callback#code={exchange_code}")
 
 
 @router.post("/google/exchange", response_model=Token)

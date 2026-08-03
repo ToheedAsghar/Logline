@@ -17,6 +17,7 @@ but the shape differs in two ways:
   sidesteps that class of bug entirely for a field that's just a label.
 """
 
+import random
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -27,8 +28,8 @@ from sqlalchemy.sql import func
 
 from app.config import settings
 from app.core.constants import (
-    OAUTH_STATE_ALREADY_USED_MESSAGE, OAUTH_STATE_EXPIRED_MESSAGE, OAUTH_STATE_INVALID_MESSAGE,
-    OAUTH_STATE_PURPOSE_MISMATCH_MESSAGE, OAUTH_STATE_TTL_SECONDS,
+    OAUTH_EXCHANGE_PURPOSE, OAUTH_EXCHANGE_TTL_SECONDS, OAUTH_STATE_ALREADY_USED_MESSAGE, OAUTH_STATE_EXPIRED_MESSAGE,
+    OAUTH_STATE_INVALID_MESSAGE, OAUTH_STATE_PURPOSE_MISMATCH_MESSAGE, OAUTH_STATE_TTL_SECONDS,
 )
 from app.db.session import Base
 
@@ -81,6 +82,22 @@ def cleanup_expired_oauth_states(db: Session) -> int:
     return deleted
 
 
+def _create_oauth_token(db: Session, *, purpose: str, ttl_seconds: int, extra_payload: dict | None = None) -> str:
+    """Persist and sign one OAuth token, optionally carrying extra claims."""
+    if random.random() < 0.1:
+        cleanup_expired_oauth_states(db)
+
+    jti = uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=ttl_seconds)
+
+    db.add(OAuthState(jti=jti, purpose=purpose, expires_at=expires_at))
+    db.commit()
+
+    payload = {"jti": jti, "purpose": purpose, "exp": expires_at, **(extra_payload or {})}
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
 def create_oauth_state(db: Session, *, purpose: str) -> str:
     """Issue a signed, single-use state token for `purpose`.
 
@@ -89,26 +106,11 @@ def create_oauth_state(db: Session, *, purpose: str) -> str:
     do that, since a JWT is stateless and would otherwise be replayable
     until it expires.
     """
-    cleanup_expired_oauth_states(db)
-
-    jti = uuid.uuid4().hex
-    now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(seconds=OAUTH_STATE_TTL_SECONDS)
-
-    db.add(OAuthState(jti=jti, purpose=purpose, expires_at=expires_at))
-    db.commit()
-
-    payload = {"jti": jti, "purpose": purpose, "exp": expires_at}
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return _create_oauth_token(db, purpose=purpose, ttl_seconds=OAUTH_STATE_TTL_SECONDS)
 
 
-def consume_oauth_state(db: Session, *, token: str, expected_purpose: str) -> None:
-    """Validate and redeem a state token issued for `expected_purpose`.
-
-    Raises OAuthStateError, with a message specific to the failure reason
-    (invalid/tampered signature, expired, already used, or issued for a
-    different purpose), rather than a generic rejection.
-    """
+def _consume_oauth_token(db: Session, *, token: str, expected_purpose: str) -> dict:
+    """Validate and atomically redeem a persisted OAuth token."""
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
     except jwt.ExpiredSignatureError as exc:
@@ -120,13 +122,14 @@ def consume_oauth_state(db: Session, *, token: str, expected_purpose: str) -> No
         raise OAuthStateError(OAUTH_STATE_PURPOSE_MISMATCH_MESSAGE)
 
     jti = payload.get("jti")
+    if not isinstance(jti, str) or not jti:
+        raise OAuthStateError(OAUTH_STATE_INVALID_MESSAGE)
+
     state_row = db.query(OAuthState).filter(OAuthState.jti == jti).with_for_update().first()
     if state_row is None:
         raise OAuthStateError(OAUTH_STATE_INVALID_MESSAGE)
-
     if state_row.purpose != expected_purpose:
         raise OAuthStateError(OAUTH_STATE_PURPOSE_MISMATCH_MESSAGE)
-
     if state_row.used_at is not None:
         raise OAuthStateError(OAUTH_STATE_ALREADY_USED_MESSAGE)
 
@@ -136,55 +139,36 @@ def consume_oauth_state(db: Session, *, token: str, expected_purpose: str) -> No
 
     state_row.used_at = now
     db.commit()
+    return payload
+
+
+def consume_oauth_state(db: Session, *, token: str, expected_purpose: str) -> None:
+    """Validate and redeem a state token issued for `expected_purpose`.
+
+    Raises OAuthStateError, with a message specific to the failure reason
+    (invalid/tampered signature, expired, already used, or issued for a
+    different purpose), rather than a generic rejection.
+    """
+    _consume_oauth_token(db, token=token, expected_purpose=expected_purpose)
 
 
 def create_oauth_exchange_code(db: Session, *, user_id: int) -> str:
     """Issue a short-lived, single-use token that the frontend can exchange for a JWT access token."""
-    cleanup_expired_oauth_states(db)
-
-    jti = uuid.uuid4().hex
-    now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(seconds=60)
-
-    db.add(OAuthState(jti=jti, purpose="oauth_exchange", expires_at=expires_at))
-    db.commit()
-
-    payload = {"jti": jti, "user_id": user_id, "purpose": "oauth_exchange", "exp": expires_at}
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return _create_oauth_token(
+        db,
+        purpose=OAUTH_EXCHANGE_PURPOSE,
+        ttl_seconds=OAUTH_EXCHANGE_TTL_SECONDS,
+        extra_payload={"user_id": user_id},
+    )
 
 
 def consume_oauth_exchange_code(db: Session, *, code: str) -> int:
     """Validate and redeem a single-use exchange code, returning the user_id."""
-    try:
-        payload = jwt.decode(code, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-    except jwt.ExpiredSignatureError as exc:
-        raise OAuthStateError(OAUTH_STATE_EXPIRED_MESSAGE) from exc
-    except jwt.PyJWTError as exc:
-        raise OAuthStateError(OAUTH_STATE_INVALID_MESSAGE) from exc
-
-    if payload.get("purpose") != "oauth_exchange":
-        raise OAuthStateError(OAUTH_STATE_PURPOSE_MISMATCH_MESSAGE)
-
-    jti = payload.get("jti")
+    payload = _consume_oauth_token(db, token=code, expected_purpose=OAUTH_EXCHANGE_PURPOSE)
     user_id = payload.get("user_id")
-    if not jti or user_id is None:
+    if user_id is None:
         raise OAuthStateError(OAUTH_STATE_INVALID_MESSAGE)
-
-    state_row = db.query(OAuthState).filter(OAuthState.jti == jti).with_for_update().first()
-    if state_row is None:
-        raise OAuthStateError(OAUTH_STATE_INVALID_MESSAGE)
-
-    if state_row.purpose != "oauth_exchange":
-        raise OAuthStateError(OAUTH_STATE_PURPOSE_MISMATCH_MESSAGE)
-
-    if state_row.used_at is not None:
-        raise OAuthStateError(OAUTH_STATE_ALREADY_USED_MESSAGE)
-
-    now = datetime.now(timezone.utc)
-    if state_row.expires_at <= now:
-        raise OAuthStateError(OAUTH_STATE_EXPIRED_MESSAGE)
-
-    state_row.used_at = now
-    db.commit()
-
-    return int(user_id)
+    try:
+        return int(user_id)
+    except (TypeError, ValueError) as exc:
+        raise OAuthStateError(OAUTH_STATE_INVALID_MESSAGE) from exc

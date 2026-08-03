@@ -550,7 +550,7 @@ class TestGoogleExchangeCodeEndpoint:
 
             response = google_callback(code="fake-code", state=state_token, db=db)
             parsed_url = urlparse(response.headers["location"])
-            exchange_code = parse_qs(parsed_url.query)["code"][0]
+            exchange_code = parsed_url.fragment.removeprefix("code=")
 
             token_res = google_exchange(payload=OAuthExchangeRequest(code=exchange_code), db=db)
             assert token_res.access_token is not None
