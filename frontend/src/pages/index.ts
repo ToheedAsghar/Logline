@@ -10,4 +10,5 @@ export { default as OutputComposer } from "./OutputComposer";
 export { default as Settings } from "./Settings";
 export { default as History } from "./History";
 export { default as StyleGuide } from "./StyleGuide";
+export { ReviewDraft } from "./ReviewDraft";
 export { SelfCaptureModal, type SelfCaptureModalProps } from "./SelfCapture";

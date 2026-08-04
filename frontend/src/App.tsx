@@ -9,6 +9,7 @@ import {
   OAuthCallback,
   OutputComposer,
   ResetPassword,
+  ReviewDraft,
   Settings,
   Signup,
   StyleGuide,
@@ -36,6 +37,7 @@ export default function App() {
       >
         <Route path="/" element={<Timeline />} />
         <Route path="/gaps" element={<GapDetector />} />
+        <Route path="/review" element={<ReviewDraft />} />
         <Route path="/compose" element={<OutputComposer />} />
         <Route path="/history" element={<History />} />
         <Route path="/settings" element={<Settings />} />

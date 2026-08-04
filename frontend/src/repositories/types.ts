@@ -87,3 +87,95 @@ export interface UserResponse {
   default_channel: string | null;
   created_at: string;
 }
+
+export const ALL_ENTRY_TAGS = [
+  "Coding",
+  "Debugging",
+  "Code Review",
+  "Meeting",
+  "Testing",
+  "Documentation",
+  "Coordination",
+  "Deployment",
+  "Project Planning",
+  "Architecture Design",
+  "Designing",
+  "Technical Project Setup",
+  "Backlog grooming",
+  "Support Tickets",
+  "Support",
+  "R&D",
+  "Tech Assessment",
+  "Reviews",
+  "Reporting/Analysis",
+  "Training/Learning",
+  "Team Engagement",
+  "Team Management",
+  "Project Estimations",
+  "Presenting",
+  "Interviewing",
+  "Recruiting",
+  "Course Authoring",
+  "Account Management",
+  "Customer Implementation",
+  "Operations",
+  "Audit/Compliance",
+  "Sales/Client Demo",
+  "Marketing Campaigns",
+  "Capex",
+  "Opex",
+  "Other",
+] as const;
+
+export type EntryTag = (typeof ALL_ENTRY_TAGS)[number];
+
+export interface BlockAllocation {
+  block_id: number;
+  minutes: number;
+}
+
+export interface DraftEntry {
+  date: string;
+  project: string;
+  allocations: BlockAllocation[];
+  tag: EntryTag;
+  description: string;
+  source_remote_event_ids?: string[];
+  review_reason?: string | null;
+}
+
+export interface DraftReminder {
+  note: string;
+  source: "github" | "jira" | "slack" | "calendar";
+  day: string;
+  source_remote_event_ids?: string[];
+}
+
+export interface WorkLogDraft {
+  entries: DraftEntry[];
+  reminders: DraftReminder[];
+  residual_unassigned_minutes: BlockAllocation[];
+}
+
+export interface VerificationIssue {
+  severity: "error" | "warning";
+  check: string;
+  detail: string;
+  block_id?: number | null;
+  entry_index?: number | null;
+}
+
+export interface VerificationResult {
+  passed: boolean;
+  issues: VerificationIssue[];
+}
+
+export interface ReconciliationResult {
+  draft: WorkLogDraft;
+  verification: VerificationResult;
+}
+
+export interface ReconciliationGenerateParams {
+  date_range_start: string;
+  date_range_end: string;
+}
