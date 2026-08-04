@@ -1,5 +1,7 @@
 # OAuth
 OAUTH_STATE_TTL_SECONDS = 600
+OAUTH_EXCHANGE_TTL_SECONDS = 60
+OAUTH_EXCHANGE_PURPOSE = "oauth_exchange"
 
 OAUTH_STATE_INVALID_MESSAGE = (
     "Could not verify the OAuth state parameter: it was missing, malformed, or its "

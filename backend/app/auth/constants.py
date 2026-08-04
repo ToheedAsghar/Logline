@@ -18,6 +18,7 @@ EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS = 60
 # Login
 TEXT_LOGIN_INVALID_CREDENTIALS = "Invalid email or password"
 TEXT_LOGIN_EMAIL_NOT_VERIFIED = "Email not verified. Please check your inbox for a verification link"
+TEXT_INACTIVE_USER_ACCOUNT = "Inactive user account"
 
 # Google SSO
 GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"

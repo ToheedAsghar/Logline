@@ -27,8 +27,8 @@ from app.auth import crud
 from app.auth.constants import GOOGLE_LOGIN_STATE_PURPOSE, TEXT_GOOGLE_SIGN_IN_FAILED, TEXT_LOGIN_INVALID_CREDENTIALS
 from app.auth.google_oauth import GoogleAuthError
 from app.auth.models import User
-from app.auth.routers import google_callback, google_login, login
-from app.auth.schemas import UserLogin
+from app.auth.routers import google_callback, google_exchange, google_login, login
+from app.auth.schemas import OAuthExchangeRequest, UserLogin
 from app.auth.security import hash_password
 from app.config import settings
 from app.core.oauth_state import OAuthState, create_oauth_state
@@ -166,7 +166,7 @@ class TestGoogleCallbackFreshSignup:
             assert user.is_sso_user is True
             assert user.is_active is True
             assert user.hashed_password is None
-            assert "token=" in response.headers["location"]
+            assert "code=" in response.headers["location"]
         finally:
             if jti is not None:
                 _delete_state(db, jti)
@@ -495,6 +495,66 @@ class TestGoogleCallbackErrorMessageSanitization:
                     google_callback(code="fake-code", state=state_token, db=db)
 
             assert raw_detail in caplog.text
+        finally:
+            if jti is not None:
+                _delete_state(db, jti)
+            db.close()
+
+
+class TestGoogleCallbackConsentCancellation:
+    def test_canceling_consent_returns_clean_400(self, clean_test_users):
+        db = SessionLocal()
+        try:
+            with pytest.raises(HTTPException) as exc_info:
+                google_callback(error="access_denied", state="fake-state", db=db)
+            assert exc_info.value.status_code == 400
+            assert exc_info.value.detail == TEXT_GOOGLE_SIGN_IN_FAILED
+        finally:
+            db.close()
+
+
+class TestGoogleCallbackInactiveUserCheck:
+    def test_inactive_user_rejected_with_403(self, clean_test_users, mock_google):
+        db = SessionLocal()
+        jti = None
+        try:
+            inactive = User(
+                email=FRESH_EMAIL,
+                hashed_password=None,
+                is_active=False,
+                is_sso_user=True,
+                google_user_id=FRESH_SUB,
+            )
+            db.add(inactive)
+            db.commit()
+
+            mock_google["claims"] = _claims(FRESH_SUB, FRESH_EMAIL)
+            state_token, jti = _create_state(db)
+
+            with pytest.raises(HTTPException) as exc_info:
+                google_callback(code="fake-code", state=state_token, db=db)
+            assert exc_info.value.status_code == 403
+        finally:
+            if jti is not None:
+                _delete_state(db, jti)
+            db.close()
+
+
+class TestGoogleExchangeCodeEndpoint:
+    def test_successful_code_exchange_returns_access_token(self, clean_test_users, mock_google):
+        db = SessionLocal()
+        jti = None
+        try:
+            mock_google["claims"] = _claims(FRESH_SUB, FRESH_EMAIL)
+            state_token, jti = _create_state(db)
+
+            response = google_callback(code="fake-code", state=state_token, db=db)
+            parsed_url = urlparse(response.headers["location"])
+            exchange_code = parsed_url.fragment.removeprefix("code=")
+
+            token_res = google_exchange(payload=OAuthExchangeRequest(code=exchange_code), db=db)
+            assert token_res.access_token is not None
+            assert token_res.token_type == "bearer"
         finally:
             if jti is not None:
                 _delete_state(db, jti)

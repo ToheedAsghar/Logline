@@ -93,22 +93,19 @@ def _parse_refresh_response(data: dict) -> OAuthTokens:
 def _parse_httpx_response(response: httpx.Response, parser) -> OAuthTokens:
     try:
         response.raise_for_status()
-        data = response.json()
-        return parser(data)
-    except SlackOAuthError:
-        raise
-    except httpx.HTTPStatusError as exc:
-        raise SlackOAuthError(
-            SLACK_OAUTH_NETWORK_ERROR_MESSAGE.format(detail=str(exc))
-        ) from exc
     except httpx.HTTPError as exc:
         raise SlackOAuthError(
             SLACK_OAUTH_NETWORK_ERROR_MESSAGE.format(detail=str(exc))
         ) from exc
-    except (AttributeError, TypeError, ValueError) as exc:
+
+    try:
+        data = response.json()
+    except ValueError as exc:
         raise SlackOAuthError(
             SLACK_OAUTH_NETWORK_ERROR_MESSAGE.format(detail=str(exc))
         ) from exc
+
+    return parser(data)
 
 
 class SlackOAuthProvider(OAuthProvider):

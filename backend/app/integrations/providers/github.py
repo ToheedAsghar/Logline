@@ -57,14 +57,15 @@ def _parse_token_response(data: dict) -> OAuthTokens:
 def _parse_httpx_response(response: httpx.Response) -> OAuthTokens:
     try:
         response.raise_for_status()
-        data = response.json()
-        return _parse_token_response(data)
-    except GitHubOAuthError:
-        raise
     except httpx.HTTPError as exc:
         raise GitHubOAuthError(GITHUB_OAUTH_NETWORK_ERROR_MESSAGE.format(detail=str(exc))) from exc
-    except (AttributeError, TypeError, ValueError) as exc:
+
+    try:
+        data = response.json()
+    except ValueError as exc:
         raise GitHubOAuthError(GITHUB_OAUTH_NETWORK_ERROR_MESSAGE.format(detail=str(exc))) from exc
+
+    return _parse_token_response(data)
 
 
 class GitHubOAuthProvider(OAuthProvider):

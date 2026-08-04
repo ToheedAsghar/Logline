@@ -98,8 +98,6 @@ GITHUB_OAUTH_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
 
 GITHUB_OAUTH_SCOPES = ("repo",)
 
-GITHUB_CONNECT_STATE_PURPOSE = "github_connect"
-
 # --- Messages ---
 
 GITHUB_TOKEN_EXCHANGE_FAILED_MESSAGE = (

@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.auth.deps import get_current_user
 from app.auth.models import User
@@ -98,7 +99,7 @@ async def integration_callback(
         )
 
     try:
-        user_id = consume_connect_state(db, token=state, expected_source=source)
+        user_id = await run_in_threadpool(consume_connect_state, db, token=state, expected_source=source)
     except OAuthStateError as exc:
         logger.info("%s connect state validation failed: %s", source.value, exc.message)
         return RedirectResponse(url=_result_redirect(source, result_status="error", reason="invalid_state"))
@@ -121,9 +122,9 @@ async def integration_callback(
         logger.info("%s OAuth exchange failed: %s", source.value, exc)
         return RedirectResponse(url=_result_redirect(source, result_status="error", reason="exchange_failed"))
 
-    integration = _get_or_create_integration(db, user_id, source)
-    _upsert_oauth_token(db, integration.id, tokens)
-    db.commit()
+    integration = await run_in_threadpool(_get_or_create_integration, db, user_id, source)
+    await run_in_threadpool(_upsert_oauth_token, db, integration.id, tokens)
+    await run_in_threadpool(db.commit)
 
     return RedirectResponse(url=_result_redirect(source, result_status="connected"))
 
