@@ -1,8 +1,9 @@
 """Tuning constants — no magic numbers inline elsewhere."""
 
-from pathlib import Path
-import objc
 import re
+from pathlib import Path
+
+import objc
 
 RESOLVER_RESCUE_EXCEPTIONS = (
     ValueError, TypeError, KeyError, IndexError, AttributeError,
@@ -109,6 +110,8 @@ SCREEN_UNLOCKED_NOTIFICATION = "com.apple.screenIsUnlocked"
 DB_DIR = Path.home() / "Library" / "Application Support" / "Logline"
 DB_PATH = DB_DIR / "tracker.db"
 LOCK_PATH = DB_DIR / "tracker.lock"
+
+LOG_DIR = Path.home() / "Library" / "Logs" / "Logline"
 
 EXIT_ALREADY_RUNNING = 75
 

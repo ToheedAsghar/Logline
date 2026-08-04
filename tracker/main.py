@@ -13,6 +13,7 @@ from tracker.constants import (
     EVENT_KIND_UNLOCK, EVENT_KIND_WAKE, EXIT_ALREADY_RUNNING, REFUSING_TO_START_MSG, TRACKER_RUNNING_MSG,
 )
 from tracker.context import resolver_capability_summary
+from tracker.logging_config import configure_logging
 from tracker.session.manager import SessionManager
 from tracker.singleton import AlreadyRunning, SingleInstanceLock
 from tracker.storage import db
@@ -41,6 +42,7 @@ def _install_sigterm_runloop_source():
 
 
 def main():
+    configure_logging()
     lock = SingleInstanceLock()
     try:
         lock.acquire()

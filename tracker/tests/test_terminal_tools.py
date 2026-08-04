@@ -153,32 +153,78 @@ def test_reported_tool_name_comes_from_the_registry_not_the_process(monkeypatch)
     assert "SECRET" not in repr(detected)
 
 
-def test_adding_a_registry_entry_needs_no_resolver_change(monkeypatch):
+def test_adding_a_registry_entry_changes_the_tool_label(monkeypatch):
     install_tree(monkeypatch, terminal_running(("/usr/local/bin/newtool", ["newtool"])))
-    assert resolve_terminal_tool(100) is None
+    detected = resolve_terminal_tool(100)
+    assert detected is not None
+    assert detected.tool is None
     detected = resolve_terminal_tool(100, registry={"new-tool": frozenset({"newtool"})})
     assert detected.tool == "new-tool"
 
 
 # --- fail-closed fallbacks ------------------------------------------------------------------------------------
 
-def test_recognized_terminal_with_no_known_tool_falls_back(monkeypatch):
+def test_recognized_terminal_with_no_known_tool_reports_cwd_and_branch(monkeypatch):
     install_tree(monkeypatch, terminal_running(SHELL_SIGNATURE))
-    assert resolve_terminal_tool(100) is None
+    detected = resolve_terminal_tool(100)
+    assert detected is not None
+    assert detected.tool is None
+    assert detected.cwd == "/Users/dev/project"
 
 
-def test_tmux_session_falls_back(monkeypatch):
-    """tmux panes are opaque to this walk, so focus cannot be attributed — Phase 2 handles multiplexers."""
+def test_tmux_session_resolves_active_pane_cwd(monkeypatch):
+    """When tmux is the foreground process and the multiplexer resolver can read the active pane's cwd, we
+    attribute the session to that cwd."""
+    from tracker.context.models import TerminalToolContext
+
     install_tree(monkeypatch, terminal_running(TMUX_SIGNATURE))
+    monkeypatch.setattr(
+        "tracker.context.terminal.resolve_multiplexer",
+        lambda names, tty: TerminalToolContext(tool=None, cwd="/Users/dev/tmux-project", branch=None),
+    )
+    detected = resolve_terminal_tool(100)
+    assert detected is not None
+    assert detected.tool is None
+    assert detected.cwd == "/Users/dev/tmux-project"
+
+
+def test_tmux_session_falls_back_when_pane_cwd_is_unreadable(monkeypatch):
+    """When tmux cannot report its active pane, we fall back to full redaction."""
+    install_tree(monkeypatch, terminal_running(TMUX_SIGNATURE))
+    monkeypatch.setattr("tracker.context.terminal.resolve_multiplexer", lambda names, tty: None)
     assert resolve_terminal_tool(100) is None
 
 
-def test_tmux_alongside_a_known_tool_still_falls_back(monkeypatch):
-    """A multiplexer anywhere in the foreground set poisons the whole observation, tool present or not."""
+def test_tmux_resolved_when_it_is_the_only_foreground_process(monkeypatch):
+    """A multiplexer in the foreground is resolved when no other process is also foreground."""
+    from tracker.context.models import TerminalToolContext
+
+    tree = terminal_running(REAL_SIGNATURES["codex"])
+    tree[0].children.append(200)
+    tree.append(FakeProcess(200, *TMUX_SIGNATURE, tty=0x11, foreground=True, cwd="/Users/dev/other"))
+    tree[-2].foreground = False  # codex is background
+    install_tree(monkeypatch, tree)
+    monkeypatch.setattr(
+        "tracker.context.terminal.resolve_multiplexer",
+        lambda names, tty: TerminalToolContext(tool=None, cwd="/Users/dev/other", branch=None),
+    )
+    detected = resolve_terminal_tool(100)
+    assert detected is not None
+    assert detected.cwd == "/Users/dev/other"
+
+
+def test_tmux_and_another_tool_in_foreground_is_ambiguous(monkeypatch):
+    """A resolved tmux pane plus another foreground process on a different TTY is unknowable — fail closed."""
+    from tracker.context.models import TerminalToolContext
+
     tree = terminal_running(REAL_SIGNATURES["codex"])
     tree[0].children.append(200)
     tree.append(FakeProcess(200, *TMUX_SIGNATURE, tty=0x22, foreground=True, cwd="/Users/dev/other"))
     install_tree(monkeypatch, tree)
+    monkeypatch.setattr(
+        "tracker.context.terminal.resolve_multiplexer",
+        lambda names, tty: TerminalToolContext(tool=None, cwd="/Users/dev/other", branch=None),
+    )
     assert resolve_terminal_tool(100) is None
 
 
@@ -245,11 +291,11 @@ def test_tool_and_cwd_are_read_together_for_the_same_pid(monkeypatch):
     """
     processes = [
         FakeProcess(100, "/bin/terminal", ["terminal"], tty=0xFFFFFFFF,
-                    children=[200, 101]),
+                    children=[101, 200]),
         FakeProcess(101, *SHELL_SIGNATURE, tty=0x11, children=[103]),
         FakeProcess(103, *REAL_SIGNATURES["codex"], tty=0x11, foreground=True,
                     cwd="/Users/dev/project"),
-        FakeProcess(200, "/bin/zsh", ["zsh"], tty=0x11, foreground=True, cwd="/tmp"),
+        FakeProcess(200, "/bin/zsh", ["zsh"], tty=0x11, foreground=False, cwd="/tmp"),
     ]
     table = {p.pid: p for p in processes}
     install_tree(monkeypatch, processes)
@@ -276,9 +322,7 @@ def test_tool_and_cwd_are_read_together_for_the_same_pid(monkeypatch):
     # not after the whole tree has been enumerated.
     exec_103 = calls.index(("exec", 103))
     cwd_103 = calls.index(("cwd", 103))
-    exec_200 = calls.index(("exec", 200))
     assert cwd_103 == exec_103 + 1
-    assert exec_200 > cwd_103
 
 
 @pytest.mark.parametrize("bundle_id", sorted(KNOWN_TERMINAL_BUNDLE_IDS))
@@ -300,6 +344,19 @@ def test_unrecognized_terminal_bundle_gets_no_process_detection(monkeypatch):
 def test_redacted_terminal_without_pid_is_fully_redacted(monkeypatch):
     result = resolve_context(bundle_id="com.apple.Terminal", app_name="Terminal", window_title=None, pid=None)
     assert result.project_path is None and result.detail == {}
+
+
+def test_redacted_terminal_with_plain_shell_reports_cwd_and_project(monkeypatch):
+    """A plain shell in a project directory should still attribute the session, without a tool label."""
+    install_tree(monkeypatch, terminal_running(SHELL_SIGNATURE))
+    monkeypatch.setattr("tracker.context.terminal.find_project_root", lambda path: path)
+    result = resolve_context(
+        bundle_id="com.apple.Terminal", app_name="Terminal", window_title="SECRET COMMAND", pid=100
+    )
+    assert "SECRET" not in repr(result)
+    assert "hunter2" not in repr(result)
+    assert result.project_path == "/Users/dev/project"
+    assert result.detail == {"cwd": "/Users/dev/project"}
 
 
 def test_title_is_never_recorded_even_when_one_leaks_in(monkeypatch):

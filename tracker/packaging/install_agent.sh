@@ -14,7 +14,6 @@ LABEL="com.logline.tracker"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APP="$HOME/Applications/LoglineTracker.app"
 APP_EXECUTABLE="$APP/Contents/MacOS/logline-tracker"
-LOG_DIR="$HOME/Library/Logs/Logline"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 DOMAIN="gui/$(id -u)"
 
@@ -28,6 +27,14 @@ fi
 if [ ! -x "$APP_EXECUTABLE" ]; then
     echo "install_agent: no app bundle at $APP" >&2
     echo "               run ./tracker/packaging/build_app.sh first" >&2
+    exit 1
+fi
+
+if ! LOG_DIR="$(
+    cd "$REPO_ROOT"
+    tracker/.venv/bin/python -c 'from tracker.constants import LOG_DIR; print(LOG_DIR)'
+)"; then
+    echo "install_agent: could not read LOG_DIR from tracker.constants — is tracker/.venv intact?" >&2
     exit 1
 fi
 
@@ -55,6 +62,6 @@ if ! launchctl bootstrap "$DOMAIN" "$PLIST"; then
 fi
 
 echo "installed:  $PLIST"
-echo "logs:       $LOG_DIR/tracker.log"
+echo "logs:       $LOG_DIR/tracker.log (diagnostics), $LOG_DIR/activity.log (events)"
 echo "status:     launchctl print $DOMAIN/$LABEL"
 echo "stop:       ./tracker/packaging/install_agent.sh --uninstall"

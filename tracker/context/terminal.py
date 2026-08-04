@@ -7,7 +7,8 @@ would bring back the leak that redaction is meant to prevent.
 
 This path reads OS process information without requiring Accessibility permission. That is intentional.
 
-If there is not exactly one clearly identified foreground tool, return no details and keep full redaction.
+If there is not exactly one clearly identified foreground process on a single TTY, return no details and keep full
+redaction.
 """
 
 import logging
@@ -20,6 +21,7 @@ from tracker.constants import (
 )
 from tracker.context.git import current_branch, find_project_root
 from tracker.context.models import TerminalToolContext
+from tracker.context.multiplexer import resolve_multiplexer
 from tracker.context.proc import (
     ProcBsdInfo, bsd_info, child_pids, exec_path_and_argv, is_tty_foreground, working_directory,
 )
@@ -63,36 +65,39 @@ def _match_tool(names: List[str], registry: Dict[str, FrozenSet[str]]) -> Option
 
 def _inspect_foreground_process(
     pid: int, info: ProcBsdInfo, registry: Dict[str, FrozenSet[str]]
-) -> Tuple[Optional[Tuple[str, int, str]], bool]:
+) -> Tuple[Optional[Tuple[Optional[str], int, str]], bool]:
     """Return (hit, is_multiplexer) for a foreground process.
 
     Reads exec_path, argv, and cwd immediately for the PID so the tool label and the working
     directory come from the same process snapshot, closing a TOCTOU race where the PID could be
-    reused between identifying it and reading its data later.
+    reused between identifying it and reading its data later. A hit is returned even when the
+    foreground process is not a known tool (tool=None) so that a plain shell session can still
+    contribute its working directory for project attribution.
     """
     exec_path, argv = exec_path_and_argv(pid)
     names = _candidate_names(exec_path, argv)
     if any(name in MULTIPLEXER_PROCESS_NAMES for name in names):
+        detected = resolve_multiplexer(names, info.e_tdev)
+        if detected is not None:
+            return (detected.tool, info.e_tdev, detected.cwd), True
         return None, True
-    tool = _match_tool(names, registry)
-    if tool is None:
-        return None, False
     cwd = working_directory(pid)
     if not cwd:
         return None, False
+    tool = _match_tool(names, registry)
     return (tool, info.e_tdev, cwd), False
 
 
 def _foreground_processes(
     terminal_pid: int, registry: Dict[str, FrozenSet[str]]
-) -> Optional[List[Tuple[str, int, str]]]:
-    """Return resolved foreground-tool hits, or None if traversal hits a safety limit.
+) -> Optional[List[Tuple[Optional[str], int, str]]]:
+    """Return resolved foreground-process hits, or None if traversal hits a safety limit.
 
-    Each result is `(tool, tty_device, cwd)`. The visited set, depth limit, and total-PID cap
-    prevent a bad process tree from hanging the five-second poll. For example, pid 0 can report
-    itself as its own child.
+    Each result is `(tool, tty_device, cwd)`; `tool` may be None for a plain shell. The visited
+    set, depth limit, and total-PID cap prevent a bad process tree from hanging the five-second
+    poll. For example, pid 0 can report itself as its own child.
     """
-    found: List[Tuple[str, int, str]] = []
+    found: List[Tuple[Optional[str], int, str]] = []
     seen: Set[int] = set()
     stack: List[Tuple[int, int]] = [(terminal_pid, 0)]
     while stack:
@@ -105,7 +110,8 @@ def _foreground_processes(
         info = bsd_info(pid)
         if info is not None and pid != terminal_pid and is_tty_foreground(info):
             resolved, is_multiplexer = _inspect_foreground_process(pid, info, registry)
-            if is_multiplexer:
+            if is_multiplexer and resolved is None:
+                # An unqueryable multiplexer hides its panes; we cannot attribute safely.
                 return None
             if resolved is not None:
                 found.append(resolved)
@@ -118,22 +124,32 @@ def _foreground_processes(
 def resolve_terminal_tool(
     terminal_pid: int, registry: Optional[Dict[str, FrozenSet[str]]] = None
 ) -> Optional[TerminalToolContext]:
-    """Return the one known development tool in the terminal's foreground process group, or None for full redaction.
+    """Return the foreground process details for a terminal, or None for full redaction.
 
-    Return None when no foreground process is known, a terminal multiplexer is in front, more than one terminal
-    has a known tool, or the working folder cannot be read. This identifies the terminal's foreground process, not
-    necessarily the visible tab or pane. A multiplexer hides its panes, and without reading the title we cannot tell
-    which pane has focus.
+    A known development tool is reported in `tool` when one is found; otherwise `tool` is None and the cwd/branch
+    still reflect the foreground shell or process. Return None when no foreground process is known, more than one
+    foreground process is on different TTYs, the working folder cannot be read, or an unqueryable multiplexer hides
+    the active pane. This identifies the terminal's foreground process, not necessarily the visible tab or pane.
     """
     registry = TERMINAL_TOOL_REGISTRY if registry is None else registry
     hits = _foreground_processes(terminal_pid, registry)
     if hits is None:
+        logger.debug("terminal resolver (pid=%s): process traversal hit safety limit or multiplexer", terminal_pid)
         return None
     if len(hits) != 1 or len({tty for _, tty, _ in hits}) != 1:
+        logger.debug(
+            "terminal resolver (pid=%s): ambiguous foreground state (%d hit(s), %d tty(s))",
+            terminal_pid, len(hits), len({tty for _, tty, _ in hits}),
+        )
         return None
 
     tool, _, cwd = hits[0]
-    return TerminalToolContext(tool=tool, cwd=cwd, branch=_branch_for(cwd))
+    branch = _branch_for(cwd)
+    logger.debug(
+        "terminal resolver (pid=%s): tool=%s cwd=%s branch=%s",
+        terminal_pid, tool, cwd, branch,
+    )
+    return TerminalToolContext(tool=tool, cwd=cwd, branch=branch)
 
 
 def _branch_for(cwd: str) -> Optional[str]:

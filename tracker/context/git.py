@@ -7,13 +7,48 @@ does that later.
 
 import os
 import stat
+import time
+from functools import wraps
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Dict, Optional, Tuple, TypeVar
 
 from tracker.constants import GIT_BRANCH_MAX_LENGTH
 
+T = TypeVar("T")
+
 FORBIDDEN_BRANCH_CHARACTERS = set(" ~^:?*[\\\x7f")
 GIT_FILE_MAX_BYTES = 4096
+
+
+def _ttl_cache(ttl_seconds: float) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """In-memory TTL cache for pure functions. Arguments must be hashable.
+
+    Cached values expire after `ttl_seconds`. The cache is never pruned on access, so callers
+    that run for a long time with many unique arguments can grow unbounded. A `cache_clear`
+    method is attached to the wrapper for tests and rare resets.
+    """
+    def decorator(func: Callable[..., T]) -> Callable[[Callable[..., T]], Callable[..., T]]:
+        cache: Dict[Tuple[Any, ...], Tuple[T, float]] = {}
+
+        @wraps(func)
+        def wrapper(*args: Any) -> T:
+            now = time.monotonic()
+            key = args
+            if key in cache:
+                value, timestamp = cache[key]
+                if now - timestamp < ttl_seconds:
+                    return value
+            value = func(*args)
+            cache[key] = (value, now)
+            return value
+
+        def cache_clear() -> None:
+            cache.clear()
+
+        wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+        return wrapper
+
+    return decorator
 
 
 def _is_valid_branch_name(ref: str) -> bool:
@@ -63,8 +98,13 @@ def _read_git_file(path: Path) -> Optional[str]:
                 pass
 
 
+@_ttl_cache(ttl_seconds=60.0)
 def find_project_root(path: Path) -> Optional[Path]:
-    """Walk up from `path` to the nearest directory containing a `.git` entry, or return None."""
+    """Walk up from `path` to the nearest directory containing a `.git` entry, or return None.
+
+    Cached for 60 seconds. A newly-created repository may not be detected until the cache entry
+    for that path expires; use `find_project_root.cache_clear()` if you need to force a refresh.
+    """
     current = path if path.is_dir() else path.parent
     try:
         current = current.resolve()
@@ -103,10 +143,13 @@ def _git_dir(project_root: Path) -> Optional[Path]:
     return gitdir
 
 
+@_ttl_cache(ttl_seconds=10.0)
 def current_branch(project_root: Path) -> Optional[str]:
     """Read the checked-out branch from HEAD, or return None if it is detached, unreadable, or invalid.
 
-    Never guess or return unchecked file content.
+    Never guess or return unchecked file content. Cached for 10 seconds because the branch is polled
+    on every title/context poll but changes far less often. Use `current_branch.cache_clear()` to
+    force a refresh.
     """
     git_dir = _git_dir(project_root)
     if git_dir is None:

@@ -7,8 +7,8 @@ import logging
 from typing import Optional
 
 from tracker.constants import (
-    RESOLVER_CAPABILITY_MSG, RESOLVER_ERROR_MSG, RESOLVER_RESCUE_EXCEPTIONS, TERMINAL_BRANCH_KEY,
-    TERMINAL_CWD_KEY, TERMINAL_TOOL_KEY, TERMINAL_TOOL_REGISTRY,
+    RESOLVER_CAPABILITY_MSG, RESOLVER_ERROR_MSG, RESOLVER_RESCUE_EXCEPTIONS, TERMINAL_BRANCH_KEY, TERMINAL_CWD_KEY,
+    TERMINAL_TOOL_KEY, TERMINAL_TOOL_REGISTRY,
 )
 from tracker.context.models import ContextResult, TerminalToolContext, WindowContext
 from tracker.context.resolvers import REGISTRY, resolver_for
@@ -39,14 +39,15 @@ def resolver_capability_summary() -> str:
     )
 
 
-def _resolve_redacted_terminal(pid: Optional[int]) -> ContextResult:
-    """Return `{tool, cwd, branch}` for one known foreground tool, or empty context.
+def _resolve_redacted_terminal(pid: Optional[int], app_name: str = "terminal") -> ContextResult:
+    """Return `{tool, cwd, branch}` for the foreground process, or empty context.
 
     A redacted app must never expose its title. This function takes only a PID and copies fields from
     `TerminalToolContext`, which has no place for title text. Anything short of one confident match keeps full
     redaction.
     """
     if pid is None:
+        logger.debug("redacted terminal context: no pid for %s", app_name)
         return ContextResult()
     try:
         from tracker.context.terminal import project_root_for, resolve_terminal_tool
@@ -56,10 +57,17 @@ def _resolve_redacted_terminal(pid: Optional[int]) -> ContextResult:
         logger.exception(RESOLVER_ERROR_MSG, "terminal")
         return ContextResult()
     if detected is None:
+        logger.debug("redacted terminal context: no foreground process resolved for %s (pid=%s)", app_name, pid)
         return ContextResult()
 
-    result = ContextResult(project_path=project_root_for(detected.cwd))
-    result.set(TERMINAL_TOOL_KEY, detected.tool)
+    project_path = project_root_for(detected.cwd)
+    logger.debug(
+        "redacted terminal context for %s (pid=%s): cwd=%s project_path=%s tool=%s branch=%s",
+        app_name, pid, detected.cwd, project_path, detected.tool, detected.branch,
+    )
+    result = ContextResult(project_path=project_path)
+    if detected.tool is not None:
+        result.set(TERMINAL_TOOL_KEY, detected.tool)
     result.set(TERMINAL_CWD_KEY, detected.cwd)
     result.set(TERMINAL_BRANCH_KEY, detected.branch)
     return result
@@ -77,7 +85,7 @@ def resolve_context(
     configured resolver or environment failures, return empty context.
     """
     if is_redacted(bundle_id):
-        return _resolve_redacted_terminal(pid)
+        return _resolve_redacted_terminal(pid, app_name=app_name)
     try:
         if document_url is UNSET:
             document_url = None

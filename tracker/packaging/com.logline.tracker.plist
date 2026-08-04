@@ -58,9 +58,15 @@
 	<key>ProcessType</key>
 	<string>Interactive</string>
 
+	<!-- launchd keeps these fds open for the lifetime of the job, so they cannot be
+	     rotated by the app. We use separate filenames from the rotating log files that
+	     tracker/logging_config.py writes, avoiding fd collisions and keeping the human-
+	     readable activity stream separate from diagnostic logs. These files are not
+	     rotated by launchd; they are low-volume event lines and are not a regression
+	     from the previous unbounded tracker.log redirection. -->
 	<key>StandardOutPath</key>
-	<string>__LOG_DIR__/tracker.log</string>
+	<string>__LOG_DIR__/activity.log</string>
 	<key>StandardErrorPath</key>
-	<string>__LOG_DIR__/tracker.error.log</string>
+	<string>__LOG_DIR__/activity.error.log</string>
 </dict>
 </plist>
