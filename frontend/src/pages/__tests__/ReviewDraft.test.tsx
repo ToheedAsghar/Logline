@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ReviewDraft, formatMinutes, minutesToHHMM, parseTimeToMinutes } from "../ReviewDraft";
 import type { WorkLogDraft, ReconciliationResult } from "@/repositories/types";
@@ -90,10 +91,10 @@ describe("ReviewDraft Component", () => {
   });
 
   it("renders empty state initially with Generate Draft button", () => {
-    render(<ReviewDraft />);
-    expect(screen.getByText(/AI Reconciliation/i)).toBeInTheDocument();
+    render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
+    expect(screen.getByText(/Review draft/i)).toBeInTheDocument();
     expect(screen.getByText(/No draft loaded/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Generate Draft/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Regenerate/i })).toBeInTheDocument();
   });
 
   it("edits entries in local React state only without calling API prematurely", async () => {
@@ -107,12 +108,15 @@ describe("ReviewDraft Component", () => {
       error: null,
     });
 
-    render(<ReviewDraft />);
-    fireEvent.click(screen.getByRole("button", { name: /Generate Draft/i }));
+    render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: /Regenerate/i }));
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue("Initial description from AI")).toBeInTheDocument();
+      expect(screen.getByText("Initial description from AI")).toBeInTheDocument();
     });
+
+    // Open inspector for entry
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
 
     const descriptionInput = screen.getByDisplayValue("Initial description from AI");
     fireEvent.change(descriptionInput, { target: { value: "Updated local description" } });
@@ -131,19 +135,22 @@ describe("ReviewDraft Component", () => {
       error: null,
     });
 
-    render(<ReviewDraft />);
-    fireEvent.click(screen.getByRole("button", { name: /Generate Draft/i }));
+    render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: /Regenerate/i }));
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue("Initial description from AI")).toBeInTheDocument();
+      expect(screen.getByText("Initial description from AI")).toBeInTheDocument();
     });
+
+    // Open inspector for entry
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
 
     // Edit description
     const descriptionInput = screen.getByDisplayValue("Initial description from AI");
     fireEvent.change(descriptionInput, { target: { value: "Final edited description" } });
 
-    // Click Approve
-    const approveButton = screen.getByRole("button", { name: /Approve Draft/i });
+    // Click Save day
+    const approveButton = screen.getByRole("button", { name: /Save day/i });
     fireEvent.click(approveButton);
 
     expect(approveMutateMock).toHaveBeenCalledTimes(1);
@@ -151,3 +158,4 @@ describe("ReviewDraft Component", () => {
     expect(approvedPayload.entries[0].description).toBe("Final edited description");
   });
 });
+

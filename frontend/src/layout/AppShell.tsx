@@ -39,15 +39,14 @@ export function AppShell() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-bg font-sans text-text">
-      <header className="border-b border-border bg-surface">
+    <div className="min-h-screen bg-[#F5F2EA] font-sans text-[#191917]">
+      <header className="border-b border-[#E3DFD2] bg-[#F5F2EA] sticky top-0 z-30">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-3">
           <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center gap-px rounded-md bg-accent">
-              <span className="font-mono text-sm font-bold text-accent-ink">l</span>
-              <span className="h-3.5 w-1 rounded-[1px] bg-accent-ink animate-ll-blink" />
+            <span className="flex h-6 w-6 items-center justify-center rounded bg-[#14603C] font-mono text-xs font-bold text-[#DCEBDD]">
+              l|
             </span>
-            <span className="font-mono text-base font-semibold">logline</span>
+            <span className="font-mono text-base font-bold tracking-tight text-[#191917]">logline</span>
           </div>
 
           <nav className="flex items-center gap-1">
@@ -59,7 +58,9 @@ export function AppShell() {
                 className={({ isActive }) =>
                   cn(
                     "rounded-md px-3 py-1.5 font-sans text-sm font-medium transition-colors",
-                    isActive ? "bg-accent-soft text-accent-dim" : "text-muted hover:bg-surface-2 hover:text-text",
+                    isActive
+                      ? "bg-[#EFEBE0] text-[#191917] font-semibold"
+                      : "text-[#6E6C62] hover:bg-[#EFEBE0] hover:text-[#191917]",
                   )
                 }
               >
@@ -68,22 +69,14 @@ export function AppShell() {
             ))}
           </nav>
 
-          <Tooltip content="Account & settings" side="bottom">
-            <Button
-              variant="secondary"
-              iconOnly
-              size="sm"
-              aria-label="Account & settings"
-              className="rounded-full"
-              onClick={() => setAccountOpen(true)}
-              icon={
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-              }
-            />
-          </Tooltip>
+          <button
+            type="button"
+            onClick={() => setAccountOpen(true)}
+            aria-label="Account & settings"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-[#CFCABA] bg-[#F1EDE2] font-mono text-xs font-semibold text-[#57564E] hover:border-[#14603C]"
+          >
+            TH
+          </button>
         </div>
       </header>
 
