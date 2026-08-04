@@ -104,7 +104,7 @@ def _tmux_client_session(tty_path: str) -> Optional[str]:
 
 def _match_tool(command: str) -> Optional[str]:
     """Return the registry's standard tool name if `command` matches a known terminal tool."""
-    base = command.lstrip("-")  # shells are often reported as "-zsh"
+    base = command.lstrip("-")
     for tool, signatures in TERMINAL_TOOL_REGISTRY.items():
         if base in signatures:
             return tool
