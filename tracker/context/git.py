@@ -16,6 +16,9 @@ from tracker.constants import GIT_BRANCH_MAX_LENGTH
 
 T = TypeVar("T")
 
+FORBIDDEN_BRANCH_CHARACTERS = set(" ~^:?*[\\\x7f")
+GIT_FILE_MAX_BYTES = 4096
+
 
 def _ttl_cache(ttl_seconds: float) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """In-memory TTL cache for pure functions. Arguments must be hashable.
@@ -46,10 +49,6 @@ def _ttl_cache(ttl_seconds: float) -> Callable[[Callable[..., T]], Callable[...,
         return wrapper
 
     return decorator
-
-
-FORBIDDEN_BRANCH_CHARACTERS = set(" ~^:?*[\\\x7f")
-GIT_FILE_MAX_BYTES = 4096
 
 
 def _is_valid_branch_name(ref: str) -> bool:
