@@ -12,6 +12,7 @@ redaction.
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
@@ -100,6 +101,7 @@ def _foreground_processes(
     found: List[Tuple[Optional[str], int, str]] = []
     seen: Set[int] = set()
     stack: List[Tuple[int, int]] = [(terminal_pid, 0)]
+    self_pid = os.getpid()
     while stack:
         pid, depth = stack.pop()
         if len(seen) >= PROC_WALK_MAX_PIDS:
@@ -107,6 +109,8 @@ def _foreground_processes(
         if pid in seen or depth > PROC_WALK_MAX_DEPTH:
             continue
         seen.add(pid)
+        if pid == self_pid:
+            continue
         info = bsd_info(pid)
         if info is not None and pid != terminal_pid and is_tty_foreground(info):
             resolved, is_multiplexer = _inspect_foreground_process(pid, info, registry)

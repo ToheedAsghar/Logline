@@ -213,6 +213,32 @@ def test_tmux_resolved_when_it_is_the_only_foreground_process(monkeypatch):
     assert detected.cwd == "/Users/dev/other"
 
 
+def test_tracker_own_process_is_ignored_in_foreground_walk(monkeypatch):
+    """The tracker can run from a tab of the same terminal app as tmux. Its own foreground process
+    must not count as a competing hit, or the ambiguity check would redact the whole session."""
+    import os
+
+    from tracker.context.models import TerminalToolContext
+
+    tree = terminal_running(REAL_SIGNATURES["codex"], tty=0x11)
+    tree[0].children.append(200)
+    tree.append(FakeProcess(200, *TMUX_SIGNATURE, tty=0x11, foreground=True, cwd="/Users/dev/project"))
+    tree[-2].foreground = False  # codex is background
+    self_pid = os.getpid()
+    tree[0].children.append(self_pid)
+    tree.append(FakeProcess(self_pid, "/usr/local/bin/python", ["python", "-m", "tracker.main"],
+                            tty=0x22, foreground=True, cwd="/Users/dev/project"))
+    install_tree(monkeypatch, tree)
+    monkeypatch.setattr(
+        "tracker.context.terminal.resolve_multiplexer",
+        lambda names, tty: TerminalToolContext(tool=None, cwd="/Users/dev/project", branch=None),
+    )
+    detected = resolve_terminal_tool(100)
+    assert detected is not None
+    assert detected.tool is None
+    assert detected.cwd == "/Users/dev/project"
+
+
 def test_tmux_and_another_tool_in_foreground_is_ambiguous(monkeypatch):
     """A resolved tmux pane plus another foreground process on a different TTY is unknowable — fail closed."""
     from tracker.context.models import TerminalToolContext
