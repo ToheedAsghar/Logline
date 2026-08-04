@@ -8,6 +8,7 @@ import pytest
 from tracker.context import resolve_context
 from tracker.context.meet import parse_meet_title
 from tracker.context.resolvers import ANTIGRAVITY_BUNDLE_ID, VSCODE_BUNDLE_ID
+from tracker.tests.constants import UNKNOWN_BROWSER_BUNDLE_ID
 
 
 def _active_file(title):
@@ -66,7 +67,7 @@ class TestMeetingsAreNotDetectedInEditors:
 
     def test_unknown_app_still_detects_meetings(self):
         """Decision #6 stands: an unrecognized app may be a browser, so detection stays on by default."""
-        result = resolve_context("com.example.NewBrowser", "NewBrowser", "Meet - Sprint Review", document_url=None)
+        result = resolve_context(UNKNOWN_BROWSER_BUNDLE_ID, "NewBrowser", "Meet - Sprint Review", document_url=None)
         assert result.detail["is_meeting"] is True
 
 

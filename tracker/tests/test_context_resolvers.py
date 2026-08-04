@@ -3,16 +3,24 @@
 import pytest
 
 from tracker.context import resolve_context
+from tracker.context.ide_extension import find_ide_extension_tool
 from tracker.context.meet import parse_meet_title
+from tracker.context.models import TerminalToolContext
 from tracker.context.resolvers import (
-    ANTIGRAVITY_BUNDLE_ID, CHROME_BUNDLE_ID, FIREFOX_BUNDLE_ID, VSCODE_BUNDLE_ID, resolve_generic, resolver_for,
+    ANTIGRAVITY_BUNDLE_ID, CHROME_BUNDLE_ID, CURSOR_BUNDLE_ID, FIREFOX_BUNDLE_ID, VSCODE_BUNDLE_ID, resolve_generic,
+    resolver_for,
 )
+from tracker.tests.constants import UNKNOWN_BROWSER_BUNDLE_ID
 
-UNKNOWN_BROWSER_BUNDLE_ID = "com.example.NewBrowser"
+
+@pytest.fixture(autouse=True)
+def _no_extensions(monkeypatch):
+    find_ide_extension_tool.cache_clear()
+    monkeypatch.setattr("tracker.context.ide_extension.find_ide_extension_tool", lambda pid: None)
 
 
-def _resolve(bundle_id, app_name, title, document_url=None):
-    return resolve_context(bundle_id, app_name, window_title=title, document_url=document_url)
+def _resolve(bundle_id, app_name, title, document_url=None, pid=None):
+    return resolve_context(bundle_id, app_name, window_title=title, document_url=document_url, pid=pid)
 
 
 class TestVSCode:
@@ -46,6 +54,90 @@ class TestVSCode:
         result = _resolve(VSCODE_BUNDLE_ID, "Code", title)
         assert result.detail["project_name"] == "logline"
         assert "active_file" not in result.detail
+
+    def test_claude_panel_sets_tool_when_no_file(self, monkeypatch):
+        monkeypatch.setattr("tracker.context.terminal.resolve_terminal_tool", lambda pid: None)
+        result = _resolve(VSCODE_BUNDLE_ID, "Code", "Claude — logline", document_url="")
+        assert result.detail["project_name"] == "logline"
+        assert result.detail["tool"] == "claude-code"
+
+    def test_claude_panel_ignored_when_file_is_active(self, monkeypatch):
+        monkeypatch.setattr("tracker.context.terminal.resolve_terminal_tool", lambda pid: None)
+        result = _resolve(VSCODE_BUNDLE_ID, "Code", "main.py — logline",
+                          document_url="file:///Users/dev/project/main.py")
+        assert result.detail["active_file"] == "main.py"
+        assert "tool" not in result.detail
+
+    def test_integrated_terminal_detects_tool_and_project(self, monkeypatch):
+        monkeypatch.setattr(
+            "tracker.context.terminal.resolve_terminal_tool",
+            lambda pid: TerminalToolContext(tool="codex", cwd="/Users/dev/project", branch="main"),
+        )
+        monkeypatch.setattr("tracker.context.terminal.project_root_for", lambda cwd: cwd)
+        result = _resolve(VSCODE_BUNDLE_ID, "Code", "Terminal — logline", pid=42, document_url="")
+        assert result.project_path == "/Users/dev/project"
+        assert result.detail["tool"] == "codex"
+        assert result.detail["cwd"] == "/Users/dev/project"
+        assert result.detail["branch"] == "main"
+        assert result.detail["project_name"] == "logline"
+
+    def test_integrated_terminal_falls_back_to_shell_project(self, monkeypatch):
+        monkeypatch.setattr(
+            "tracker.context.terminal.resolve_terminal_tool",
+            lambda pid: TerminalToolContext(tool=None, cwd="/Users/dev/project", branch="main"),
+        )
+        monkeypatch.setattr("tracker.context.terminal.project_root_for", lambda cwd: cwd)
+        result = _resolve(VSCODE_BUNDLE_ID, "Code", "Terminal — logline", pid=42, document_url="")
+        assert result.project_path == "/Users/dev/project"
+        assert result.detail["cwd"] == "/Users/dev/project"
+        assert result.detail["branch"] == "main"
+        assert result.detail["project_name"] == "logline"
+        assert "tool" not in result.detail
+
+    def test_active_file_wins_over_integrated_terminal(self, monkeypatch):
+        monkeypatch.setattr(
+            "tracker.context.terminal.resolve_terminal_tool",
+            lambda pid: TerminalToolContext(tool="codex", cwd="/Users/dev/project", branch="main"),
+        )
+        result = _resolve(VSCODE_BUNDLE_ID, "Code", "db.py — logline",
+                          document_url="file:///Users/dev/project/db.py")
+        assert result.detail["active_file"] == "db.py"
+        assert result.detail["project_name"] == "logline"
+        assert "tool" not in result.detail
+
+    def test_extension_panel_title_uses_extension_tool_not_terminal(self, monkeypatch):
+        """When the title indicates the extension panel is focused, extension tool wins over terminal."""
+        monkeypatch.setattr(
+            "tracker.context.terminal.resolve_terminal_tool",
+            lambda pid: TerminalToolContext(tool="codex", cwd="/Users/dev/project", branch="main"),
+        )
+        monkeypatch.setattr("tracker.context.terminal.project_root_for", lambda cwd: cwd)
+        monkeypatch.setattr(
+            "tracker.context.ide_extension.find_ide_extension_tool",
+            lambda pid: "claude-code",
+        )
+        result = _resolve(VSCODE_BUNDLE_ID, "Code", "Claude — logline", document_url="", pid=42)
+        assert result.detail["tool"] == "claude-code"
+
+
+class TestCursor:
+    """Cursor is a VSCode fork and uses the same title convention (project last)."""
+
+    def test_extracts_project_and_file(self):
+        result = _resolve(CURSOR_BUNDLE_ID, "Cursor", "manager.py — logline")
+        assert result.detail["project_name"] == "logline"
+        assert result.detail["active_file"] == "manager.py"
+
+    def test_project_only_title(self):
+        result = _resolve(CURSOR_BUNDLE_ID, "Cursor", "logline")
+        assert result.detail["project_name"] == "logline"
+        assert "active_file" not in result.detail
+
+    def test_claude_panel_sets_tool_when_no_file(self, monkeypatch):
+        monkeypatch.setattr("tracker.context.terminal.resolve_terminal_tool", lambda pid: None)
+        result = _resolve(CURSOR_BUNDLE_ID, "Cursor", "Claude — logline", document_url="")
+        assert result.detail["project_name"] == "logline"
+        assert result.detail["tool"] == "claude-code"
 
 
 class TestAntigravity:

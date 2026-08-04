@@ -11,11 +11,11 @@ from pathlib import Path
 from typing import Callable, Dict, Optional
 from urllib.parse import unquote, urlparse
 
+from tracker.constants import CURSOR_BUNDLE_ID, VSCODE_BUNDLE_ID
 from tracker.context.git import current_branch, find_project_root
 from tracker.context.meet import parse_meet_title
 from tracker.context.models import ContextResult, WindowContext
 
-VSCODE_BUNDLE_ID = "com.microsoft.VSCode"
 ANTIGRAVITY_BUNDLE_ID = "com.google.antigravity-ide"
 CHROME_BUNDLE_ID = "com.google.Chrome"
 FIREFOX_BUNDLE_ID = "org.mozilla.firefox"
@@ -113,8 +113,55 @@ def _resolve_editor(ctx: WindowContext, project_first: bool) -> ContextResult:
 
 
 def resolve_vscode(ctx: WindowContext) -> ContextResult:
-    """VS Code titles read `<file> — <project>`."""
-    return _resolve_editor(ctx, project_first=False)
+    """VS Code / Cursor: active file, integrated terminal, or extension panel (e.g. Claude Code).
+
+    Cursor is a VSCode fork and uses the same title convention (project last).
+    """
+    result = _resolve_editor(ctx, project_first=False)
+    if result.project_path:
+        return result
+    if ctx.pid:
+        from tracker.context.ide_extension import find_ide_extension_tool
+        from tracker.context.terminal import resolve_terminal_tool, terminal_context_result
+
+        if _is_claude_panel(ctx.window_title):
+            extension_tool = find_ide_extension_tool(ctx.pid)
+            detected = resolve_terminal_tool(ctx.pid)
+            if detected:
+                terminal_result = terminal_context_result(detected)
+                if detected.tool is not None and extension_tool:
+                    result.project_path = terminal_result.project_path
+                    result.detail.update(terminal_result.detail)
+                    result.set("tool", extension_tool)
+                    return result
+                if detected.tool is None and terminal_result.project_path:
+                    result.project_path = terminal_result.project_path
+                    result.detail.update(terminal_result.detail)
+            if extension_tool:
+                result.set("tool", extension_tool)
+                return result
+        else:
+            detected = resolve_terminal_tool(ctx.pid)
+            if detected:
+                terminal_result = terminal_context_result(detected)
+                if detected.tool is not None:
+                    result.project_path = terminal_result.project_path
+                    result.detail.update(terminal_result.detail)
+                    return result
+                if terminal_result.project_path:
+                    result.project_path = terminal_result.project_path
+                    result.detail.update(terminal_result.detail)
+                    return result
+    if _is_claude_panel(ctx.window_title):
+        result.set("tool", "claude-code")
+    return result
+
+
+def _is_claude_panel(title: Optional[str]) -> bool:
+    parts = _split_editor_title(title)
+    if not parts:
+        return False
+    return parts[0].lower() in ("claude", "claude code")
 
 
 def resolve_antigravity(ctx: WindowContext) -> ContextResult:
@@ -145,6 +192,7 @@ def resolve_firefox(ctx: WindowContext) -> ContextResult:
 
 REGISTRY: Dict[str, Callable[[WindowContext], ContextResult]] = {
     VSCODE_BUNDLE_ID: resolve_vscode,
+    CURSOR_BUNDLE_ID: resolve_vscode,
     ANTIGRAVITY_BUNDLE_ID: resolve_antigravity,
     CHROME_BUNDLE_ID: resolve_chrome,
     FIREFOX_BUNDLE_ID: resolve_firefox,

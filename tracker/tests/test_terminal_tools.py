@@ -108,9 +108,9 @@ def test_terminal_context_is_frozen():
 
 
 def test_resolver_signature_accepts_no_title():
-    """`resolve_terminal_tool` takes a pid and a registry — there is no parameter a title could arrive through."""
+    """`resolve_terminal_tool` takes a pid, a registry, and a cwd provider — nothing a title could arrive through."""
     hints = typing.get_type_hints(resolve_terminal_tool)
-    assert set(hints) - {"return"} == {"terminal_pid", "registry"}
+    assert set(hints) - {"return"} == {"terminal_pid", "registry", "focused_cwd_provider"}
     assert hints["terminal_pid"] is int
 
 
@@ -239,8 +239,18 @@ def test_tracker_own_process_is_ignored_in_foreground_walk(monkeypatch):
     assert detected.cwd == "/Users/dev/project"
 
 
-def test_tmux_and_another_tool_in_foreground_is_ambiguous(monkeypatch):
-    """A resolved tmux pane plus another foreground process on a different TTY is unknowable — fail closed."""
+def test_tool_among_shells_on_same_tty_is_preferred(monkeypatch):
+    """Multiple hits on one TTY is a process group — the known tool is the active session."""
+    tree = terminal_running(REAL_SIGNATURES["codex"], tty=0x11)
+    tree.append(FakeProcess(200, *SHELL_SIGNATURE, tty=0x11, foreground=True, cwd="/Users/dev/project"))
+    install_tree(monkeypatch, tree)
+    detected = resolve_terminal_tool(100)
+    assert detected is not None
+    assert detected.tool == "codex"
+
+
+def test_single_tool_on_different_tty_from_shells_is_ambiguous(monkeypatch):
+    """Tool and shells on different TTYs — cannot tell which is focused, fail closed."""
     from tracker.context.models import TerminalToolContext
 
     tree = terminal_running(REAL_SIGNATURES["codex"])
@@ -251,7 +261,8 @@ def test_tmux_and_another_tool_in_foreground_is_ambiguous(monkeypatch):
         "tracker.context.terminal.resolve_multiplexer",
         lambda names, tty: TerminalToolContext(tool=None, cwd="/Users/dev/other", branch=None),
     )
-    assert resolve_terminal_tool(100) is None
+    detected = resolve_terminal_tool(100)
+    assert detected is None
 
 
 def test_two_tools_in_two_tabs_is_ambiguous_and_falls_back(monkeypatch):
@@ -262,6 +273,52 @@ def test_two_tools_in_two_tabs_is_ambiguous_and_falls_back(monkeypatch):
     tree.append(FakeProcess(200, *REAL_SIGNATURES["opencode"], tty=0x22, foreground=True, cwd="/Users/dev/other"))
     install_tree(monkeypatch, tree)
     assert resolve_terminal_tool(100) is None
+
+
+def test_focused_cwd_disambiguates_two_tools(monkeypatch):
+    """When the frontmost tab's cwd is known, it picks the right tab over another tab's tool."""
+    tree = terminal_running(REAL_SIGNATURES["codex"], tty=0x11)
+    tree[0].children.append(200)
+    tree.append(FakeProcess(200, *REAL_SIGNATURES["opencode"], tty=0x22, foreground=True, cwd="/Users/dev/other"))
+    install_tree(monkeypatch, tree)
+    detected = resolve_terminal_tool(100, focused_cwd_provider=lambda: "/Users/dev/project")
+    assert detected is not None
+    assert detected.tool == "codex"
+
+
+def test_focused_cwd_selects_tmux_client_by_origin_cwd(monkeypatch):
+    """A tmux client's own cwd (before pane substitution) matches the focused tab's AXDocument."""
+    from tracker.context.models import TerminalToolContext
+
+    tree = terminal_running(REAL_SIGNATURES["codex"], tty=0x11)
+    tree[0].children.append(200)
+    tree.append(FakeProcess(200, *TMUX_SIGNATURE, tty=0x22, foreground=True, cwd="/Users/dev/home"))
+    install_tree(monkeypatch, tree)
+    monkeypatch.setattr(
+        "tracker.context.terminal.resolve_multiplexer",
+        lambda names, tty: TerminalToolContext(tool="opencode", cwd="/Users/dev/pane", branch=None),
+    )
+    detected = resolve_terminal_tool(100, focused_cwd_provider=lambda: "/Users/dev/home")
+    assert detected is not None
+    assert detected.tool == "opencode"
+
+
+def test_focused_cwd_provider_not_called_for_single_hit(monkeypatch):
+    """The provider must only run when the walk is genuinely ambiguous across TTYs."""
+    calls = []
+    install_tree(monkeypatch, terminal_running(REAL_SIGNATURES["codex"]))
+    detected = resolve_terminal_tool(100, focused_cwd_provider=lambda: calls.append(1) or "/Users/dev/project")
+    assert detected is not None
+    assert detected.tool == "codex"
+    assert calls == []
+
+
+def test_focused_cwd_with_no_match_fails_closed(monkeypatch):
+    tree = terminal_running(REAL_SIGNATURES["codex"], tty=0x11)
+    tree[0].children.append(200)
+    tree.append(FakeProcess(200, *REAL_SIGNATURES["opencode"], tty=0x22, foreground=True, cwd="/Users/dev/other"))
+    install_tree(monkeypatch, tree)
+    assert resolve_terminal_tool(100, focused_cwd_provider=lambda: "/Users/dev/nowhere") is None
 
 
 def test_tool_running_but_not_in_foreground_falls_back(monkeypatch):
@@ -344,8 +401,6 @@ def test_tool_and_cwd_are_read_together_for_the_same_pid(monkeypatch):
     assert detected.tool == "codex"
     assert detected.cwd == "/Users/dev/project"
 
-    # The cwd read must happen immediately after the exec/argv read for the matched PID,
-    # not after the whole tree has been enumerated.
     exec_103 = calls.index(("exec", 103))
     cwd_103 = calls.index(("cwd", 103))
     assert cwd_103 == exec_103 + 1
