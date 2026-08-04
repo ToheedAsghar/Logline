@@ -6,9 +6,7 @@ import { AccountSettingsModal } from "@/molecules";
 import { SelfCaptureModal } from "@/pages/SelfCapture";
 
 const NAV_ITEMS = [
-  { to: "/", label: "Timeline", end: true },
-  { to: "/gaps", label: "Gaps" },
-  { to: "/review", label: "Review" },
+  { to: "/", label: "Review", end: true },
   { to: "/compose", label: "Compose" },
   { to: "/history", label: "History" },
   { to: "/settings", label: "Settings" },

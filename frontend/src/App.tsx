@@ -3,7 +3,6 @@ import { AppShell } from "@/layout/AppShell";
 import { RequireAuth } from "@/layout/RequireAuth";
 import {
   ForgotPassword,
-  GapDetector,
   History,
   Login,
   OAuthCallback,
@@ -35,9 +34,8 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route path="/" element={<Timeline />} />
-        <Route path="/gaps" element={<GapDetector />} />
-        <Route path="/review" element={<ReviewDraft />} />
+        <Route path="/" element={<ReviewDraft />} />
+        <Route path="/timeline" element={<Timeline />} />
         <Route path="/compose" element={<OutputComposer />} />
         <Route path="/history" element={<History />} />
         <Route path="/settings" element={<Settings />} />

@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import Settings from "../Settings";
 import type { Integration } from "@/repositories/types";
@@ -30,7 +31,7 @@ describe("Settings", () => {
   it("shows a loading state while integrations are being fetched", () => {
     vi.mocked(useIntegrations).mockReturnValue({ isLoading: true, isError: false, data: undefined } as any);
 
-    render(<Settings />);
+    render(<MemoryRouter><Settings /></MemoryRouter>);
 
     expect(screen.getByText(/Loading integrations/)).toBeInTheDocument();
   });
@@ -38,7 +39,7 @@ describe("Settings", () => {
   it("shows an error state when the integrations request fails", () => {
     vi.mocked(useIntegrations).mockReturnValue({ isLoading: false, isError: true, data: undefined } as any);
 
-    render(<Settings />);
+    render(<MemoryRouter><Settings /></MemoryRouter>);
 
     expect(screen.getByText(/Couldn't load integrations/)).toBeInTheDocument();
   });
@@ -50,7 +51,7 @@ describe("Settings", () => {
       data: [mockIntegration({ source: "github", status: "connected", last_synced_at: "2024-01-01T10:00:00Z" })],
     } as any);
 
-    render(<Settings />);
+    render(<MemoryRouter><Settings /></MemoryRouter>);
 
     // github, jira, calendar, slack — one card each, even though only github has a real row.
     expect(screen.getByText("GitHub")).toBeInTheDocument();
@@ -70,7 +71,7 @@ describe("Settings", () => {
       ],
     } as any);
 
-    render(<Settings />);
+    render(<MemoryRouter><Settings /></MemoryRouter>);
 
     expect(screen.getByText("1 needs attention")).toBeInTheDocument();
   });
@@ -82,7 +83,7 @@ describe("Settings", () => {
       data: [mockIntegration({ source: "github", status: "connected" })],
     } as any);
 
-    render(<Settings />);
+    render(<MemoryRouter><Settings /></MemoryRouter>);
 
     expect(screen.queryByText(/needs attention/)).not.toBeInTheDocument();
   });
@@ -97,7 +98,7 @@ describe("Settings", () => {
       data: [mockIntegration({ source: "github", status: "connected" })],
     } as any);
 
-    render(<Settings />);
+    render(<MemoryRouter><Settings /></MemoryRouter>);
 
     expect(screen.getByText("Successfully connected GitHub!")).toBeInTheDocument();
   });

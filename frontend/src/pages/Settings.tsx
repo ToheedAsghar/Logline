@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Loading } from "@/atoms";
 import { IntegrationCard } from "@/molecules";
 import { INTEGRATION_SOURCES, type IntegrationId } from "@/constants/integrations";
@@ -112,6 +113,19 @@ export default function Settings() {
           </div>
         </div>
       )}
+
+      <div className="mt-8 border-t border-border pt-8">
+        <h2 className="mb-2 text-sm font-semibold tracking-tight">Diagnostics & Advanced</h2>
+        <p className="mb-4 max-w-[58ch] text-sm text-muted">
+          Tools for auditing your raw local and remote activity telemetry.
+        </p>
+        <Link 
+          to="/timeline" 
+          className="inline-flex items-center rounded-md border border-border bg-surface-2 px-4 py-2 font-sans text-sm font-medium transition-colors hover:bg-surface-3"
+        >
+          View Raw Telemetry Timeline
+        </Link>
+      </div>
     </div>
   );
 }
