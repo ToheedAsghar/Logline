@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Loading } from "@/atoms";
 import { AUTH_STRINGS } from "@/constants/authMessages";
 import { useSession } from "@/context/SessionContext";
+import { googleExchange } from "@/repositories/api/auth";
 import { AuthShell } from "./AuthShell";
 
 export default function OAuthCallback() {
@@ -22,13 +23,17 @@ export default function OAuthCallback() {
     }
 
     if (token) {
-      try {
-        loginWithToken(token);
-        navigate("/", { replace: true });
-      } catch {
-        setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
-        setIsProcessing(false);
-      }
+      const exchangeAndLogin = async () => {
+        try {
+          const { access_token } = await googleExchange(token);
+          loginWithToken(access_token);
+          navigate("/", { replace: true });
+        } catch {
+          setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
+          setIsProcessing(false);
+        }
+      };
+      exchangeAndLogin();
     } else {
       setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
       setIsProcessing(false);
