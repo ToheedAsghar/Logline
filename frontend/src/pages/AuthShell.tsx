@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/common/utils";
 import { Button, ConfidenceTier } from "@/atoms";
 import { CONFIDENCE_TIERS, type ConfidenceTier as Tier } from "@/constants/tokens";
+import { getGoogleLoginUrl } from "@/repositories/api/auth";
 
 function GithubIcon() {
   return (
@@ -52,16 +53,26 @@ export function AuthFieldLabel({ children }: { children: ReactNode }) {
   );
 }
 
+interface AuthShellProps {
+  title: string;
+  subtitle: string;
+  onGoogleClick?: () => void;
+  hideDivider?: boolean;
+  children: ReactNode;
+}
+
 /**
- * Split-screen chrome shared by Login/Signup, matching the handoff exactly: a
- * permanently dark brand panel (left, ≥820px — uses `--sidebar-*` tokens, which
- * stay dark-toned in both themes, not the regular `--bg`/`--text`) carrying the
- * pitch plus the confidence-tier legend, and a theme-following form panel
- * (right) with the SSO buttons + "or with email" divider baked in here since
- * they're identical on both pages. `children` renders the page-specific fields
- * below the divider.
+ * Split-screen chrome shared by Login/Signup/Password Auth screens.
  */
-export function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+export function AuthShell({ title, subtitle, onGoogleClick, hideDivider = false, children }: AuthShellProps) {
+  const handleGoogleClick = () => {
+    if (onGoogleClick) {
+      onGoogleClick();
+    } else {
+      window.location.href = getGoogleLoginUrl();
+    }
+  };
+
   return (
     <div className="flex min-h-screen bg-bg font-sans text-text">
       <div className="hidden w-[42%] max-w-[460px] flex-none flex-col gap-[18px] border-r border-sidebar-border bg-sidebar-bg px-[42px] py-11 min-[820px]:flex">
@@ -101,20 +112,30 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
           <h1 className="m-0 text-[23px] font-semibold tracking-[-0.02em]">{title}</h1>
           <p className="mt-2 mb-[22px] text-[13.5px] leading-[1.5] text-muted">{subtitle}</p>
 
-          <div className="flex flex-col gap-[9px]">
-            <Button type="button" variant="secondary" className="w-full" icon={<GithubIcon />}>
-              Continue with GitHub
-            </Button>
-            <Button type="button" variant="secondary" className="w-full" icon={<GoogleIcon />}>
-              Continue with Google
-            </Button>
-          </div>
+          {!hideDivider && (
+            <>
+              <div className="flex flex-col gap-[9px]">
+                <Button type="button" variant="secondary" className="w-full" icon={<GithubIcon />}>
+                  Continue with GitHub
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full"
+                  icon={<GoogleIcon />}
+                  onClick={handleGoogleClick}
+                >
+                  Continue with Google
+                </Button>
+              </div>
 
-          <div className="my-[18px] flex items-center gap-3">
-            <span className="h-px flex-1 bg-border" />
-            <span className="font-mono text-[10.5px] text-faint">or with email</span>
-            <span className="h-px flex-1 bg-border" />
-          </div>
+              <div className="my-[18px] flex items-center gap-3">
+                <span className="h-px flex-1 bg-border" />
+                <span className="font-mono text-[10.5px] text-faint">or with email</span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            </>
+          )}
 
           {children}
         </div>

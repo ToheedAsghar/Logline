@@ -15,6 +15,23 @@ export interface TokenResponse {
   token_type: string;
 }
 
+export interface ForgotPasswordPayload {
+  email: string;
+}
+
+export interface ResetPasswordPayload {
+  token: string;
+  new_password: string;
+}
+
+export interface ResendVerificationPayload {
+  email: string;
+}
+
+export interface MessageResponse {
+  message: string;
+}
+
 export function signup(payload: SignupPayload): Promise<UserResponse> {
   return apiRequest<UserResponse>("/auth/signup", { method: "POST", body: payload, skipAuth: true });
 }
@@ -25,4 +42,25 @@ export function login(credentials: Credentials): Promise<TokenResponse> {
 
 export function me(): Promise<UserResponse> {
   return apiRequest<UserResponse>("/auth/me");
+}
+
+export function forgotPassword(payload: ForgotPasswordPayload): Promise<MessageResponse> {
+  return apiRequest<MessageResponse>("/auth/forgot-password", { method: "POST", body: payload, skipAuth: true });
+}
+
+export function resetPassword(payload: ResetPasswordPayload): Promise<MessageResponse> {
+  return apiRequest<MessageResponse>("/auth/reset-password", { method: "POST", body: payload, skipAuth: true });
+}
+
+export function verifyEmail(token: string): Promise<MessageResponse> {
+  return apiRequest<MessageResponse>("/auth/verify-email", { query: { token }, skipAuth: true });
+}
+
+export function resendVerification(payload: ResendVerificationPayload): Promise<MessageResponse> {
+  return apiRequest<MessageResponse>("/auth/resend-verification", { method: "POST", body: payload, skipAuth: true });
+}
+
+export function getGoogleLoginUrl(): string {
+  const baseUrl: string = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+  return `${baseUrl}/auth/google/login`;
 }

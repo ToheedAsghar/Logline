@@ -1,5 +1,9 @@
 export { default as Login } from "./Login";
 export { default as Signup } from "./Signup";
+export { default as ForgotPassword } from "./ForgotPassword";
+export { default as ResetPassword } from "./ResetPassword";
+export { default as VerifyEmail } from "./VerifyEmail";
+export { default as OAuthCallback } from "./OAuthCallback";
 export { default as Timeline } from "./Timeline";
 export { default as GapDetector } from "./GapDetector";
 export { default as OutputComposer } from "./OutputComposer";

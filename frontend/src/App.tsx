@@ -1,13 +1,30 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/layout/AppShell";
 import { RequireAuth } from "@/layout/RequireAuth";
-import { GapDetector, History, Login, OutputComposer, Settings, Signup, StyleGuide, Timeline } from "@/pages";
+import {
+  ForgotPassword,
+  GapDetector,
+  History,
+  Login,
+  OAuthCallback,
+  OutputComposer,
+  ResetPassword,
+  Settings,
+  Signup,
+  StyleGuide,
+  Timeline,
+  VerifyEmail,
+} from "@/pages";
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/oauth/callback" element={<OAuthCallback />} />
       <Route path="/styleguide" element={<StyleGuide />} />
 
       <Route
