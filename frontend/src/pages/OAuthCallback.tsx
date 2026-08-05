@@ -35,8 +35,10 @@ export default function OAuthCallback() {
       };
       exchangeAndLogin();
     } else {
-      setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
-      setIsProcessing(false);
+      queueMicrotask(() => {
+        setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
+        setIsProcessing(false);
+      });
     }
   }, [searchParams, loginWithToken, navigate]);
 

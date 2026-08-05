@@ -64,7 +64,9 @@ htmlcov/
 
 
 # -- temp / agent folders --- 
-Logline.html
+Logline*.html
+*.zip
+extracted_design/
 logline-frontend-build
 .review/
 scripts/
