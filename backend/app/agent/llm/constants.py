@@ -1,7 +1,4 @@
 # --- Shared structured-output error messages ---
-#
-# These describe failure modes every provider can hit, so the wording stays free of any one SDK's
-# vocabulary and both OpenAIProvider and GeminiProvider raise them.
 
 ERROR_RUN_STRUCTURED_TRUNCATED = (
     "run_structured failed: model output was truncated before "
@@ -17,8 +14,6 @@ ERROR_RUN_STRUCTURED_VALIDATION_FAILED = (
 )
 
 # --- OpenAI provider error messages ---
-#
-# "choices" and ".parsed" are OpenAI's own response vocabulary, so these stay provider-specific.
 
 ERROR_RUN_TURN_ZERO_CHOICES = "run_turn failed: the model returned zero choices"
 

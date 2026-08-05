@@ -1,24 +1,20 @@
-"""
-Tests for `GeminiProvider.run_structured` (app/agent/llm/gemini_provider.py).
+"""Tests for `GeminiProvider.run_structured` (app/agent/llm/gemini_provider.py).
 
-`run_structured` sends the target schema as raw JSON Schema via `response_json_schema` and validates
-the response body with pydantic before returning it. The failure modes below are translated into
-`LLMStructuredOutputError` so callers only ever see our neutral exception type, never an SDK one:
+`run_structured` sends the target schema as raw JSON Schema via `response_json_schema` and validates the response body
+with pydantic before returning it. Failure modes are translated into `LLMStructuredOutputError` so callers only ever
+see our neutral exception type, never an SDK one:
 
   - prompt blocked before generation (`prompt_feedback.block_reason`)
   - zero candidates returned
   - `finish_reason` MAX_TOKENS (truncated) or a safety/blocklist reason (filtered)
   - an empty response body
   - `pydantic.ValidationError` -- including extra keys, since the schemas set `extra="forbid"`
-  - `errors.APIError` (auth, quota, 5xx) -- unlike `OpenAIProvider`, which lets its transport errors
-    through untouched, Gemini's `APIError.__str__` can embed the raw request payload (including the
-    system prompt), so it is wrapped rather than left to propagate as-is
+  - `errors.APIError` (auth, quota, 5xx) -- Gemini's `APIError.__str__` can embed the raw request payload (including
+    the system prompt), so it is wrapped rather than left to propagate as-is
 
-Why `response_json_schema` and not `response_schema`: the latter converts through
-`google.genai.types.Schema`, which rejects `exclusiveMinimum` (emitted by `Field(gt=0)`) and whose
-`additional_properties` the API refuses. `test_sends_schema_unmodified_via_response_json_schema` and
-`test_schema_with_gt_constraint_is_sent_intact` guard that, since regressing to `response_schema`
-would break every real call while every mock-based test kept passing.
+Using `response_json_schema` over `response_schema`: `google.genai.types.Schema` rejects `exclusiveMinimum` (from
+`Field(gt=0)`) and fails on `additional_properties`. `test_sends_schema_unmodified_via_response_json_schema` and
+`test_schema_with_gt_constraint_is_sent_intact` guard against regressions to `response_schema`.
 
 The Gemini client is mocked throughout; no real API calls are made here.
 """
@@ -54,10 +50,10 @@ def _make_response(
     candidates_present: bool = True,
     block_reason=None,
 ):
-    """Build a mock generate_content response.
+    """Builds a mock generate_content response.
 
-    MagicMock's auto-attributes would make every `getattr` probe in the provider look truthy, so the
-    fields the provider actually branches on are set explicitly.
+    MagicMock's auto-attributes would make every `getattr` probe in the provider look truthy, so the fields the
+    provider actually branches on are set explicitly.
     """
     response = MagicMock()
     response.text = text
@@ -75,9 +71,10 @@ def _run(provider: GeminiProvider, model=_Animal):
 
 class TestGeminiProviderClientConfig:
     def test_client_has_explicit_timeout(self):
-        """An unconfigured client has no timeout at all, letting a stalled request block the async
-        worker indefinitely -- the constructor must set one on the real underlying client, not just
-        pass a value that gets silently ignored."""
+        """Verifies the constructor sets an explicit timeout on the underlying client.
+
+        An unconfigured client has no timeout, letting a stalled request block the async worker indefinitely.
+        """
         provider = GeminiProvider(model="gemini-2.5-flash", api_key="test-key")
 
         configured_timeout = provider._client._api_client._http_options.timeout
@@ -98,10 +95,10 @@ class TestGeminiProviderRunStructured:
         assert result.legs == 4
 
     def test_sends_schema_unmodified_via_response_json_schema(self):
-        """The whole design rests on this: the raw pydantic schema goes over the wire untouched.
+        """Verifies that the raw pydantic schema is sent untouched via `response_json_schema`.
 
-        Sending it as `response_schema` instead would strip `additionalProperties` and fail on
-        numeric bounds, silently weakening what the API enforces.
+        Sending it as `response_schema` instead would strip `additionalProperties` and fail on numeric bounds,
+        silently weakening what the API enforces.
         """
         provider = _make_provider()
         provider._client.aio.models.generate_content = AsyncMock(return_value=_make_response())
@@ -116,7 +113,7 @@ class TestGeminiProviderRunStructured:
         assert config.response_schema is None
 
     def test_schema_with_gt_constraint_is_sent_intact(self):
-        """`Field(gt=0)` becomes `exclusiveMinimum`, which the `response_schema` path rejects."""
+        """Verifies that `Field(gt=0)` becomes `exclusiveMinimum`, which `response_json_schema` preserves."""
         provider = _make_provider()
         provider._client.aio.models.generate_content = AsyncMock(return_value=_make_response())
 
@@ -189,10 +186,10 @@ class TestGeminiProviderRunStructured:
         assert isinstance(exc_info.value.cause, pydantic.ValidationError)
 
     def test_rejects_extra_keys_despite_schema_being_sent_to_the_api(self):
-        """`extra="forbid"` must still bite locally.
+        """Verifies that `extra="forbid"` is enforced locally even when passed to the API.
 
-        The API is asked to honour `additionalProperties: false`, but a schema the API accepts is not
-        a guarantee it obeys it -- so an extra key has to fail closed here rather than slip through.
+        A schema accepted by the API is not a guarantee it obeys it, so an extra key fails closed locally rather than
+        slipping through.
         """
         provider = _make_provider()
         provider._client.aio.models.generate_content = AsyncMock(
@@ -266,7 +263,7 @@ class TestGeminiProviderRunStructured:
         assert exc_info.value.cause is None
 
     def test_raises_on_empty_body(self):
-        """A 200 with nothing in it must not surface as a confusing validation error."""
+        """Verifies that an empty response body raises an error instead of a confusing validation error."""
         provider = _make_provider()
         provider._client.aio.models.generate_content = AsyncMock(return_value=_make_response(text=""))
 
@@ -277,9 +274,7 @@ class TestGeminiProviderRunStructured:
         assert exc_info.value.cause is None
 
     def test_api_errors_are_wrapped(self):
-        """Quota/auth/5xx errors are wrapped, not left to propagate: `APIError.__str__` can embed
-        the raw request payload (including the system prompt), so the raw SDK exception must never
-        reach a caller that might log or surface it verbatim."""
+        """Verifies that API errors are wrapped to prevent raw request payload and prompt leakage."""
         from google.genai import errors
 
         provider = _make_provider()
@@ -293,8 +288,7 @@ class TestGeminiProviderRunStructured:
         assert exc_info.value.cause is underlying
 
     def test_server_api_errors_are_also_wrapped(self):
-        """`ServerError` (5xx) is a different `APIError` subclass than `ClientError` (4xx) -- both
-        must be caught, since the leak risk (payload embedded in `__str__`) applies to either."""
+        """Verifies that `ServerError` (5xx) is wrapped to prevent payload and prompt leakage."""
         from google.genai import errors
 
         provider = _make_provider()
@@ -319,7 +313,7 @@ class TestGeminiProviderRunStructured:
 
 class TestGeminiProviderRunTurn:
     def test_run_turn_is_not_supported(self):
-        """Permanent, not a stub awaiting completion -- nothing that uses Gemini calls tools."""
+        """Verifies that `run_turn` raises `NotImplementedError` because Gemini is structured-output only."""
         provider = _make_provider()
 
         with pytest.raises(NotImplementedError, match="does not implement run_turn"):
