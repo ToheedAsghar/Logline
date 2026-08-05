@@ -2,7 +2,8 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { formatMinutes } from "@/common/utils";
-import { ReviewDraft, minutesToHHMM, parseTimeToMinutes } from "../ReviewDraft";
+import { ReviewDraft, describeApiError, minutesToHHMM, parseTimeToMinutes } from "../ReviewDraft";
+import { ApiError } from "@/repositories/api";
 import type { WorkLogDraft, ReconciliationResult } from "@/repositories/types";
 
 vi.mock("@/repositories/hooks", () => ({
@@ -163,37 +164,173 @@ describe("ReviewDraft Component", () => {
       expect(screen.getByText(/Draft entries successfully approved/i)).toBeInTheDocument();
     });
   });
+});
 
-  it("does not crash and still shows empty state when generate mutation is in error state", () => {
+describe("describeApiError", () => {
+  it("names a 404 as the endpoint being missing rather than a generic failure", () => {
+    const described = describeApiError(new ApiError(404, { detail: "Not Found" }), "generate");
+    expect(described.title).toMatch(/isn't available on the server/i);
+    expect(described.detail).toMatch(/reconciliation/i);
+  });
+
+  it("surfaces the verifier's individual issues from a 422 rejection", () => {
+    const error = new ApiError(422, {
+      detail: {
+        message: "Draft failed verification against its evidence and was not saved.",
+        issues: [
+          { severity: "error", check: "conservation", detail: "block 1 is overcharged by 360 minutes", block_id: 1 },
+        ],
+      },
+    });
+
+    const described = describeApiError(error, "approve");
+    expect(described.detail).toMatch(/was not saved/i);
+    expect(described.issues).toHaveLength(1);
+    expect(described.issues?.[0].check).toBe("conservation");
+  });
+
+  it("summarises FastAPI's own field-validation shape for a 422", () => {
+    const error = new ApiError(422, {
+      detail: [{ loc: ["body", "date_range_start"], msg: "must be on or before date_range_end" }],
+    });
+
+    const described = describeApiError(error, "generate");
+    expect(described.detail).toMatch(/date_range_start: must be on or before date_range_end/);
+  });
+
+  it("treats a non-ApiError as an unreachable server", () => {
+    const described = describeApiError(new TypeError("Failed to fetch"), "approve");
+    expect(described.title).toMatch(/could not reach the server/i);
+    expect(described.detail).toMatch(/nothing was saved/i);
+  });
+});
+
+describe("ReviewDraft failure states", () => {
+  let generateMutateMock: ReturnType<typeof vi.fn>;
+  let approveMutateMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    generateMutateMock = vi.fn();
+    approveMutateMock = vi.fn();
     (useGenerateDraft as ReturnType<typeof vi.fn>).mockReturnValue({
       mutate: generateMutateMock,
       isPending: false,
-      isError: true,
-      error: new Error("Network error"),
+      isError: false,
+      error: null,
     });
-
-    render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
-    expect(screen.getByText(/No draft loaded/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Regenerate/i })).toBeEnabled();
+    (useApproveDraft as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: approveMutateMock,
+      isPending: false,
+      isError: false,
+      error: null,
+    });
   });
 
-  it("keeps the draft visible and Save day enabled when approve mutation errors", async () => {
-    mockGenerateWithDraft();
+  it("shows a visible, dismissible error when Regenerate fails instead of returning silently to idle", async () => {
+    (useGenerateDraft as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: (_params: unknown, options: { onError: (error: unknown) => void }) => {
+        options.onError(new ApiError(404, { detail: "Not Found" }));
+      },
+      isPending: false,
+      isError: true,
+      error: null,
+    });
 
     render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
     fireEvent.click(screen.getByRole("button", { name: /Regenerate/i }));
 
-    await waitFor(() => {
-      expect(screen.getByText("Initial description from AI")).toBeInTheDocument();
-    });
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/isn't available on the server/i);
 
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss error/i }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  it("shows the verifier's rejection when Save day fails, and does not claim success", async () => {
+    (useGenerateDraft as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: (_params: unknown, options: { onSuccess: (data: ReconciliationResult) => void }) => {
+        options.onSuccess({ draft: mockDraft, verification: mockVerification });
+      },
+      isPending: false,
+      isError: false,
+      error: null,
+    });
     (useApproveDraft as ReturnType<typeof vi.fn>).mockReturnValue({
-      mutate: approveMutateMock,
+      mutate: (_params: unknown, options: { onError: (error: unknown) => void }) => {
+        options.onError(
+          new ApiError(422, {
+            detail: {
+              message: "Draft failed verification against its evidence and was not saved.",
+              issues: [{ severity: "error", check: "conservation", detail: "block 1 is overcharged", block_id: 1 }],
+            },
+          }),
+        );
+      },
       isPending: false,
       isError: true,
-      error: new Error("Server error"),
+      error: null,
     });
 
+    render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: /Regenerate/i }));
+    await waitFor(() => expect(screen.getByText("Initial description from AI")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /Save day/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/was not saved/i);
+    expect(alert).toHaveTextContent(/conservation/);
+    expect(screen.queryByText(/successfully approved and saved/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the existing draft on screen when a regenerate fails", async () => {
+    let generateHandlers: { onSuccess: (d: ReconciliationResult) => void; onError: (e: unknown) => void };
+    (useGenerateDraft as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: (_params: unknown, options: typeof generateHandlers) => {
+        generateHandlers = options;
+      },
+      isPending: false,
+      isError: false,
+      error: null,
+    });
+
+    render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
+
+    fireEvent.click(screen.getByRole("button", { name: /Regenerate/i }));
+    generateHandlers!.onSuccess({ draft: mockDraft, verification: mockVerification });
+    await waitFor(() => expect(screen.getByText("Initial description from AI")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /Regenerate/i }));
+    generateHandlers!.onError(new TypeError("Failed to fetch"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not reach the server/i);
     expect(screen.getByText("Initial description from AI")).toBeInTheDocument();
+  });
+
+  it("surfaces a failed verification on a draft that generated successfully", async () => {
+    (useGenerateDraft as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: (_params: unknown, options: { onSuccess: (data: ReconciliationResult) => void }) => {
+        options.onSuccess({
+          draft: mockDraft,
+          verification: {
+            passed: false,
+            issues: [
+              { severity: "error", check: "conservation", detail: "block 1 is overcharged by 60 minutes", block_id: 1 },
+            ],
+          },
+        });
+      },
+      isPending: false,
+      isError: false,
+      error: null,
+    });
+
+    render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: /Regenerate/i }));
+
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent(/did not pass the evidence checks/i);
+    expect(status).toHaveTextContent(/overcharged by 60 minutes/);
   });
 });
