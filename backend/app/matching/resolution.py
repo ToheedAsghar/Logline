@@ -199,6 +199,10 @@ def resolve_project_identities(db: Session, user_id: int, project_path: str) -> 
     the matching step cares about. Each value is independently None if that
     source's identity couldn't be resolved -- a miss on one source never
     blocks resolution of the others.
+
+    Note: "calendar" is intentionally omitted here. Calendar events represent
+    meetings and inherently do not map to specific local code folders. They are
+    expected to fail matching and flow directly into the global reminders bucket.
     """
 
     return {
