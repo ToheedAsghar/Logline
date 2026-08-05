@@ -155,7 +155,16 @@ def resolve_github_identity(project_path: str) -> Optional[str]:
     origin isn't a recognizable GitHub remote. Never guesses.
     """
 
-    git_root = _find_git_root(Path(project_path))
+    path_obj = Path(project_path)
+    if ".." in path_obj.parts:
+        return None
+
+    try:
+        resolved_path = path_obj.resolve(strict=False)
+    except (ValueError, RuntimeError):
+        return None
+
+    git_root = _find_git_root(resolved_path)
     if git_root is None:
         return None
 
@@ -190,6 +199,10 @@ def resolve_project_identities(db: Session, user_id: int, project_path: str) -> 
     the matching step cares about. Each value is independently None if that
     source's identity couldn't be resolved -- a miss on one source never
     blocks resolution of the others.
+
+    Note: "calendar" is intentionally omitted here. Calendar events represent
+    meetings and inherently do not map to specific local code folders. They are
+    expected to fail matching and flow directly into the global reminders bucket.
     """
 
     return {
