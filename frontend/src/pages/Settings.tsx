@@ -1,16 +1,10 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useState } from "react";
 import { Loading } from "@/atoms";
 import { IntegrationCard } from "@/molecules";
 import { INTEGRATION_SOURCES, type IntegrationId } from "@/constants/integrations";
 import { useIntegrations } from "@/repositories/hooks";
 import type { Integration } from "@/repositories/types";
 
-/** A row for a source the backend has never created an `integrations` row
- * for yet (the common case pre-OAuth, since `connect` is still a 501 stub —
- * see app/api/integrations.py). Renders identically to a real disconnected
- * integration; `id: -1` is never sent anywhere, `IntegrationCard`'s
- * connect/disconnect mutations key off `source`, not `id`. */
 function placeholder(source: IntegrationId): Integration {
   return { id: -1, source, status: "disconnected", last_synced_at: null, created_at: "" };
 }
@@ -22,9 +16,7 @@ export default function Settings() {
   const connectedCount = rows.filter((integration) => integration.status === "connected").length;
   const attentionCount = rows.filter((integration) => integration.status === "error").length;
 
-  const [callbackNotice, setCallbackNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
-
-  useEffect(() => {
+  const [callbackNotice, setCallbackNotice] = useState<{ type: "success" | "error"; message: string } | null>(() => {
     const params = new URLSearchParams(window.location.search);
     const integration = params.get("integration");
     const status = params.get("status");
@@ -32,34 +24,34 @@ export default function Settings() {
 
     if (integration && status) {
       const sourceName = INTEGRATION_SOURCES.find((s) => s.id === integration)?.name ?? integration;
-      if (status === "connected") {
-        setCallbackNotice({
-          type: "success",
-          message: `Successfully connected ${sourceName}!`,
-        });
-      } else if (status === "error") {
-        setCallbackNotice({
-          type: "error",
-          message: `Couldn't connect ${sourceName}${detail ? `: ${detail}` : " — authorization failed."}`,
-        });
-      }
-
-      // Selectively remove only callback params to preserve other query string parameters
       params.delete("integration");
       params.delete("status");
       params.delete("detail");
       const cleanQuery = params.toString();
       const cleanUrl = cleanQuery ? `${window.location.pathname}?${cleanQuery}` : window.location.pathname;
       window.history.replaceState({}, "", cleanUrl);
+
+      if (status === "connected") {
+        return {
+          type: "success",
+          message: `Successfully connected ${sourceName}!`,
+        };
+      } else if (status === "error") {
+        return {
+          type: "error",
+          message: `Couldn't connect ${sourceName}${detail ? `: ${detail}` : " — authorization failed."}`,
+        };
+      }
     }
-  }, []);
+    return null;
+  });
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
-        <p className="max-w-[58ch] text-sm text-muted">
-          Logline reads work signals from these sources to build your timeline. Connect what you use — nothing is
+        <h1 className="text-2xl font-semibold tracking-tight text-[#191917]">Settings</h1>
+        <p className="mt-1 text-sm text-[#6E6C62] max-w-2xl leading-relaxed">
+          Logline reads work signals from these sources to build your draft. Connect what you use — nothing is
           ever posted back without your approval.
         </p>
       </div>
@@ -68,11 +60,10 @@ export default function Settings() {
         <div
           role="alert"
           aria-live="polite"
-          className={`flex items-center justify-between rounded-lg border px-3.5 py-2.5 font-mono text-xs ${
-            callbackNotice.type === "success"
-              ? "border-accent-soft bg-accent-soft text-accent-dim"
-              : "border-danger/40 bg-danger-soft text-danger"
-          }`}
+          className={`flex items-center justify-between rounded-lg border p-3.5 font-mono text-xs ${callbackNotice.type === "success"
+            ? "border-[#BFD9C2] bg-[#DCEBDD] text-[#14603C]"
+            : "border-[#E0B8AC] bg-[#FBEEEA] text-[#A33A22]"
+            }`}
         >
           <span>{callbackNotice.message}</span>
           <button
@@ -86,46 +77,34 @@ export default function Settings() {
         </div>
       )}
 
-      {integrations.isLoading && <Loading label="Loading integrations…" />}
+      {integrations.isLoading && <div className="p-8"><Loading label="Loading integrations…" /></div>}
       {integrations.isError && (
-        <p className="font-mono text-[11px] text-danger">Couldn&apos;t load integrations — try again.</p>
+        <p className="font-mono text-xs text-[#A33A22]">Couldn&apos;t load integrations — try again.</p>
       )}
 
       {!integrations.isLoading && !integrations.isError && (
-        <div className="flex flex-col gap-3.5">
+        <div className="space-y-4">
           <div className="flex items-baseline justify-between gap-3">
             <div className="flex items-baseline gap-2">
-              <h2 className="text-sm font-semibold tracking-tight">Connected sources</h2>
-              <span className="font-mono text-[11.5px] text-faint">
+              <h2 className="text-sm font-semibold text-[#191917]">Connected sources</h2>
+              <span className="font-mono text-xs text-[#8A887C]">
                 {connectedCount}/{rows.length} active
               </span>
             </div>
             {attentionCount > 0 && (
-              <span className="font-mono text-[11px] text-danger">
+              <span className="font-mono text-xs text-[#A33A22]">
                 {attentionCount} need{attentionCount === 1 ? "s" : ""} attention
               </span>
             )}
           </div>
-          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {rows.map((integration) => (
               <IntegrationCard key={integration.source} integration={integration} />
             ))}
           </div>
         </div>
       )}
-
-      <div className="mt-8 border-t border-border pt-8">
-        <h2 className="mb-2 text-sm font-semibold tracking-tight">Diagnostics & Advanced</h2>
-        <p className="mb-4 max-w-[58ch] text-sm text-muted">
-          Tools for auditing your raw local and remote activity telemetry.
-        </p>
-        <Link 
-          to="/timeline" 
-          className="inline-flex items-center rounded-md border border-border bg-surface-2 px-4 py-2 font-sans text-sm font-medium transition-colors hover:bg-surface-3"
-        >
-          View Raw Telemetry Timeline
-        </Link>
-      </div>
     </div>
   );
 }
+

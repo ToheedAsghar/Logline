@@ -8,18 +8,9 @@ export type ButtonVariant = "primary" | "secondary" | "subtle" | "ghost" | "dang
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: Size;
-  /** Renders as a square icon-only button (close ✕, settings gear, calendar nav …). */
   iconOnly?: boolean;
-  /** Leading icon/element (SVG glyph). */
   icon?: ReactNode;
-  /** Trailing icon/element — e.g. the chevron on "Generate standup". */
   trailingIcon?: ReactNode;
-  /**
-   * The Logline "agent working" state — checking tools / correlating
-   * signals. Deliberately not a generic spinner: swaps the button's content
-   * for the brand blink-cursor + status copy (matching the handoff's
-   * `refreshWorkingStyle` pill) and disables interaction. See `Loading.tsx`.
-   */
   working?: boolean;
   workingLabel?: string;
 }
@@ -32,18 +23,18 @@ const BASE =
 
 const VARIANT: Record<ButtonVariant, string> = {
   primary:
-    "bg-accent text-accent-ink border border-transparent shadow-[0_4px_14px_var(--color-accent-soft)] " +
-    "enabled:hover:brightness-[1.06] enabled:hover:-translate-y-px enabled:active:translate-y-0",
+    "bg-[#14603C] text-[#FFFDF7] border border-[#14603C] shadow-xs " +
+    "enabled:hover:bg-[#0F4E31] enabled:active:translate-y-0",
   secondary:
-    "bg-transparent text-text border border-border-2 " + "enabled:hover:bg-surface-2 enabled:hover:border-text",
+    "bg-[#FFFDF7] text-[#191917] border border-[#CFCABA] " + "enabled:hover:bg-[#F5F2EA]",
   subtle:
-    "bg-surface-2 text-muted border border-border-2 " +
-    "enabled:hover:bg-surface enabled:hover:border-accent enabled:hover:text-text",
-  ghost: "bg-transparent text-muted border border-transparent " + "enabled:hover:bg-surface-2 enabled:hover:text-text",
+    "bg-[#F5F2EA] text-[#6E6C62] border border-[#E3DFD2] " +
+    "enabled:hover:bg-[#EFEBE0] enabled:hover:text-[#191917]",
+  ghost: "bg-transparent text-[#6E6C62] border border-transparent " + "enabled:hover:bg-[#F5F2EA] enabled:hover:text-[#191917]",
   danger:
-    "bg-transparent text-danger border border-border " +
-    "enabled:hover:bg-danger-soft enabled:hover:border-danger",
-  "danger-solid": "bg-danger text-bg border border-transparent " + "enabled:hover:brightness-[1.06]",
+    "bg-transparent text-[#A33A22] border border-[#E0B8AC] " +
+    "enabled:hover:bg-[#FBEEEA] enabled:hover:border-[#A33A22]",
+  "danger-solid": "bg-[#A33A22] text-[#FFFDF7] border border-transparent " + "enabled:hover:bg-[#882E1A]",
 };
 
 const SIZE: Record<Size, string> = {

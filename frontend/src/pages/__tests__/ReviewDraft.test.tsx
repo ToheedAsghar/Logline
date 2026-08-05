@@ -1,7 +1,8 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ReviewDraft, formatMinutes, minutesToHHMM, parseTimeToMinutes } from "../ReviewDraft";
+import { formatMinutes } from "@/common/utils";
+import { ReviewDraft, minutesToHHMM, parseTimeToMinutes } from "../ReviewDraft";
 import type { WorkLogDraft, ReconciliationResult } from "@/repositories/types";
 
 vi.mock("@/repositories/hooks", () => ({
@@ -45,6 +46,17 @@ const mockVerification: ReconciliationResult["verification"] = {
   ],
 };
 
+function mockGenerateWithDraft() {
+  (useGenerateDraft as ReturnType<typeof vi.fn>).mockReturnValue({
+    mutate: (_params: unknown, options: { onSuccess: (data: ReconciliationResult) => void }) => {
+      options.onSuccess({ draft: mockDraft, verification: mockVerification });
+    },
+    isPending: false,
+    isError: false,
+    error: null,
+  });
+}
+
 describe("ReviewDraft utilities", () => {
   it("formats minutes into human readable Xh Ym strings", () => {
     expect(formatMinutes(0)).toBe("0m");
@@ -68,7 +80,7 @@ describe("ReviewDraft utilities", () => {
 
 describe("ReviewDraft Component", () => {
   let generateMutateMock: ReturnType<typeof vi.fn>;
-  let approveMutateMock: ReturnType<typeof vi.fn>;
+  let approveMutateMock: ReturnType<typeof vi.fn<(draft: WorkLogDraft) => void>>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -98,15 +110,7 @@ describe("ReviewDraft Component", () => {
   });
 
   it("edits entries in local React state only without calling API prematurely", async () => {
-    // Render component with draft already populated
-    (useGenerateDraft as ReturnType<typeof vi.fn>).mockReturnValue({
-      mutate: (_params: unknown, options: { onSuccess: (data: ReconciliationResult) => void }) => {
-        options.onSuccess({ draft: mockDraft, verification: mockVerification });
-      },
-      isPending: false,
-      isError: false,
-      error: null,
-    });
+    mockGenerateWithDraft();
 
     render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
     fireEvent.click(screen.getByRole("button", { name: /Regenerate/i }));
@@ -115,7 +119,6 @@ describe("ReviewDraft Component", () => {
       expect(screen.getByText("Initial description from AI")).toBeInTheDocument();
     });
 
-    // Open inspector for entry
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
 
     const descriptionInput = screen.getByDisplayValue("Initial description from AI");
@@ -125,10 +128,12 @@ describe("ReviewDraft Component", () => {
     expect(approveMutateMock).not.toHaveBeenCalled();
   });
 
-  it("sends exactly one request to approve endpoint with edited local state when Approve is clicked", async () => {
-    (useGenerateDraft as ReturnType<typeof vi.fn>).mockReturnValue({
-      mutate: (_params: unknown, options: { onSuccess: (data: ReconciliationResult) => void }) => {
-        options.onSuccess({ draft: mockDraft, verification: mockVerification });
+  it("sends the edited payload to approve and shows the success banner on completion", async () => {
+    mockGenerateWithDraft();
+    (useApproveDraft as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: (draft: WorkLogDraft, options: { onSuccess: () => void }) => {
+        approveMutateMock(draft);
+        options.onSuccess();
       },
       isPending: false,
       isError: false,
@@ -142,20 +147,53 @@ describe("ReviewDraft Component", () => {
       expect(screen.getByText("Initial description from AI")).toBeInTheDocument();
     });
 
-    // Open inspector for entry
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
 
-    // Edit description
     const descriptionInput = screen.getByDisplayValue("Initial description from AI");
     fireEvent.change(descriptionInput, { target: { value: "Final edited description" } });
 
-    // Click Save day
     const approveButton = screen.getByRole("button", { name: /Save day/i });
     fireEvent.click(approveButton);
 
     expect(approveMutateMock).toHaveBeenCalledTimes(1);
     const approvedPayload = approveMutateMock.mock.calls[0][0] as WorkLogDraft;
     expect(approvedPayload.entries[0].description).toBe("Final edited description");
+
+    await waitFor(() => {
+      expect(screen.getByText(/Draft entries successfully approved/i)).toBeInTheDocument();
+    });
+  });
+
+  it("does not crash and still shows empty state when generate mutation is in error state", () => {
+    (useGenerateDraft as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: generateMutateMock,
+      isPending: false,
+      isError: true,
+      error: new Error("Network error"),
+    });
+
+    render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
+    expect(screen.getByText(/No draft loaded/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Regenerate/i })).toBeEnabled();
+  });
+
+  it("keeps the draft visible and Save day enabled when approve mutation errors", async () => {
+    mockGenerateWithDraft();
+
+    render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: /Regenerate/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Initial description from AI")).toBeInTheDocument();
+    });
+
+    (useApproveDraft as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: approveMutateMock,
+      isPending: false,
+      isError: true,
+      error: new Error("Server error"),
+    });
+
+    expect(screen.getByText("Initial description from AI")).toBeInTheDocument();
   });
 });
-

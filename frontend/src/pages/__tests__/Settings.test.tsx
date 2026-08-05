@@ -53,7 +53,6 @@ describe("Settings", () => {
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    // github, jira, calendar, slack — one card each, even though only github has a real row.
     expect(screen.getByText("GitHub")).toBeInTheDocument();
     expect(screen.getByText("Jira")).toBeInTheDocument();
     expect(screen.getByText("Google Calendar")).toBeInTheDocument();

@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Loading, Tooltip } from "@/atoms";
-import { ALL_ENTRY_TAGS, type DraftEntry, type DraftReminder, type EntryTag, type ReconciliationResult, type WorkLogDraft } from "@/repositories/types";
+import { Loading } from "@/atoms";
+import { formatMinutes } from "@/common/utils";
+import { ALL_ENTRY_TAGS, type DraftEntry, type EntryTag, type WorkLogDraft } from "@/repositories/types";
 import { useApproveDraft, useGenerateDraft } from "@/repositories/hooks";
 
-/** Get current local date formatted as YYYY-MM-DD. */
 export function getTodayLocalDate(): string {
   const d = new Date();
   const year = d.getFullYear();
@@ -13,24 +13,12 @@ export function getTodayLocalDate(): string {
   return `${year}-${month}-${day}`;
 }
 
-/** Format minutes into human-readable "Xh Ym" string (e.g., 474 -> "7h 54m"). */
-export function formatMinutes(totalMinutes: number): string {
-  if (totalMinutes <= 0) return "0m";
-  const hours = Math.floor(totalMinutes / 60);
-  const mins = totalMinutes % 60;
-  if (hours === 0) return `${mins}m`;
-  if (mins === 0) return `${hours}h`;
-  return `${hours}h ${mins}m`;
-}
-
-/** Convert total minutes into "HH:MM" string format. */
 export function minutesToHHMM(totalMinutes: number): string {
   const h = Math.floor(Math.max(0, totalMinutes) / 60);
   const m = Math.max(0, totalMinutes) % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-/** Parse HH:MM string or plain number into total minutes. */
 export function parseTimeToMinutes(value: string): number {
   const trimmed = value.trim();
   if (!trimmed) return 0;
@@ -50,7 +38,6 @@ export function parseTimeToMinutes(value: string): number {
   return Math.round(num);
 }
 
-/** Custom scrollable & filterable dropdown for EntryTag values. */
 export function TagSelect({
   value,
   onChange,
@@ -91,7 +78,7 @@ export function TagSelect({
 
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <button type="button" aria-label="Close tag dropdown" className="fixed inset-0 z-40 cursor-default" onClick={() => setOpen(false)} />
           <div className="absolute left-0 top-full z-50 mt-1 max-h-56 w-56 overflow-y-auto rounded-md border border-[#E3DFD2] bg-[#FFFDF7] p-1.5 shadow-elevated">
             <input
               type="text"
@@ -136,13 +123,13 @@ export function TagSelect({
 
 export function ReviewDraft() {
   const navigate = useNavigate();
+  const todayStr = useMemo(() => getTodayLocalDate(), []);
   const [startDate, setStartDate] = useState(getTodayLocalDate);
   const [endDate, setEndDate] = useState(getTodayLocalDate);
   const [scopeMode, setScopeMode] = useState<"DAY" | "RANGE">("DAY");
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const [draft, setDraft] = useState<WorkLogDraft | null>(null);
-  const [verification, setVerification] = useState<ReconciliationResult["verification"] | null>(null);
   const [approveSuccess, setApproveSuccess] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [ignoredGaps, setIgnoredGaps] = useState<Set<string>>(new Set());
@@ -153,12 +140,13 @@ export function ReviewDraft() {
   const handleGenerate = () => {
     setApproveSuccess(false);
     setSelectedIndex(null);
+    const effectiveStart = startDate > todayStr ? todayStr : startDate;
+    const effectiveEnd = scopeMode === "DAY" ? effectiveStart : endDate > todayStr ? todayStr : endDate;
     generateMutation.mutate(
-      { date_range_start: startDate, date_range_end: scopeMode === "DAY" ? startDate : endDate },
+      { date_range_start: effectiveStart, date_range_end: effectiveEnd },
       {
         onSuccess: (data) => {
           setDraft(data.draft);
-          setVerification(data.verification);
         },
       },
     );
@@ -232,6 +220,7 @@ export function ReviewDraft() {
     const m = String(curr.getMonth() + 1).padStart(2, "0");
     const d = String(curr.getDate()).padStart(2, "0");
     const formatted = `${y}-${m}-${d}`;
+    if (formatted > todayStr) return;
     setStartDate(formatted);
     setEndDate(formatted);
   };
@@ -289,7 +278,6 @@ export function ReviewDraft() {
 
   return (
     <div className="space-y-6">
-      {/* Top Header Row */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-[#191917]">Review draft</h1>
@@ -320,9 +308,7 @@ export function ReviewDraft() {
         </div>
       </div>
 
-      {/* Date Bar & Metrics Summary */}
       <div className="relative flex flex-wrap items-center rounded-lg border border-[#E3DFD2] bg-[#FFFDF7] shadow-sm">
-        {/* Date Selector */}
         <div className="flex items-center gap-1 border-r border-[#E3DFD2] p-2">
           <button
             type="button"
@@ -338,7 +324,7 @@ export function ReviewDraft() {
             className="flex items-center gap-2.5 rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-1.5 transition-colors hover:border-[#CFCABA]"
           >
             <span className="font-mono text-xs font-medium text-[#191917]">
-              {startDate === getTodayLocalDate() ? `Today (${startDate})` : startDate}
+              {startDate === todayStr ? `Today (${startDate})` : startDate}
               {scopeMode === "RANGE" && ` to ${endDate}`}
             </span>
             <span className="font-mono text-[10px] text-[#8A887C]">▾</span>
@@ -346,14 +332,14 @@ export function ReviewDraft() {
           <button
             type="button"
             onClick={() => shiftDate(1)}
+            disabled={startDate >= todayStr}
             aria-label="Next day"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-sm text-[#57564E] transition-colors hover:border hover:border-[#E3DFD2] hover:bg-[#F5F2EA]"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-sm text-[#57564E] transition-colors hover:border hover:border-[#E3DFD2] hover:bg-[#F5F2EA] disabled:opacity-30 disabled:pointer-events-none"
           >
             ›
           </button>
         </div>
 
-        {/* Day / Range Toggle */}
         <div className="flex items-center border-r border-[#E3DFD2] p-2">
           <div className="flex gap-0.5 rounded-md bg-[#F1EDE2] p-0.5">
             <button
@@ -377,7 +363,6 @@ export function ReviewDraft() {
           </div>
         </div>
 
-        {/* Stats Metrics */}
         <div className="flex flex-1 items-center justify-around gap-4 px-4 py-2">
           <div className="flex flex-col">
             <span className="font-mono text-[10px] tracking-wider text-[#8A887C]">TRACKED</span>
@@ -399,10 +384,9 @@ export function ReviewDraft() {
           </div>
         </div>
 
-        {/* Custom Date Range Picker Dropdown */}
         {pickerOpen && (
           <>
-            <div className="fixed inset-0 z-30" onClick={() => setPickerOpen(false)} />
+            <button type="button" aria-label="Close date picker" className="fixed inset-0 z-30 cursor-default" onClick={() => setPickerOpen(false)} />
             <div className="absolute left-2 top-full z-40 mt-1.5 flex rounded-lg border border-[#E3DFD2] bg-[#FFFDF7] shadow-elevated">
               <div className="flex flex-col gap-1 border-r border-[#E3DFD2] p-3 w-40">
                 <span className="font-mono text-[10px] tracking-wider text-[#8A887C] px-2 py-1">PRESETS</span>
@@ -441,15 +425,23 @@ export function ReviewDraft() {
                 <div className="flex items-center gap-2 font-mono text-xs">
                   <input
                     type="date"
+                    max={todayStr}
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setStartDate(val > todayStr ? todayStr : val);
+                    }}
                     className="rounded border border-[#E3DFD2] bg-[#F5F2EA] px-2.5 py-1.5 text-[#191917] focus:border-[#14603C] focus:outline-none"
                   />
                   <span className="text-[#8A887C]">to</span>
                   <input
                     type="date"
+                    max={todayStr}
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEndDate(val > todayStr ? todayStr : val);
+                    }}
                     className="rounded border border-[#E3DFD2] bg-[#F5F2EA] px-2.5 py-1.5 text-[#191917] focus:border-[#14603C] focus:outline-none"
                   />
                 </div>
@@ -498,15 +490,13 @@ export function ReviewDraft() {
 
       {!draft && !generateMutation.isPending && (
         <div className="rounded-xl border border-dashed border-[#CFCABA] bg-[#FFFDF7]/50 p-12 text-center">
-          <p className="text-[#6E6C62]">No draft loaded. Click "Regenerate" or pick a date range to generate a draft.</p>
+          <p className="text-[#6E6C62]">No draft loaded. Click &quot;Regenerate&quot; or pick a date range to generate a draft.</p>
         </div>
       )}
 
-      {/* Main Review Section + Inspector Drawer */}
       {draft && (
         <div className="flex gap-6 items-start">
           <div className="flex-1 min-w-0 space-y-3">
-            {/* Unsure Banner Warning */}
             {unsureCount > 0 && (
               <div className="flex items-center gap-3 rounded-lg border border-[#E4CFA3] bg-[#F7EDD8] p-3 text-xs text-[#8A5A0F]">
                 <span className="font-mono font-bold uppercase rounded border border-[#E4CFA3] bg-[#FFFDF7] px-2 py-0.5">
@@ -516,7 +506,6 @@ export function ReviewDraft() {
               </div>
             )}
 
-            {/* Workstream Cards */}
             {draft.entries.map((entry, idx) => {
               const entryMins = entry.allocations.reduce((sum, a) => sum + a.minutes, 0);
               const isSelected = selectedIndex === idx;
@@ -524,7 +513,7 @@ export function ReviewDraft() {
 
               return (
                 <div
-                  key={idx}
+                  key={`${entry.date}-${entry.project}-${entry.description.slice(0, 20)}-${idx}`}
                   className={`flex rounded-lg border bg-[#FFFDF7] transition-all ${
                     isSelected
                       ? "border-[#14603C] ring-2 ring-[#14603C]/20 shadow-md"
@@ -538,8 +527,8 @@ export function ReviewDraft() {
                     <div className="flex items-baseline gap-3">
                       <span className="font-mono text-sm font-medium text-[#191917]">{formatMinutes(entryMins)}</span>
                       <span className="font-mono text-xs text-[#8A887C]">
-                        {entry.source_remote_event_ids.length > 0
-                          ? `${entry.source_remote_event_ids.length} remote signals`
+                        {(entry.source_remote_event_ids?.length ?? 0) > 0
+                          ? `${entry.source_remote_event_ids?.length} remote signals`
                           : "local activity"}
                       </span>
                       {isLowConfidence && (
@@ -590,7 +579,6 @@ export function ReviewDraft() {
               );
             })}
 
-            {/* Unaccounted Strip */}
             {unaccountedMins > 0 && !ignoredGaps.has("main") && (
               <div className="flex items-center justify-between gap-4 rounded-lg border border-dashed border-[#CFCABA] p-3 text-xs">
                 <span className="font-mono text-[#6E6C62]">{formatMinutes(unaccountedMins)} unaccounted</span>
@@ -614,7 +602,6 @@ export function ReviewDraft() {
               </div>
             )}
 
-            {/* Add Block Dotted Button */}
             <button
               type="button"
               onClick={addBlankEntry}
@@ -624,7 +611,6 @@ export function ReviewDraft() {
             </button>
           </div>
 
-          {/* Side Inspector Drawer */}
           {selectedEntry !== null && selectedIndex !== null && (
             <aside className="w-80 flex-none rounded-lg border border-[#E3DFD2] bg-[#FFFDF7] shadow-sm space-y-4 p-4 sticky top-6">
               <div className="flex items-center justify-between border-b border-[#E3DFD2] pb-3">
@@ -638,7 +624,6 @@ export function ReviewDraft() {
                 </button>
               </div>
 
-              {/* Description Input */}
               <div className="space-y-1.5">
                 <label className="font-mono text-[10px] tracking-wider text-[#8A887C] block">DESCRIPTION</label>
                 <textarea
@@ -649,7 +634,6 @@ export function ReviewDraft() {
                 />
               </div>
 
-              {/* Time Spent Inputs & Quick Stepper Pills */}
               <div className="space-y-1.5">
                 <label className="font-mono text-[10px] tracking-wider text-[#8A887C] block">TIME SPENT</label>
                 <div className="flex items-center gap-2">
@@ -694,7 +678,6 @@ export function ReviewDraft() {
                 </div>
               </div>
 
-              {/* Tag Selector */}
               <div className="space-y-1.5">
                 <label className="font-mono text-[10px] tracking-wider text-[#8A887C] block">TAG</label>
                 <TagSelect
@@ -703,7 +686,6 @@ export function ReviewDraft() {
                 />
               </div>
 
-              {/* Telemetry Signals Section */}
               <div className="space-y-2 border-t border-[#E3DFD2] pt-3">
                 <label className="font-mono text-[10px] tracking-wider text-[#8A887C] block">
                   WHY THIS BLOCK EXISTS
@@ -717,17 +699,8 @@ export function ReviewDraft() {
                     <p className="text-[11px] text-[#191917]">Local activity telemetry signals matched workstream</p>
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => navigate("/timeline")}
-                  className="w-full text-left font-mono text-[11px] text-[#14603C] hover:underline pt-1"
-                >
-                  Raw telemetry for this window →
-                </button>
               </div>
 
-              {/* Inspector Actions */}
               <div className="flex items-center gap-2 border-t border-[#E3DFD2] pt-3">
                 <button
                   type="button"

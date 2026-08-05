@@ -1,9 +1,3 @@
-/**
- * Domain types mirroring the backend's Pydantic schemas exactly (see
- * `backend/app/schemas/`). Dates/timestamps are ISO 8601 strings, matching
- * what `datetime` fields serialize to over JSON — callers that need a `Date`
- * convert at the point of use.
- */
 import type { IntegrationId } from "@/constants/integrations";
 
 export type ConfidenceLevel = "proven" | "estimated" | "gap";
@@ -75,8 +69,6 @@ export interface DateRange {
 export interface AgentRunResult {
   response: string;
   events: Event[];
-  /** Id of the draft entry created via write_draft_entry during this run, or
-   * null if the run didn't produce one (e.g. evidence-gathering only). */
   created_entry_id: number | null;
 }
 

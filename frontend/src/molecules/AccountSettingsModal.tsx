@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Input } from "@/atoms";
 import { useSession } from "@/context/SessionContext";
-import { useTheme } from "@/context/ThemeContext";
 import { me } from "@/repositories/api/auth";
 
 export interface AccountSettingsModalProps {
@@ -17,10 +15,6 @@ interface ProfileFields {
   channel: string;
 }
 
-// Populated from GET /auth/me when the modal opens. Handle/role/channel have
-// no backend fields yet, so those stay as the handoff's hard-coded starting
-// values — editing here is local-only, same as the handoff's `saveProfile()`
-// (closes the modal, doesn't persist anywhere).
 const DEFAULT_PROFILE: ProfileFields = {
   name: "",
   email: "",
@@ -42,17 +36,10 @@ function initialsFor(name: string): string {
   );
 }
 
-const FIELD_LABEL = "block font-mono text-[10.5px] uppercase tracking-wider text-faint mt-3 mb-1.5 first:mt-0";
+const FIELD_LABEL = "block font-mono text-[10.5px] uppercase tracking-wider text-[#8A887C] mt-3 mb-1.5 first:mt-0";
 
-/**
- * "Account & settings" — the modal from the handoff (Logline.html:
- * `accountOpen`/`openAccount`/`closeAccount`), opened from the avatar button
- * in `AppShell`. This is the only place in the app that profile editing and
- * the Light/Dark toggle live; there is no other UI for either.
- */
 export function AccountSettingsModal({ open, onClose }: AccountSettingsModalProps) {
   const { logout } = useSession();
-  const { theme, setLight, setDark } = useTheme();
   const [profile, setProfile] = useState<ProfileFields>(DEFAULT_PROFILE);
 
   useEffect(() => {
@@ -83,7 +70,7 @@ export function AccountSettingsModal({ open, onClose }: AccountSettingsModalProp
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-start justify-center bg-black/50 px-4 pt-[8vh] pb-4"
+      className="fixed inset-0 z-[110] flex items-start justify-center bg-black/40 px-4 pt-[8vh] pb-4 backdrop-blur-xs"
       onClick={onClose}
     >
       <div
@@ -91,86 +78,104 @@ export function AccountSettingsModal({ open, onClose }: AccountSettingsModalProp
         aria-modal="true"
         aria-label="Account & settings"
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[84vh] w-full max-w-[470px] flex-col overflow-y-auto rounded-2xl border border-border-2 bg-surface shadow-elevated"
+        className="flex max-h-[84vh] w-full max-w-[470px] flex-col overflow-y-auto rounded-xl border border-[#E3DFD2] bg-[#FFFDF7] shadow-xl"
       >
-        <div className="sticky top-0 z-[2] flex items-center gap-3 border-b border-border bg-surface px-5 py-4">
-          <span className="font-mono text-[11px] uppercase tracking-wider text-faint">Account &amp; settings</span>
+        <div className="sticky top-0 z-[2] flex items-center gap-3 border-b border-[#E3DFD2] bg-[#FFFDF7] px-5 py-4">
+          <span className="font-mono text-[11px] uppercase tracking-wider text-[#8A887C]">Account &amp; settings</span>
           <span className="flex-1" />
-          <Button variant="secondary" size="sm" iconOnly aria-label="Close" onClick={onClose} icon="✕" />
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E3DFD2] bg-[#F5F2EA] text-xs text-[#57564E] hover:bg-[#EFEBE0]"
+          >
+            ✕
+          </button>
         </div>
 
         <div className="p-5">
           <div className="mb-5 flex items-center gap-3.5">
             <span className="relative flex-none">
-              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-accent-dim font-mono text-[22px] font-bold tracking-tight text-accent-ink shadow-[0_6px_18px_var(--color-accent-soft)]">
+              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#14603C] font-mono text-[20px] font-bold tracking-tight text-[#FFFDF7]">
                 {initialsFor(profile.name)}
               </span>
-              <span className="absolute -bottom-[3px] -right-[3px] h-4 w-4 rounded-full border-[3px] border-surface bg-accent" />
+              <span className="absolute -bottom-[3px] -right-[3px] h-4 w-4 rounded-full border-[3px] border-[#FFFDF7] bg-[#14603C]" />
             </span>
             <div className="min-w-0">
-              <div className="text-base font-semibold">{profile.name || "Unnamed"}</div>
-              <div className="font-mono text-xs text-faint">{profile.handle || "—"}</div>
+              <div className="text-base font-semibold text-[#191917]">{profile.name || "Unnamed"}</div>
+              <div className="font-mono text-xs text-[#8A887C]">{profile.handle || "—"}</div>
             </div>
           </div>
 
           <label className={FIELD_LABEL}>Display name</label>
-          <Input value={profile.name} onChange={editField("name")} />
+          <input
+            type="text"
+            value={profile.name}
+            onChange={editField("name")}
+            className="w-full rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-2 text-xs font-medium text-[#191917] focus:border-[#14603C] focus:outline-none"
+          />
 
           <label className={FIELD_LABEL}>Work email</label>
-          <Input type="email" value={profile.email} onChange={editField("email")} />
+          <input
+            type="email"
+            value={profile.email}
+            onChange={editField("email")}
+            className="w-full rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-2 text-xs font-medium text-[#191917] focus:border-[#14603C] focus:outline-none"
+          />
 
           <label className={FIELD_LABEL}>Handle</label>
-          <Input value={profile.handle} onChange={editField("handle")} placeholder="@handle" />
+          <input
+            type="text"
+            value={profile.handle}
+            onChange={editField("handle")}
+            placeholder="@handle"
+            className="w-full rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-2 text-xs font-medium text-[#191917] focus:border-[#14603C] focus:outline-none"
+          />
 
           <label className={FIELD_LABEL}>Role</label>
-          <Input value={profile.role} onChange={editField("role")} />
+          <input
+            type="text"
+            value={profile.role}
+            onChange={editField("role")}
+            className="w-full rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-2 text-xs font-medium text-[#191917] focus:border-[#14603C] focus:outline-none"
+          />
 
           <label className={FIELD_LABEL}>Default standup channel</label>
-          <Input value={profile.channel} onChange={editField("channel")} placeholder="#channel" />
+          <input
+            type="text"
+            value={profile.channel}
+            onChange={editField("channel")}
+            placeholder="#channel"
+            className="w-full rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-2 text-xs font-medium text-[#191917] focus:border-[#14603C] focus:outline-none"
+          />
 
-          <label className={FIELD_LABEL}>Appearance</label>
-          <div className="flex w-fit gap-1 rounded-[11px] border border-border bg-bg p-1">
+          <div className="mt-6 flex flex-wrap items-center gap-2.5 border-t border-[#E3DFD2] pt-5">
             <button
               type="button"
-              onClick={setLight}
-              className={`flex items-center gap-2 rounded-md px-4 py-2 text-[13px] font-semibold transition-colors ${
-                theme === "light" ? "bg-accent text-accent-ink shadow-sm" : "text-muted"
-              }`}
+              onClick={logout}
+              className="rounded-md border border-[#E0B8AC] bg-[#FBEEEA] px-3.5 py-2 text-xs font-medium text-[#A33A22] hover:bg-[#F7DDD6]"
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="4.2" />
-                <path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" />
-              </svg>
-              Light
-            </button>
-            <button
-              type="button"
-              onClick={setDark}
-              className={`flex items-center gap-2 rounded-md px-4 py-2 text-[13px] font-semibold transition-colors ${
-                theme === "dark" ? "bg-accent text-accent-ink shadow-sm" : "text-muted"
-              }`}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a7 7 0 1 0 11 11z" />
-              </svg>
-              Dark
-            </button>
-          </div>
-
-          <div className="mt-6 flex flex-wrap items-center gap-2.5 border-t border-border pt-5">
-            <Button variant="danger" size="md" onClick={logout}>
               Sign out
-            </Button>
+            </button>
             <span className="flex-1" />
-            <Button variant="secondary" size="md" onClick={onClose}>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-[#CFCABA] bg-[#FFFDF7] px-3.5 py-2 text-xs font-medium text-[#191917] hover:bg-[#F5F2EA]"
+            >
               Cancel
-            </Button>
-            <Button variant="primary" size="md" onClick={onClose}>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-[#14603C] bg-[#14603C] px-4 py-2 text-xs font-semibold text-[#FFFDF7] shadow-sm hover:bg-[#0F4E31]"
+            >
               Save changes
-            </Button>
+            </button>
           </div>
         </div>
       </div>
     </div>
   );
 }
+
