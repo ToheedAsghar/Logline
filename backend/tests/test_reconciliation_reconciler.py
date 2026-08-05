@@ -4,7 +4,10 @@ Runs entirely against a scripted fake `LLMProvider` -- the same pattern as test_
 so the merge behaviour is observed against a known model response rather than a real one.
 
 The central thing under test is the pre-built-reminder merge: pre-built reminders must survive the call
-untouched, model reminders must survive it untouched, and neither may be dropped or duplicated.
+untouched, model reminders must survive it untouched, and neither may be dropped or duplicated. Pre-built
+reminders are derived from `unmatched_events` (never accepted as a separate argument), so every test below
+that wants a pre-built reminder gets one by including its underlying event in `unmatched_events`, not by
+constructing a `Reminder` by hand.
 
 `TestVerificationIsAttachedToTheResult` covers the Stage 5/Stage 6 wiring, whose one non-negotiable property is
 that a draft failing verification still comes back in full. A scripted provider is what makes that testable at
@@ -97,7 +100,7 @@ class TestTheCallItself:
     async def test_calls_run_structured_with_the_system_prompt_and_the_worklogdraft_schema(self):
         provider = ScriptedProvider(WorkLogDraft())
 
-        await reconcile_evidence([MatchedGroup(block=make_block(), events=[make_event()])], [], [], [], provider)
+        await reconcile_evidence([MatchedGroup(block=make_block(), events=[make_event()])], [], [], provider)
 
         assert len(provider.calls) == 1
         messages, response_model = provider.calls[0]
@@ -109,7 +112,7 @@ class TestTheCallItself:
     async def test_user_message_is_the_assembled_evidence(self):
         provider = ScriptedProvider(WorkLogDraft())
 
-        await reconcile_evidence([], [make_block(project="logline", minutes=45)], [], [], provider)
+        await reconcile_evidence([], [make_block(project="logline", minutes=45)], [], provider)
 
         messages, _ = provider.calls[0]
         user_content = messages[1].content
@@ -122,34 +125,30 @@ class TestTheCallItself:
         provider = ExplodingProvider(RuntimeError("upstream exploded"))
 
         with pytest.raises(RuntimeError, match="upstream exploded"):
-            await reconcile_evidence([], [make_block()], [], [], provider)
+            await reconcile_evidence([], [make_block()], [], provider)
 
 
 class TestPrebuiltReminderMerge:
     @pytest.mark.asyncio
-    async def test_prebuilt_reminders_are_not_sent_to_the_model(self):
-        reminder = Reminder(
-            source="jira",
-            remote_project_id="ABC",
-            day=DAY,
-            events=[make_event(external_id="ABC-99", source="jira", summary="Moved to Done")],
-        )
+    async def test_the_reminders_built_note_text_is_not_sent_to_the_model(self):
+        """The raw unmatched event legitimately appears in the evidence (the model needs to know not to
+        re-raise it), but the reminder's synthesized note is only built after the model responds --
+        `build_evidence` has no reminders parameter, so there is no path for that wording to reach the prompt.
+        """
+        event = make_event(external_id="ABC-99", source="jira", project="ABC", summary="Moved to Done")
         provider = ScriptedProvider(WorkLogDraft())
 
-        await reconcile_evidence([], [make_block()], [], [reminder], provider)
+        result = await reconcile_evidence([], [make_block()], [event], provider)
 
         sent = "\n".join(m.content or "" for m in provider.calls[0][0])
-        assert "ABC-99" not in sent
-        assert "Moved to Done" not in sent
+        assert result.draft.reminders[0].note not in sent
 
     @pytest.mark.asyncio
     async def test_prebuilt_reminders_appear_in_the_returned_draft(self):
-        reminder = Reminder(
-            source="jira", remote_project_id="ABC", day=DAY, events=[make_event(external_id="ABC-99", source="jira")]
-        )
+        event = make_event(external_id="ABC-99", source="jira", project="ABC")
         provider = ScriptedProvider(WorkLogDraft())
 
-        draft = (await reconcile_evidence([], [make_block()], [], [reminder], provider)).draft
+        draft = (await reconcile_evidence([], [make_block()], [event], provider)).draft
 
         assert len(draft.reminders) == 1
         assert draft.reminders[0].source == "jira"
@@ -157,14 +156,11 @@ class TestPrebuiltReminderMerge:
 
     @pytest.mark.asyncio
     async def test_prebuilt_reminders_come_first_then_model_reminders_in_order(self):
-        prebuilt = [
-            Reminder(source="jira", remote_project_id="ABC", day=DAY, events=[make_event("ABC-1", "jira")]),
-            Reminder(source="github", remote_project_id="Toheed/logline", day=DAY, events=[make_event("gh:pr:2")]),
-        ]
+        events = [make_event("ABC-1", "jira", project="ABC"), make_event("gh:pr:2")]
         model_reminders = [make_model_reminder("First model question?"), make_model_reminder("Second question?")]
         provider = ScriptedProvider(WorkLogDraft(reminders=model_reminders))
 
-        draft = (await reconcile_evidence([], [make_block()], [], prebuilt, provider)).draft
+        draft = (await reconcile_evidence([], [make_block()], events, provider)).draft
 
         assert len(draft.reminders) == 4
         assert [r.source for r in draft.reminders[:2]] == ["jira", "github"]
@@ -175,16 +171,16 @@ class TestPrebuiltReminderMerge:
         model_reminder = make_model_reminder()
         provider = ScriptedProvider(WorkLogDraft(reminders=[model_reminder]))
 
-        draft = (await reconcile_evidence([], [make_block()], [], [], provider)).draft
+        draft = (await reconcile_evidence([], [make_block()], [], provider)).draft
 
         assert draft.reminders == [model_reminder]
 
     @pytest.mark.asyncio
     async def test_no_reminder_is_duplicated_by_the_merge(self):
-        prebuilt = [Reminder(source="jira", remote_project_id="ABC", day=DAY, events=[make_event("ABC-1", "jira")])]
+        event = make_event("ABC-1", "jira", project="ABC")
         provider = ScriptedProvider(WorkLogDraft(reminders=[make_model_reminder()]))
 
-        draft = (await reconcile_evidence([], [make_block()], [], prebuilt, provider)).draft
+        draft = (await reconcile_evidence([], [make_block()], [event], provider)).draft
 
         notes = [r.note for r in draft.reminders]
         assert len(notes) == len(set(notes)) == 2
@@ -193,7 +189,7 @@ class TestPrebuiltReminderMerge:
     async def test_empty_reminder_list_yields_a_draft_with_no_reminders(self):
         provider = ScriptedProvider(WorkLogDraft())
 
-        draft = (await reconcile_evidence([], [make_block()], [], [], provider)).draft
+        draft = (await reconcile_evidence([], [make_block()], [], provider)).draft
 
         assert draft.reminders == []
 
@@ -204,7 +200,7 @@ class TestNothingElseFromTheModelIsDropped:
         entries = [make_draft_entry(block_id=1, minutes=60), make_draft_entry(block_id=2, minutes=30)]
         provider = ScriptedProvider(WorkLogDraft(entries=entries))
 
-        draft = (await reconcile_evidence([], [make_block(), make_block()], [], [], provider)).draft
+        draft = (await reconcile_evidence([], [make_block(), make_block()], [], provider)).draft
 
         assert draft.entries == entries
 
@@ -213,7 +209,7 @@ class TestNothingElseFromTheModelIsDropped:
         residual = [BlockAllocation(block_id=3, minutes=12)]
         provider = ScriptedProvider(WorkLogDraft(residual_unassigned_minutes=residual))
 
-        draft = (await reconcile_evidence([], [make_block()], [], [], provider)).draft
+        draft = (await reconcile_evidence([], [make_block()], [], provider)).draft
 
         assert draft.residual_unassigned_minutes == residual
 
@@ -225,9 +221,9 @@ class TestNothingElseFromTheModelIsDropped:
         provider = ScriptedProvider(
             WorkLogDraft(entries=entries, reminders=[model_reminder], residual_unassigned_minutes=residual)
         )
-        prebuilt = [Reminder(source="jira", remote_project_id="ABC", day=DAY, events=[make_event("ABC-1", "jira")])]
+        event = make_event("ABC-1", "jira", project="ABC")
 
-        draft = (await reconcile_evidence([], [make_block(), make_block()], [], prebuilt, provider)).draft
+        draft = (await reconcile_evidence([], [make_block(), make_block()], [event], provider)).draft
 
         assert draft.entries == entries
         assert draft.residual_unassigned_minutes == residual
@@ -252,7 +248,7 @@ class TestVerificationIsAttachedToTheResult:
         provider = ScriptedProvider(WorkLogDraft(entries=[entry]))
 
         result = await reconcile_evidence(
-            [MatchedGroup(block=make_block(minutes=90), events=[make_event()])], [], [], [], provider
+            [MatchedGroup(block=make_block(minutes=90), events=[make_event()])], [], [], provider
         )
 
         assert result.verification.passed is True
@@ -266,7 +262,7 @@ class TestVerificationIsAttachedToTheResult:
         provider = ScriptedProvider(WorkLogDraft(entries=[entry]))
 
         result = await reconcile_evidence(
-            [MatchedGroup(block=make_block(minutes=90), events=[make_event()])], [], [], [], provider
+            [MatchedGroup(block=make_block(minutes=90), events=[make_event()])], [], [], provider
         )
 
         assert result.verification.passed is False
@@ -283,7 +279,7 @@ class TestVerificationIsAttachedToTheResult:
         provider = ScriptedProvider(WorkLogDraft(entries=[entry]))
 
         result = await reconcile_evidence(
-            [MatchedGroup(block=make_block(minutes=90), events=[make_event()])], [], [], [], provider
+            [MatchedGroup(block=make_block(minutes=90), events=[make_event()])], [], [], provider
         )
 
         conservation = [i for i in result.verification.issues if i.check == "conservation"]
@@ -294,18 +290,13 @@ class TestVerificationIsAttachedToTheResult:
     @pytest.mark.asyncio
     async def test_verification_sees_the_merged_draft_not_the_raw_model_output(self):
         """The duplicate-reminder check only fires post-merge, so seeing it proves the ordering is right."""
-        prebuilt = [
-            Reminder(source="jira", remote_project_id="ABC", day=DAY, events=[make_event("ABC-99", "jira")])
-        ]
         model_reminder = DraftReminder(
             note="Was the Jira transition part of this work?", source="jira", day=DAY,
             source_remote_event_ids=["ABC-99"],
         )
         provider = ScriptedProvider(WorkLogDraft(reminders=[model_reminder]))
 
-        result = await reconcile_evidence(
-            [], [make_block(minutes=90)], [make_event("ABC-99", "jira")], prebuilt, provider
-        )
+        result = await reconcile_evidence([], [make_block(minutes=90)], [make_event("ABC-99", "jira")], provider)
 
         duplicates = [i for i in result.verification.issues if i.check == "duplicate_reminder"]
         assert len(duplicates) == 1
@@ -323,7 +314,7 @@ class TestVerificationIsAttachedToTheResult:
         )
         provider = ScriptedProvider(WorkLogDraft(entries=[entry]))
 
-        result = await reconcile_evidence([], [make_block(minutes=90), make_block(minutes=45)], [], [], provider)
+        result = await reconcile_evidence([], [make_block(minutes=90), make_block(minutes=45)], [], provider)
 
         # Block 2 is correctly allocated; only block 1 -- untouched by the draft -- should be complained about.
         assert {i.block_id for i in result.verification.issues} == {1}
@@ -340,7 +331,7 @@ class TestVerificationIsAttachedToTheResult:
         )
         provider = ScriptedProvider(WorkLogDraft(entries=[entry], residual_unassigned_minutes=residual))
 
-        result = await reconcile_evidence([], [make_block(minutes=90)], [], [], provider)
+        result = await reconcile_evidence([], [make_block(minutes=90)], [], provider)
 
         assert result.verification.passed is True
         assert [i.severity for i in result.verification.issues] == ["warning"]
@@ -350,7 +341,7 @@ class TestVerificationIsAttachedToTheResult:
         """Auto-retry on failure is deliberately out of scope; this pins that it was not built in by accident."""
         provider = ScriptedProvider(WorkLogDraft(entries=[make_draft_entry(block_id=99)]))
 
-        result = await reconcile_evidence([], [make_block(minutes=90)], [], [], provider)
+        result = await reconcile_evidence([], [make_block(minutes=90)], [], provider)
 
         assert result.verification.passed is False
         assert len(provider.calls) == 1, "a failed verification must not silently re-prompt the model"
@@ -362,7 +353,7 @@ class TestVerificationIsAttachedToTheResult:
         residual = [BlockAllocation(block_id=77, minutes=13)]
         provider = ScriptedProvider(WorkLogDraft(entries=[entry], residual_unassigned_minutes=residual))
 
-        result = await reconcile_evidence([], [make_block(minutes=90)], [], [], provider)
+        result = await reconcile_evidence([], [make_block(minutes=90)], [], provider)
 
         assert result.verification.passed is False
         assert result.draft.entries[0].allocations[0].minutes == 500
@@ -373,10 +364,54 @@ class TestVerificationIsAttachedToTheResult:
         """A model that returns nothing must not read as a clean result just because there is nothing to fault."""
         provider = ScriptedProvider(WorkLogDraft())
 
-        result = await reconcile_evidence([], [make_block(minutes=90)], [], [], provider)
+        result = await reconcile_evidence([], [make_block(minutes=90)], [], provider)
 
         assert result.verification.passed is False
         assert any(i.check == "completeness" for i in result.verification.issues)
+
+
+class TestReminderConsistencyWithUnmatchedEvents:
+    """The bug this guards against: `reconcile_evidence` used to accept `reminders` as an independent
+    argument from `unmatched_events`, so nothing stopped a caller from passing reminders built from a
+    different matcher run than the evidence. A reminder citing an event id the evidence never saw looks,
+    to Stage 6, exactly like a fabricated citation -- it fails an otherwise-correct draft. Removing the
+    parameter and deriving reminders from `unmatched_events` internally makes that construction impossible.
+    """
+
+    @pytest.mark.asyncio
+    async def test_reconcile_evidence_no_longer_accepts_a_reminders_argument(self):
+        """Pins the signature itself: there is no seam left for a caller to inject reminders from
+        elsewhere. A TypeError here is not a bug in the test -- it is the fix.
+        """
+        import inspect
+
+        params = inspect.signature(reconcile_evidence).parameters
+        assert "reminders" not in params
+
+    @pytest.mark.asyncio
+    async def test_a_reminder_can_only_cite_an_event_present_in_the_evidence_it_ships_with(self):
+        """Reproduces the original bug's failure mode directly: build a reminder from one event (as the
+        old code allowed, sourced from a stale/different matcher run) and evidence from a different one,
+        then confirm the merged draft's reminder can never cite an id verification would reject.
+
+        Because `reconcile_evidence` derives reminders from `unmatched_events` itself, every reminder in
+        the result necessarily cites only ids drawn from that same list -- the mismatch this test used to
+        be able to construct by hand can no longer be expressed at all.
+        """
+        stale_event = make_event(external_id="stale:from-another-run", source="jira", project="ABC")
+        current_event = make_event(external_id="ABC-99", source="jira", project="ABC")
+        provider = ScriptedProvider(WorkLogDraft())
+
+        result = await reconcile_evidence([], [], [current_event], provider)
+
+        cited_ids = {
+            event_id for reminder in result.draft.reminders for event_id in reminder.source_remote_event_ids
+        }
+        assert stale_event.external_id not in cited_ids
+        assert cited_ids == {"ABC-99"}
+        assert result.verification.passed is True
+        unknown_id_issues = [i for i in result.verification.issues if i.check == "unknown_id"]
+        assert unknown_id_issues == []
 
 
 class TestPrebuiltReminderConversion:
