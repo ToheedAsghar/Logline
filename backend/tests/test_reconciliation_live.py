@@ -25,7 +25,6 @@ from app.agent.reconciliation.reconciler import ReconciliationResult, reconcile_
 from app.agent.reconciliation.schemas import EntryTag, WorkLogDraft
 from app.local_activity.aggregation import LocalActivityBlock
 from app.matching.matcher import MatchedGroup, RemoteEventData
-from app.reminders.generator import generate_reminders
 
 RUN_LIVE = os.environ.get("RUN_LIVE_OPENAI_TESTS") == "1"
 live_only = pytest.mark.skipif(not RUN_LIVE, reason="set RUN_LIVE_OPENAI_TESTS=1 to make a real API call")
@@ -98,7 +97,6 @@ async def _run_live() -> ReconciliationResult:
         MATCHED_GROUPS,
         UNMATCHED_BLOCKS,
         UNMATCHED_EVENTS,
-        generate_reminders(UNMATCHED_EVENTS),
         _live_provider(),
     )
 

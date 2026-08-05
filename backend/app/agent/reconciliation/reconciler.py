@@ -7,6 +7,11 @@ verifies the result. The draft and its verification are always returned together
 Pre-built reminders never reach the model; they are appended in code so the model cannot reword or
 claim credit for them. No retry or auto-correction logic — that is a policy decision left to the
 caller, not settled here by accident.
+
+Reminders are derived here from `unmatched_events`, not accepted as a separate parameter -- a reminder
+citing an event id the evidence never saw would look like a fabricated citation to Stage 6. Deriving
+both from the same list structurally rules that out; it cannot happen by a caller passing mismatched
+values from two different matcher runs.
 """
 
 from datetime import timezone, tzinfo
@@ -23,7 +28,7 @@ from app.agent.reconciliation.schemas import (
 from app.agent.reconciliation.verifier import VerificationResult, verify_draft
 from app.local_activity.aggregation import LocalActivityBlock
 from app.matching.matcher import MatchedGroup, RemoteEventData
-from app.reminders.generator import Reminder
+from app.reminders.generator import Reminder, generate_reminders
 
 VALID_REMINDER_SOURCES: frozenset[str] = frozenset(get_args(ReminderSource))
 
@@ -104,11 +109,13 @@ async def reconcile_evidence(
     matched_groups: list[MatchedGroup],
     unmatched_blocks: list[LocalActivityBlock],
     unmatched_events: list[RemoteEventData],
-    reminders: list[Reminder],
     llm_provider: LLMProvider,
     tz: tzinfo = timezone.utc,
 ) -> ReconciliationResult:
     """Reconcile one day's evidence into a verified `WorkLogDraft` via a single structured-output call.
+
+    Pre-built reminders are derived from `unmatched_events` here, not accepted from the caller -- see
+    the module docstring for why.
 
     Raises `LLMStructuredOutputError` if the provider cannot produce a valid draft, and `ValueError` if
     evidence contains naive datetimes or a reminder from an unknown source.
@@ -122,6 +129,7 @@ async def reconcile_evidence(
 
     draft = await llm_provider.run_structured(messages, WorkLogDraft)
 
+    reminders = generate_reminders(unmatched_events, tz=tz)
     merged_reminders = [prebuilt_reminder_to_draft_reminder(reminder) for reminder in reminders]
     merged_reminders.extend(draft.reminders)
 
