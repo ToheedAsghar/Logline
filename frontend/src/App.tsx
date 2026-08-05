@@ -12,7 +12,6 @@ import {
   Settings,
   Signup,
   StyleGuide,
-  Timeline,
   VerifyEmail,
 } from "@/pages";
 
@@ -35,7 +34,6 @@ export default function App() {
         }
       >
         <Route path="/" element={<ReviewDraft />} />
-        <Route path="/timeline" element={<Timeline />} />
         <Route path="/compose" element={<OutputComposer />} />
         <Route path="/history" element={<History />} />
         <Route path="/settings" element={<Settings />} />

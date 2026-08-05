@@ -4,7 +4,6 @@ export { default as ForgotPassword } from "./ForgotPassword";
 export { default as ResetPassword } from "./ResetPassword";
 export { default as VerifyEmail } from "./VerifyEmail";
 export { default as OAuthCallback } from "./OAuthCallback";
-export { default as Timeline } from "./Timeline";
 export { default as OutputComposer } from "./OutputComposer";
 export { default as Settings } from "./Settings";
 export { default as History } from "./History";
