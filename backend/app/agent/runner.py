@@ -44,6 +44,9 @@ class AgentRunResult:
 
 
 async def run_agent(user_id: int, task: str) -> AgentRunResult:
+    # Deliberately resolved without a user: this loop needs `run_turn`, and a user whose preferred
+    # provider is structured-output-only would get a provider that cannot run it. The tool-calling
+    # agent stays on the globally configured provider.
     provider = get_llm_provider()
 
     messages: list[Message] = [

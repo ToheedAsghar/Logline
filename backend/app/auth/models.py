@@ -13,6 +13,9 @@ class User(Base):
     hashed_password = Column(String, nullable=True)
     name = Column(String(100), nullable=True)
     default_channel = Column(String, nullable=True)
+    # Which LLM provider to use for this user's structured-output calls. NULL means "no preference"
+    # and falls back to the LLM_PROVIDER setting -- see app/agent/llm/get_llm_provider().
+    preferred_llm_provider = Column(String, nullable=True)
     is_active = Column(Boolean, nullable=False, default=False, server_default=expression.false())
     is_sso_user = Column(Boolean, nullable=False, default=False, server_default=expression.false())
     google_user_id = Column(String, nullable=True, unique=True)

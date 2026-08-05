@@ -22,6 +22,10 @@ class Settings:
     llm_provider: str = os.getenv("LLM_PROVIDER", "openai")
     llm_model: str = os.getenv("LLM_MODEL", "gpt-5-mini")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    # Separate from `llm_model` because the provider is now resolvable per user: one shared model
+    # name cannot serve both providers at once, and `llm_model`'s default is an OpenAI model.
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     jwt_secret_key: str = _require_env("JWT_SECRET_KEY")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
