@@ -129,3 +129,19 @@ class TestTtlCache:
 
         assert compute("a") == "a"
         assert compute("b") == "b"
+
+    def test_prunes_expired_entries_on_write(self, monkeypatch):
+        now = [0.0]
+        monkeypatch.setattr("tracker.context.git.time.monotonic", lambda: now[0])
+
+        @_ttl_cache(ttl_seconds=5.0)
+        def compute(x):
+            return x
+
+        compute(1)
+        compute(2)
+        assert len(compute.cache) == 2
+
+        now[0] = 10.0
+        compute(3)
+        assert len(compute.cache) == 1
