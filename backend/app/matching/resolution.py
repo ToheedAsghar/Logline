@@ -155,7 +155,16 @@ def resolve_github_identity(project_path: str) -> Optional[str]:
     origin isn't a recognizable GitHub remote. Never guesses.
     """
 
-    git_root = _find_git_root(Path(project_path))
+    path_obj = Path(project_path)
+    if ".." in path_obj.parts:
+        return None
+
+    try:
+        resolved_path = path_obj.resolve(strict=False)
+    except (ValueError, RuntimeError):
+        return None
+
+    git_root = _find_git_root(resolved_path)
     if git_root is None:
         return None
 
