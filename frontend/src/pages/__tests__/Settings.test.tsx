@@ -8,9 +8,18 @@ vi.mock("@/repositories/hooks", () => ({
   useIntegrations: vi.fn(),
   useConnectIntegration: vi.fn(),
   useDisconnectIntegration: vi.fn(),
+  useTrackerSyncStatus: vi.fn(),
+  useEnrollTrackerDevice: vi.fn(),
 }));
 
-import { useIntegrations, useConnectIntegration, useDisconnectIntegration } from "@/repositories/hooks";
+import {
+  useIntegrations,
+  useConnectIntegration,
+  useDisconnectIntegration,
+  useTrackerSyncStatus,
+  useEnrollTrackerDevice,
+} from "@/repositories/hooks";
+
 
 const mockIntegration = (overrides: Partial<Integration>): Integration => ({
   id: 1,
@@ -24,12 +33,17 @@ const mockIntegration = (overrides: Partial<Integration>): Integration => ({
 describe("Settings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(useConnectIntegration).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false, error: null } as any);
-    vi.mocked(useDisconnectIntegration).mockReturnValue({ mutate: vi.fn(), isPending: false } as any);
+    vi.mocked(useConnectIntegration).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false, error: null } as unknown as ReturnType<typeof useConnectIntegration>);
+    vi.mocked(useDisconnectIntegration).mockReturnValue({ mutate: vi.fn(), isPending: false } as unknown as ReturnType<typeof useDisconnectIntegration>);
+    vi.mocked(useEnrollTrackerDevice).mockReturnValue({ mutate: vi.fn(), isPending: false } as unknown as ReturnType<typeof useEnrollTrackerDevice>);
+    vi.mocked(useTrackerSyncStatus).mockReturnValue({
+      data: { last_synced_at: new Date().toISOString(), device_count: 1 },
+      isError: false,
+    } as unknown as ReturnType<typeof useTrackerSyncStatus>);
   });
 
   it("shows a loading state while integrations are being fetched", () => {
-    vi.mocked(useIntegrations).mockReturnValue({ isLoading: true, isError: false, data: undefined } as any);
+    vi.mocked(useIntegrations).mockReturnValue({ isLoading: true, isError: false, data: undefined } as unknown as ReturnType<typeof useIntegrations>);
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
@@ -37,7 +51,7 @@ describe("Settings", () => {
   });
 
   it("shows an error state when the integrations request fails", () => {
-    vi.mocked(useIntegrations).mockReturnValue({ isLoading: false, isError: true, data: undefined } as any);
+    vi.mocked(useIntegrations).mockReturnValue({ isLoading: false, isError: true, data: undefined } as unknown as ReturnType<typeof useIntegrations>);
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
@@ -49,7 +63,7 @@ describe("Settings", () => {
       isLoading: false,
       isError: false,
       data: [mockIntegration({ source: "github", status: "connected", last_synced_at: "2024-01-01T10:00:00Z" })],
-    } as any);
+    } as unknown as ReturnType<typeof useIntegrations>);
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
@@ -68,7 +82,7 @@ describe("Settings", () => {
         mockIntegration({ source: "github", status: "connected" }),
         mockIntegration({ id: 2, source: "calendar", status: "error" }),
       ],
-    } as any);
+    } as unknown as ReturnType<typeof useIntegrations>);
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
@@ -80,7 +94,7 @@ describe("Settings", () => {
       isLoading: false,
       isError: false,
       data: [mockIntegration({ source: "github", status: "connected" })],
-    } as any);
+    } as unknown as ReturnType<typeof useIntegrations>);
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
@@ -88,17 +102,43 @@ describe("Settings", () => {
   });
 
   it("parses OAuth callback query parameters and renders a success notice", () => {
-    delete (window as any).location;
-    window.location = new URL("http://localhost/settings?integration=github&status=connected") as any;
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: new URL("http://localhost/settings?integration=github&status=connected"),
+    });
 
     vi.mocked(useIntegrations).mockReturnValue({
       isLoading: false,
       isError: false,
       data: [mockIntegration({ source: "github", status: "connected" })],
-    } as any);
+    } as unknown as ReturnType<typeof useIntegrations>);
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
     expect(screen.getByText("Successfully connected GitHub!")).toBeInTheDocument();
+    Object.defineProperty(window, "location", { configurable: true, value: originalLocation });
   });
+
+  it("surfaces tracker sync freshness alongside the integrations", () => {
+    vi.mocked(useIntegrations).mockReturnValue({ isLoading: false, isError: false, data: [] } as unknown as ReturnType<typeof useIntegrations>);
+    vi.mocked(useTrackerSyncStatus).mockReturnValue({
+      data: { last_synced_at: new Date(Date.now() - 3 * 60_000).toISOString(), device_count: 1 },
+      isError: false,
+    } as unknown as ReturnType<typeof useTrackerSyncStatus>);
+
+    render(<Settings />);
+
+    expect(screen.getByText(/Tracker last synced 3m ago/)).toBeInTheDocument();
+  });
+
+  it("says so when the tracker sync status can't be loaded, rather than showing nothing", () => {
+    vi.mocked(useIntegrations).mockReturnValue({ isLoading: false, isError: false, data: [] } as unknown as ReturnType<typeof useIntegrations>);
+    vi.mocked(useTrackerSyncStatus).mockReturnValue({ data: undefined, isError: true } as unknown as ReturnType<typeof useTrackerSyncStatus>);
+
+    render(<Settings />);
+
+    expect(screen.getByText(/Couldn't check tracker sync status/)).toBeInTheDocument();
+  });
+
 });

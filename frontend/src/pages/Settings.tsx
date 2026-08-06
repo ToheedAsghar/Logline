@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { Loading } from "@/atoms";
-import { IntegrationCard } from "@/molecules";
+import { IntegrationCard, TrackerDeviceEnrollment, TrackerSyncNotice } from "@/molecules";
+
 import { INTEGRATION_SOURCES, type IntegrationId } from "@/constants/integrations";
-import { useIntegrations } from "@/repositories/hooks";
+import { useIntegrations, useTrackerSyncStatus } from "@/repositories/hooks";
 import type { Integration } from "@/repositories/types";
 
 function placeholder(source: IntegrationId): Integration {
@@ -18,6 +19,7 @@ const ERROR_REASON_MESSAGES: Record<string, string> = {
 
 export default function Settings() {
   const integrations = useIntegrations();
+  const trackerSync = useTrackerSyncStatus();
 
   const bySource = useMemo(() => {
     const map = new Map<IntegrationId, Integration>();
@@ -121,7 +123,22 @@ export default function Settings() {
           </div>
         </div>
       )}
+
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <h2 className="text-sm font-semibold tracking-tight">Local activity</h2>
+          {trackerSync.data ? (
+            <TrackerSyncNotice status={trackerSync.data} />
+          ) : (
+            <p className="font-mono text-[11.5px] text-faint">
+              {trackerSync.isError ? "Couldn't check tracker sync status." : "Checking tracker sync status…"}
+            </p>
+          )}
+        </div>
+        <TrackerDeviceEnrollment deviceCount={trackerSync.data?.device_count ?? 0} />
+      </div>
     </div>
   );
 }
+
 

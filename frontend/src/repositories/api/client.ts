@@ -19,19 +19,28 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
   unauthorizedHandler = handler;
 }
 
+function formatErrorDetail(detail: unknown): string | null {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => (typeof d === "object" && d !== null && "msg" in d ? String(d.msg) : JSON.stringify(d))).join("; ");
+  }
+  if (typeof detail === "object" && detail !== null) {
+    return JSON.stringify(detail);
+  }
+  return null;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly body: unknown,
   ) {
-    super(
-      (typeof body === "object" && body !== null && "detail" in body
-        ? String((body as { detail: unknown }).detail)
-        : null) ?? `Request failed with status ${status}`,
-    );
+    const detail = typeof body === "object" && body !== null && "detail" in body ? (body as { detail: unknown }).detail : null;
+    super(formatErrorDetail(detail) ?? `Request failed with status ${status}`);
     this.name = "ApiError";
   }
 }
+
 
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";

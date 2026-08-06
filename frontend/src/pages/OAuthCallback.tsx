@@ -12,33 +12,40 @@ export default function OAuthCallback() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(true);
+
   const hasExchangedRef = useRef(false);
 
   useEffect(() => {
-    let token = searchParams.get("token") || searchParams.get("code");
+    if (hasExchangedRef.current) return;
 
-    if (!token && window.location.hash) {
+    let token = searchParams.get("token");
+    let code = searchParams.get("code");
+
+    if (!token && !code && window.location.hash) {
       const hash = window.location.hash.replace(/^#/, "");
       const hashParams = new URLSearchParams(hash);
-      token = hashParams.get("token") || hashParams.get("code");
+      token = hashParams.get("token");
+      code = hashParams.get("code");
     }
 
     if (token) {
-      if (hasExchangedRef.current) return;
       hasExchangedRef.current = true;
-
-      const exchangeAndLogin = async () => {
-        try {
-          const { access_token } = await googleExchange(token);
-          loginWithToken(access_token);
+      loginWithToken(token);
+      navigate("/", { replace: true });
+    } else if (code) {
+      hasExchangedRef.current = true;
+      googleExchange(code)
+        .then((res) => {
+          loginWithToken(res.access_token);
           navigate("/", { replace: true });
-        } catch {
-          setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
+        })
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : AUTH_STRINGS.GOOGLE_SSO_FAILED;
+          setError(msg || AUTH_STRINGS.GOOGLE_SSO_FAILED);
           setIsProcessing(false);
-        }
-      };
-      exchangeAndLogin();
+        });
     } else {
+      hasExchangedRef.current = true;
       queueMicrotask(() => {
         setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
         setIsProcessing(false);
@@ -77,4 +84,3 @@ export default function OAuthCallback() {
     </AuthShell>
   );
 }
-

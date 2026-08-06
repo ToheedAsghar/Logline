@@ -72,9 +72,8 @@ _PASSWORD_RESET_EMAIL = _TokenEmail(
 
 async def _send_token_email(user_id: int, email: str, subject: str, body: str, kind: str) -> None:
     """Runs as a FastAPI BackgroundTask, which awaits this coroutine with no try/except of its own
-    (starlette.background.BackgroundTask.__call__). A failure here never reaches the original HTTP
-    request -- the response was already sent -- so it must be caught and logged here, or it vanishes
-    with no record anywhere.
+    (starlette.background.BackgroundTask.__call__). A failure here never reaches the original HTTP request -- the
+    response was already sent -- so it must be caught and logged here, or it vanishes with no record anywhere.
     """
     provider = get_email_provider()
     try:
@@ -115,9 +114,8 @@ def me(current_user: User = Depends(get_current_user)):
 
 @router.post("/signup", response_model=MessageResponse)
 def signup(payload: UserSignup, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """
-    Same enumeration principle as /forgot-password: the caller must not be able to
-    tell "email already registered" from "account created" by status, body, or shape.
+    """Same enumeration principle as /forgot-password: the caller must not be able to tell "email already registered"
+    from "account created" by status, body, or shape.
     """
     generic_response = MessageResponse(message=TEXT_SIGNUP_GENERIC_MESSAGE)
 
@@ -155,11 +153,11 @@ def resend_verification(
 ):
     """Resend a verification email when the account still needs one.
 
-    The response stays the same in every case so people cannot tell whether
-    the email exists, the account is already active, or a new email was sent.
-    If the last verification email was sent too recently, this skips sending a
-    new one but still returns the same generic success message.
+    The response stays the same in every case so people cannot tell whether the email exists, the account is already
+    active, or a new email was sent. If the last verification email was sent too recently, this skips sending a new
+    one but still returns the same generic success message.
     """
+
     user = crud.get_user_by_email(db, payload.email)
 
     generic_response = MessageResponse(
@@ -180,11 +178,11 @@ def resend_verification(
 def forgot_password(payload: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Send a password reset email when the account can use one.
 
-    The reply is always the same so people cannot tell whether the email
-    exists, belongs to an SSO-only account, or already has a reset email
-    queued. If the last reset email was sent too recently, this skips sending
-    a new one but still returns the same generic message.
+    The reply is always the same so people cannot tell whether the email exists, belongs to an SSO-only account, or
+    already has a reset email queued. If the last reset email was sent too recently, this skips sending a new one but
+    still returns the same generic message.
     """
+
     generic_response = MessageResponse(message=TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE)
 
     user = crud.get_user_by_email(db, payload.email)
@@ -274,10 +272,12 @@ def google_callback(
         id_token = google_oauth.exchange_code_for_id_token(code)
         claims = google_oauth.verify_google_id_token(id_token)
     except GoogleAuthError as exc:
-        logger.info("Google login failed: %s", exc)
+        logger.error("Google login failed: %s", exc, exc_info=True)
+        print(f"GOOGLE LOGIN ERROR: {exc}", flush=True)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_GOOGLE_SIGN_IN_FAILED)
 
     google_user_id = claims["sub"]
+
     email = claims["email"]
     name = claims.get("name")
 
