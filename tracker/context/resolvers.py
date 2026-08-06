@@ -112,6 +112,47 @@ def _resolve_editor(ctx: WindowContext, project_first: bool) -> ContextResult:
     return result
 
 
+def _merge_terminal_result(target: ContextResult, source: ContextResult) -> None:
+    target.project_path = source.project_path
+    target.detail.update(source.detail)
+
+
+def _resolve_vscode_claude_panel(ctx: WindowContext, result: ContextResult) -> ContextResult:
+    if ctx.pid:
+        from tracker.context.ide_extension import find_ide_extension_tool
+        from tracker.context.terminal import resolve_terminal_tool, terminal_context_result
+
+        extension_tool = find_ide_extension_tool(ctx.pid)
+        detected = resolve_terminal_tool(ctx.pid)
+        if detected:
+            terminal_result = terminal_context_result(detected)
+            if detected.tool is not None and extension_tool:
+                _merge_terminal_result(result, terminal_result)
+                result.set("tool", extension_tool)
+                return result
+            if detected.tool is None and terminal_result.project_path:
+                _merge_terminal_result(result, terminal_result)
+        if extension_tool:
+            result.set("tool", extension_tool)
+            return result
+
+    result.set("tool", "claude-code")
+    return result
+
+
+def _resolve_vscode_terminal(ctx: WindowContext, result: ContextResult) -> ContextResult:
+    if ctx.pid:
+        from tracker.context.terminal import resolve_terminal_tool, terminal_context_result
+
+        detected = resolve_terminal_tool(ctx.pid)
+        if detected:
+            terminal_result = terminal_context_result(detected)
+            if detected.tool is not None or terminal_result.project_path:
+                _merge_terminal_result(result, terminal_result)
+                return result
+    return result
+
+
 def resolve_vscode(ctx: WindowContext) -> ContextResult:
     """VS Code / Cursor: active file, integrated terminal, or extension panel (e.g. Claude Code).
 
@@ -120,41 +161,10 @@ def resolve_vscode(ctx: WindowContext) -> ContextResult:
     result = _resolve_editor(ctx, project_first=False)
     if result.project_path:
         return result
-    if ctx.pid:
-        from tracker.context.ide_extension import find_ide_extension_tool
-        from tracker.context.terminal import resolve_terminal_tool, terminal_context_result
 
-        if _is_claude_panel(ctx.window_title):
-            extension_tool = find_ide_extension_tool(ctx.pid)
-            detected = resolve_terminal_tool(ctx.pid)
-            if detected:
-                terminal_result = terminal_context_result(detected)
-                if detected.tool is not None and extension_tool:
-                    result.project_path = terminal_result.project_path
-                    result.detail.update(terminal_result.detail)
-                    result.set("tool", extension_tool)
-                    return result
-                if detected.tool is None and terminal_result.project_path:
-                    result.project_path = terminal_result.project_path
-                    result.detail.update(terminal_result.detail)
-            if extension_tool:
-                result.set("tool", extension_tool)
-                return result
-        else:
-            detected = resolve_terminal_tool(ctx.pid)
-            if detected:
-                terminal_result = terminal_context_result(detected)
-                if detected.tool is not None:
-                    result.project_path = terminal_result.project_path
-                    result.detail.update(terminal_result.detail)
-                    return result
-                if terminal_result.project_path:
-                    result.project_path = terminal_result.project_path
-                    result.detail.update(terminal_result.detail)
-                    return result
     if _is_claude_panel(ctx.window_title):
-        result.set("tool", "claude-code")
-    return result
+        return _resolve_vscode_claude_panel(ctx, result)
+    return _resolve_vscode_terminal(ctx, result)
 
 
 def _is_claude_panel(title: Optional[str]) -> bool:

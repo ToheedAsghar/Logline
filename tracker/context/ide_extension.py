@@ -14,7 +14,7 @@ from typing import FrozenSet, Optional, Set
 from tracker.constants import (
     IDE_EXTENSION_TOOL_REGISTRY, IDE_EXTENSION_WALK_TTL_SECONDS, PROC_WALK_MAX_DEPTH, PROC_WALK_MAX_PIDS,
 )
-from tracker.context.git import _ttl_cache
+from tracker.context.cache import ttl_cache
 from tracker.context.proc import ProcBsdInfo, bsd_info, child_pids, exec_path_and_argv
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ def _match_extension_tool(comm: str, exec_path: Optional[str]) -> Optional[str]:
     return None
 
 
-@_ttl_cache(ttl_seconds=IDE_EXTENSION_WALK_TTL_SECONDS)
+@ttl_cache(ttl_seconds=IDE_EXTENSION_WALK_TTL_SECONDS)
 def find_ide_extension_tool(ide_pid: int) -> Optional[str]:
     """Return the canonical tool name for a known IDE extension process under `ide_pid`, or None."""
     seen: Set[int] = set()
