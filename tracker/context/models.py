@@ -17,6 +17,7 @@ class WindowContext:
     app_name: str
     window_title: Optional[str] = None
     document_url: Optional[str] = None
+    pid: Optional[int] = None
 
 
 @dataclass(frozen=True)

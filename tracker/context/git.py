@@ -7,53 +7,18 @@ does that later.
 
 import os
 import stat
-import time
-from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple, TypeVar
+from typing import Optional, TypeVar
 
 from tracker.constants import GIT_BRANCH_MAX_LENGTH
+from tracker.context.cache import ttl_cache
 
 T = TypeVar("T")
 
 FORBIDDEN_BRANCH_CHARACTERS = set(" ~^:?*[\\\x7f")
 GIT_FILE_MAX_BYTES = 4096
 
-
-def _ttl_cache(ttl_seconds: float) -> Callable[[Callable[..., T]], Callable[..., T]]:
-    """In-memory TTL cache for pure functions. Arguments must be hashable.
-
-    Cached values expire after `ttl_seconds`. Expired entries are swept out whenever a new value
-    is computed, so a caller that runs for a long time with many unique arguments does not grow
-    the cache unbounded. A `cache_clear` method is attached to the wrapper for tests and rare
-    resets.
-    """
-    def decorator(func: Callable[..., T]) -> Callable[[Callable[..., T]], Callable[..., T]]:
-        cache: Dict[Tuple[Any, ...], Tuple[T, float]] = {}
-
-        @wraps(func)
-        def wrapper(*args: Any) -> T:
-            now = time.monotonic()
-            key = args
-            if key in cache:
-                value, timestamp = cache[key]
-                if now - timestamp < ttl_seconds:
-                    return value
-            value = func(*args)
-            for stale_key, (_, stale_timestamp) in list(cache.items()):
-                if now - stale_timestamp >= ttl_seconds:
-                    del cache[stale_key]
-            cache[key] = (value, now)
-            return value
-
-        def cache_clear() -> None:
-            cache.clear()
-
-        wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
-        wrapper.cache = cache  # type: ignore[attr-defined]
-        return wrapper
-
-    return decorator
+_ttl_cache = ttl_cache
 
 
 def _is_valid_branch_name(ref: str) -> bool:
