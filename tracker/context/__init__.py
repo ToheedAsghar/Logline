@@ -6,10 +6,7 @@ Watchers and session code should use `resolve_context` as the only entry point.
 import logging
 from typing import Optional
 
-from tracker.constants import (
-    RESOLVER_CAPABILITY_MSG, RESOLVER_ERROR_MSG, RESOLVER_RESCUE_EXCEPTIONS, TERMINAL_BRANCH_KEY, TERMINAL_CWD_KEY,
-    TERMINAL_TOOL_KEY, TERMINAL_TOOL_REGISTRY,
-)
+from tracker.constants import RESOLVER_CAPABILITY_MSG, RESOLVER_ERROR_MSG, RESOLVER_RESCUE_EXCEPTIONS
 from tracker.context.models import ContextResult, TerminalToolContext, WindowContext
 from tracker.context.resolvers import REGISTRY, resolver_for
 from tracker.redaction import is_redacted
@@ -28,6 +25,7 @@ def resolver_capability_summary() -> str:
 
     This makes an old or incomplete running build visible before it creates rows with missing project paths.
     """
+    from tracker.constants import IDE_EXTENSION_TOOL_REGISTRY, TERMINAL_TOOL_REGISTRY
     from tracker.context.ax import focused_document_url  # noqa: F401 — importing it is the check
     from tracker.context.terminal import resolve_terminal_tool  # noqa: F401 — importing it is the check
 
@@ -36,6 +34,8 @@ def resolver_capability_summary() -> str:
         ", ".join(sorted(REGISTRY)),
         len(TERMINAL_TOOL_REGISTRY),
         ", ".join(sorted(TERMINAL_TOOL_REGISTRY)),
+        len(IDE_EXTENSION_TOOL_REGISTRY),
+        ", ".join(sorted(IDE_EXTENSION_TOOL_REGISTRY)),
     )
 
 
@@ -44,15 +44,24 @@ def _resolve_redacted_terminal(pid: Optional[int], app_name: str = "terminal") -
 
     A redacted app must never expose its title. This function takes only a PID and copies fields from
     `TerminalToolContext`, which has no place for title text. Anything short of one confident match keeps full
-    redaction.
+    redaction. When the process walk is ambiguous across TTYs, the one scoped Accessibility read — the focused
+    tab's cwd via AXDocument — is used to disambiguate; the recorded cwd always comes from process facts, not AX.
+    The AX read is never performed unless multiple TTYs are present, so single-session terminals never trigger it.
     """
     if pid is None:
         logger.debug("redacted terminal context: no pid for %s", app_name)
         return ContextResult()
     try:
-        from tracker.context.terminal import project_root_for, resolve_terminal_tool
+        from tracker.context.terminal import resolve_terminal_tool, terminal_context_result
 
-        detected = resolve_terminal_tool(pid)
+        def focused_cwd_provider():
+            from tracker.context.ax import focused_document_url
+            from tracker.context.resolvers import _path_from_document_url
+
+            path = _path_from_document_url(focused_document_url(pid))
+            return str(path) if path else None
+
+        detected = resolve_terminal_tool(pid, focused_cwd_provider=focused_cwd_provider)
     except RESOLVER_RESCUE_EXCEPTIONS:
         logger.exception(RESOLVER_ERROR_MSG, "terminal")
         return ContextResult()
@@ -60,16 +69,11 @@ def _resolve_redacted_terminal(pid: Optional[int], app_name: str = "terminal") -
         logger.debug("redacted terminal context: no foreground process resolved for %s (pid=%s)", app_name, pid)
         return ContextResult()
 
-    project_path = project_root_for(detected.cwd)
+    result = terminal_context_result(detected)
     logger.debug(
         "redacted terminal context for %s (pid=%s): cwd=%s project_path=%s tool=%s branch=%s",
-        app_name, pid, detected.cwd, project_path, detected.tool, detected.branch,
+        app_name, pid, detected.cwd, result.project_path, detected.tool, detected.branch,
     )
-    result = ContextResult(project_path=project_path)
-    if detected.tool is not None:
-        result.set(TERMINAL_TOOL_KEY, detected.tool)
-    result.set(TERMINAL_CWD_KEY, detected.cwd)
-    result.set(TERMINAL_BRANCH_KEY, detected.branch)
     return result
 
 

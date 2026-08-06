@@ -50,7 +50,8 @@ RESOLVER_ERROR_MSG = "context resolver failed for %s; continuing without context
 AX_READ_ERROR_MSG = "AXDocument read failed for pid %s; continuing without it"
 RESOLVER_CAPABILITY_MSG = (
     "context: %d resolver(s) registered (%s), AX document read wired in; "
-    "terminal dev-tool detection over %d tool(s) (%s)"
+    "terminal dev-tool detection over %d tool(s) (%s); "
+    "extension tool detection over %d tool(s) (%s)"
 )
 
 KNOWN_TERMINAL_BUNDLE_IDS = frozenset(
@@ -66,6 +67,9 @@ KNOWN_TERMINAL_BUNDLE_IDS = frozenset(
     }
 )
 
+VSCODE_BUNDLE_ID = "com.microsoft.VSCode"
+CURSOR_BUNDLE_ID = "com.todesktop.1500222257.65536"
+
 TERMINAL_TOOL_REGISTRY = {
     "claude-code": frozenset({"claude"}),
     "codex": frozenset({"codex"}),
@@ -73,6 +77,12 @@ TERMINAL_TOOL_REGISTRY = {
     "gemini-cli": frozenset({"gemini"}),
     "opencode": frozenset({"opencode"}),
 }
+
+IDE_EXTENSION_TOOL_REGISTRY = {
+    "claude-code": (frozenset({"claude"}), ("anthropic.claude-code", "native-binary/claude")),
+}
+
+IDE_EXTENSION_WALK_TTL_SECONDS = 30.0
 
 SCRIPT_INTERPRETER_NAMES = frozenset({"node", "bun", "deno", "ruby", "perl", "env"})
 
