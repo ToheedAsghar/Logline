@@ -1,10 +1,122 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loading } from "@/atoms";
-import { formatMinutes, getTodayLocalDate, parseLocalDate } from "@/common/utils";
-import { ALL_ENTRY_TAGS, type DraftEntry, type EntryTag, type WorkLogDraft } from "@/repositories/types";
+import { formatMinutes, getTodayLocalDate, parseLocalDate, minutesToHHMM, parseTimeToMinutes } from "@/common/utils";
+import { ApiError } from "@/repositories/api";
+import { ALL_ENTRY_TAGS, type DraftEntry, type EntryTag, type ReconciliationResult, type VerificationIssue, type WorkLogDraft } from "@/repositories/types";
 import { useApproveDraft, useGenerateDraft } from "@/repositories/hooks";
 
+export interface DescribedError {
+  title: string;
+  detail: string;
+  issues?: VerificationIssue[];
+}
+
+const ACTION_LABEL: Record<"generate" | "approve", string> = {
+  generate: "Could not generate a draft",
+  approve: "Could not save the day",
+};
+
+function describeUnprocessable(body: unknown, fallbackTitle: string): DescribedError {
+  const detail = (body as { detail?: unknown } | null)?.detail;
+
+  if (typeof detail === "object" && detail !== null && "issues" in detail) {
+    const { message, issues } = detail as { message?: string; issues?: VerificationIssue[] };
+    return {
+      title: "Draft rejected by the server's checks",
+      detail: message ?? "The draft did not match the evidence it was generated from, so nothing was saved.",
+      issues: issues ?? [],
+    };
+  }
+
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        const loc = Array.isArray(item?.loc) ? item.loc.filter((p: unknown) => p !== "body").join(".") : "";
+        return loc ? `${loc}: ${item?.msg ?? "invalid"}` : String(item?.msg ?? "invalid");
+      })
+      .filter(Boolean);
+    return {
+      title: fallbackTitle,
+      detail: messages.length ? `The server rejected this request — ${messages.join("; ")}` : "The server rejected this request as invalid.",
+    };
+  }
+
+  return {
+    title: fallbackTitle,
+    detail: typeof detail === "string" ? detail : "The server rejected this request as invalid.",
+  };
+}
+
+export function describeApiError(error: unknown, action: "generate" | "approve"): DescribedError {
+  const fallbackTitle = ACTION_LABEL[action];
+
+  if (error instanceof ApiError) {
+    if (error.status === 404) {
+      return {
+        title: "This feature isn't available on the server",
+        detail:
+          "The backend has no /reconciliation endpoint. It is probably running a build from before " +
+          "reconciliation was added — restart it from the current branch and try again.",
+      };
+    }
+    if (error.status === 401) {
+      return { title: "Your session has expired", detail: "Sign in again to keep going. Nothing was saved." };
+    }
+    if (error.status === 422) {
+      return describeUnprocessable(error.body, fallbackTitle);
+    }
+    if (error.status >= 500) {
+      return {
+        title: fallbackTitle,
+        detail: `The server failed while handling this request (HTTP ${error.status}). Nothing was saved.`,
+      };
+    }
+    return { title: fallbackTitle, detail: error.message || `The request failed with status ${error.status}.` };
+  }
+
+  return {
+    title: "Could not reach the server",
+    detail:
+      "The request never completed. Check that the backend is running and reachable, then try again. " +
+      "Nothing was saved.",
+  };
+}
+
+export function ErrorBanner({ error, onDismiss }: { error: DescribedError; onDismiss: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="mb-4 rounded-md border border-[#D8B4B4] bg-[#FBF0EF] px-4 py-3 text-[#7A2E2E]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-semibold text-sm">{error.title}</p>
+          <p className="mt-1 text-xs leading-relaxed text-[#8A4A4A]">{error.detail}</p>
+          {error.issues && error.issues.length > 0 && (
+            <ul className="mt-2 space-y-1 text-xs text-[#8A4A4A]">
+              {error.issues.map((issue, idx) => (
+                <li key={`${issue.check}-${idx}`} className="font-mono">
+                  [{issue.severity}] {issue.check}
+                  {issue.block_id != null ? ` (block ${issue.block_id})` : ""}
+                  {issue.entry_index != null ? ` (entry ${issue.entry_index + 1})` : ""} — {issue.detail}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss error"
+          className="shrink-0 rounded px-2 py-0.5 text-lg leading-none text-[#8A4A4A] transition-colors hover:bg-[#F3DEDC]"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+}
 export function TagSelect({
   value,
   onChange,
@@ -97,9 +209,12 @@ export function ReviewDraft() {
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const [draft, setDraft] = useState<WorkLogDraft | null>(null);
+  const [verification, setVerification] = useState<ReconciliationResult["verification"] | null>(null);
   const [approveSuccess, setApproveSuccess] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [ignoredGaps, setIgnoredGaps] = useState<Set<string>>(new Set());
+  const [generateError, setGenerateError] = useState<DescribedError | null>(null);
+  const [approveError, setApproveError] = useState<DescribedError | null>(null);
 
   const generateMutation = useGenerateDraft();
   const approveMutation = useApproveDraft();
@@ -107,6 +222,8 @@ export function ReviewDraft() {
   const handleGenerate = () => {
     setApproveSuccess(false);
     setSelectedIndex(null);
+    setGenerateError(null);
+    setApproveError(null);
     const effectiveStart = startDate > todayStr ? todayStr : startDate;
     const effectiveEnd = scopeMode === "DAY" ? effectiveStart : endDate > todayStr ? todayStr : endDate;
     generateMutation.mutate(
@@ -114,6 +231,10 @@ export function ReviewDraft() {
       {
         onSuccess: (data) => {
           setDraft(data.draft);
+          setVerification(data.verification);
+        },
+        onError: (error) => {
+          setGenerateError(describeApiError(error, "generate"));
         },
       },
     );
@@ -121,9 +242,14 @@ export function ReviewDraft() {
 
   const handleApprove = () => {
     if (!draft) return;
+    setApproveError(null);
     approveMutation.mutate(draft, {
       onSuccess: () => {
         setApproveSuccess(true);
+      },
+      onError: (error) => {
+        setApproveSuccess(false);
+        setApproveError(describeApiError(error, "approve"));
       },
     });
   };
@@ -442,6 +568,30 @@ export function ReviewDraft() {
         )}
       </div>
 
+      {generateError && <ErrorBanner error={generateError} onDismiss={() => setGenerateError(null)} />}
+      {approveError && <ErrorBanner error={approveError} onDismiss={() => setApproveError(null)} />}
+
+      {verification && !verification.passed && (
+        <div
+          role="status"
+          className="mb-4 rounded-md border border-[#E4CFA3] bg-[#F7EDD8] px-4 py-3 text-[#8A5A0F]"
+        >
+          <p className="text-sm font-semibold">This draft did not pass the evidence checks</p>
+          <p className="mt-1 text-xs leading-relaxed">
+            Review the entries below before saving — the server will reject the save while these remain.
+          </p>
+          <ul className="mt-2 space-y-1 text-xs">
+            {verification.issues.map((issue, idx) => (
+              <li key={`${issue.check}-${idx}`} className="font-mono">
+                [{issue.severity}] {issue.check}
+                {issue.block_id != null ? ` (block ${issue.block_id})` : ""}
+                {issue.entry_index != null ? ` (entry ${issue.entry_index + 1})` : ""} — {issue.detail}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {approveSuccess && (
         <div className="flex items-center justify-between rounded-lg border border-[#BFD9C2] bg-[#DCEBDD] p-4 text-sm font-semibold text-[#14603C]">
           <span>✓ Draft entries successfully approved and saved!</span>
@@ -745,4 +895,3 @@ export function ReviewDraft() {
     </div>
   );
 }
-
