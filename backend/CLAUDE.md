@@ -52,7 +52,7 @@ ambiguity — never for deciding what to fetch, never for stating a duration dir
 | Stage | Module | Status on `main` |
 | --- | --- | --- |
 | 1. Local aggregation (raw tracker activity → blocks, pure function) | `app/local_activity/` | Built, tested (`tests/test_local_activity_aggregation.py`) |
-| 2. Remote fetch (code decides what to fetch, never the LLM) | `app/remote_fetch/` | **Not on `main`.** Only exists on the unmerged `feature/remote-fetch` branch (commits `8c92b72`, `b13d548`, `13ce979`) |
+| 2. Remote fetch (code decides what to fetch, never the LLM) | `app/remote_fetch/` | Built, tested (`tests/test_remote_fetch_sources.py`, `tests/test_remote_fetch_orchestrator.py`). Per-source fetchers live under `app/remote_fetch/mcp/`; `orchestrator.py` drives them and advances the `remote_fetch_state` high-water marks |
 | 3. Deterministic matching (exact project + time-window rules, no automatic tiebreaking) | `app/matching/` | Built, tested (`tests/test_matching_resolution.py`) |
 | 4. Reminder generation (unmatched remote events, never auto-assigned durations) | `app/reminders/` | Built, tested |
 | 5. AI reconciliation (structured draft; AI allocates minutes against real measured blocks, never states bare durations) | `app/agent/reconciliation/` | **Schemas only** (`WorkLogDraft`, `DraftEntry`, `DraftReminder`, `BlockAllocation` in `schemas.py`, tested in `tests/test_reconciliation_schema*.py`). No service calls `run_structured` with them yet — nothing produces a `WorkLogDraft` in a real run. |
@@ -60,10 +60,11 @@ ambiguity — never for deciding what to fetch, never for stating a duration dir
 | 7. Human review (client-side edits, single write on approval) | — | **Not on `main`.** The `ReviewDraft` frontend UI referenced in commit `43c6f49` lives only on `feature/remote-fetch` |
 | 8. Save | — | Not wired up on `main` — no router exposes any of stages 1–7 to the API yet |
 
-Local aggregation, matching, and reminders are real, tested, importable modules on `main` today — but they aren't
-connected to each other by any orchestrator, and nothing outside their own test suites calls them. Treat "the Phase
-4 pipeline" as a set of validated building blocks being assembled, not a live end-to-end flow, until the
-`feature/remote-fetch` branch (or its successor) merges.
+Local aggregation, remote fetch, matching, and reminders are real, tested, importable modules on `main` today — but
+they still aren't connected to each other by any single end-to-end orchestrator, and nothing outside their own test
+suites calls them. `app/remote_fetch/orchestrator.py` sequences the fetch stage only; it does not hand off to
+matching or reconciliation. Treat "the Phase 4 pipeline" as a set of validated building blocks being assembled, not
+a live end-to-end flow, until stages 6–8 land and a router exposes them.
 
 **Do not treat this pipeline's fixed, code-decided shape as violating the "no hardcoded pipeline" rule above** —
 that rule applies only to the OLD runner's own files. Writing deterministic orchestration code under
@@ -86,6 +87,11 @@ pattern rather than assuming a single universal event shape applies everywhere.
 
 The `confidence` principle above still applies universally regardless of table shape — every stage that surfaces
 information to a human should carry a proven/estimated/gap signal, whatever the underlying table looks like.
+
+All of the above constrains *storage*, not file layout. One fetcher module per source is fine — each source's real
+API genuinely differs — even when those fetchers all write into one shared table. `app/remote_fetch/mcp/` is the
+worked example: four per-source fetchers (`github.py`, `jira.py`, `slack.py`, `calendar.py`) all persisting into
+the single `remote_events` table.
 
 ### `metadata` is a reserved name on SQLAlchemy's declarative base
 
