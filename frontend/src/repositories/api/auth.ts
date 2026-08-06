@@ -64,3 +64,7 @@ export function getGoogleLoginUrl(): string {
   const baseUrl: string = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
   return `${baseUrl}/auth/google/login`;
 }
+
+export function googleExchange(code: string): Promise<TokenResponse> {
+  return apiRequest<TokenResponse>("/auth/google/exchange", { method: "POST", body: { code }, skipAuth: true });
+}

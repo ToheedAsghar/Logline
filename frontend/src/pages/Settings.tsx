@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { Loading } from "@/atoms";
 import { IntegrationCard } from "@/molecules";
 import { INTEGRATION_SOURCES, type IntegrationId } from "@/constants/integrations";
@@ -9,76 +9,66 @@ function placeholder(source: IntegrationId): Integration {
   return { id: -1, source, status: "disconnected", last_synced_at: null, created_at: "" };
 }
 
-const CONNECT_ERROR_MESSAGES: Record<string, string> = {
-  access_denied: "Authorization was cancelled or denied.",
-  invalid_state: "Couldn't verify request state. Please try again.",
-  missing_params: "Missing required authorization parameters.",
-  exchange_failed: "Failed to exchange authorization code.",
-  provider_error: "The provider rejected the request. Please try again.",
+const ERROR_REASON_MESSAGES: Record<string, string> = {
+  denied: "Authorization was denied.",
+  expired: "The connection link expired — try again.",
+  invalid_state: "The connection request could not be verified — try again.",
+  server_error: "Something went wrong on our end — try again.",
 };
 
 export default function Settings() {
   const integrations = useIntegrations();
-  const bySource = new Map((integrations.data ?? []).map((integration) => [integration.source, integration]));
+
+  const bySource = useMemo(() => {
+    const map = new Map<IntegrationId, Integration>();
+    for (const integration of integrations.data ?? []) {
+      map.set(integration.source, integration);
+    }
+    return map;
+  }, [integrations.data]);
+
   const rows = INTEGRATION_SOURCES.map((source) => bySource.get(source.id) ?? placeholder(source.id));
   const connectedCount = rows.filter((integration) => integration.status === "connected").length;
   const attentionCount = rows.filter((integration) => integration.status === "error").length;
 
-  const [callbackNotice, setCallbackNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const [pendingSource, setPendingSource] = useState<IntegrationId | null>(null);
-
-  useEffect(() => {
+  const [callbackNotice, setCallbackNotice] = useState<{ type: "success" | "error"; message: string } | null>(() => {
+    if (typeof window === "undefined") return null;
     const params = new URLSearchParams(window.location.search);
-    const rawIntegration = params.get("integration");
+    const integration = params.get("integration");
     const status = params.get("status");
-    const reason = params.get("reason");
+    const detail = params.get("detail");
 
-    // Selectively remove only callback params to preserve other query string parameters
-    params.delete("integration");
-    params.delete("status");
-    params.delete("reason");
-    params.delete("detail");
-    const cleanQuery = params.toString();
-    const cleanUrl = cleanQuery ? `${window.location.pathname}?${cleanQuery}` : window.location.pathname;
-    window.history.replaceState({}, "", cleanUrl);
+    if (integration && status) {
+      const sourceName = INTEGRATION_SOURCES.find((s) => s.id === integration)?.name ?? "the integration";
+      params.delete("integration");
+      params.delete("status");
+      params.delete("detail");
+      const cleanQuery = params.toString();
+      const cleanUrl = cleanQuery ? `${window.location.pathname}?${cleanQuery}` : window.location.pathname;
+      window.history.replaceState({}, "", cleanUrl);
 
-    const sourceObj = INTEGRATION_SOURCES.find((s) => s.id === rawIntegration);
-    if (!sourceObj) return;
-
-    if (status === "error") {
-      const why = CONNECT_ERROR_MESSAGES[reason ?? ""] ?? "Authorization failed.";
-      setCallbackNotice({
-        type: "error",
-        message: `Couldn't connect ${sourceObj.name}: ${why}`,
-      });
-    } else if (status === "connected") {
-      setPendingSource(sourceObj.id);
-      integrations.refetch?.();
+      if (status === "connected") {
+        return {
+          type: "success",
+          message: `Successfully connected ${sourceName}!`,
+        };
+      } else if (status === "error") {
+        const reason = detail && ERROR_REASON_MESSAGES[detail] ? ERROR_REASON_MESSAGES[detail] : "Authorization failed.";
+        return {
+          type: "error",
+          message: `Couldn't connect ${sourceName}: ${reason}`,
+        };
+      }
     }
-  }, []);
-
-  useEffect(() => {
-    if (!pendingSource || integrations.isFetching || integrations.isLoading) return;
-    const sourceObj = INTEGRATION_SOURCES.find((s) => s.id === pendingSource);
-    if (!sourceObj) return;
-
-    const matched = integrations.data?.find((i) => i.source === pendingSource);
-    const isConnected = matched?.status === "connected";
-
-    setCallbackNotice(
-      isConnected
-        ? { type: "success", message: `Successfully connected ${sourceObj.name}!` }
-        : { type: "error", message: `Couldn't connect ${sourceObj.name}: authorization was not saved.` }
-    );
-    setPendingSource(null);
-  }, [pendingSource, integrations.isFetching, integrations.isLoading, integrations.data]);
+    return null;
+  });
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
-        <p className="max-w-[58ch] text-sm text-muted">
-          Logline reads work signals from these sources to build your timeline. Connect what you use — nothing is
+        <h1 className="text-2xl font-semibold tracking-tight text-[#191917]">Settings</h1>
+        <p className="mt-1 text-sm text-[#6E6C62] max-w-2xl leading-relaxed">
+          Logline reads work signals from these sources to build your draft. Connect what you use — nothing is
           ever posted back without your approval.
         </p>
       </div>
@@ -87,9 +77,9 @@ export default function Settings() {
         <div
           role="alert"
           aria-live="polite"
-          className={`flex items-center justify-between rounded-lg border px-3.5 py-2.5 font-mono text-xs ${callbackNotice.type === "success"
-              ? "border-accent-soft bg-accent-soft text-accent-dim"
-              : "border-danger/40 bg-danger-soft text-danger"
+          className={`flex items-center justify-between rounded-lg border p-3.5 font-mono text-xs ${callbackNotice.type === "success"
+            ? "border-[#BFD9C2] bg-[#DCEBDD] text-[#14603C]"
+            : "border-[#E0B8AC] bg-[#FBEEEA] text-[#A33A22]"
             }`}
         >
           <span>{callbackNotice.message}</span>
@@ -104,27 +94,27 @@ export default function Settings() {
         </div>
       )}
 
-      {integrations.isLoading && <Loading label="Loading integrations…" />}
+      {integrations.isLoading && <div className="p-8"><Loading label="Loading integrations…" /></div>}
       {integrations.isError && (
-        <p className="font-mono text-[11px] text-danger">Couldn&apos;t load integrations — try again.</p>
+        <p className="font-mono text-xs text-[#A33A22]">Couldn&apos;t load integrations — try again.</p>
       )}
 
       {!integrations.isLoading && !integrations.isError && (
-        <div className="flex flex-col gap-3.5">
+        <div className="space-y-4">
           <div className="flex items-baseline justify-between gap-3">
             <div className="flex items-baseline gap-2">
-              <h2 className="text-sm font-semibold tracking-tight">Connected sources</h2>
-              <span className="font-mono text-[11.5px] text-faint">
+              <h2 className="text-sm font-semibold text-[#191917]">Connected sources</h2>
+              <span className="font-mono text-xs text-[#8A887C]">
                 {connectedCount}/{rows.length} active
               </span>
             </div>
             {attentionCount > 0 && (
-              <span className="font-mono text-[11px] text-danger">
+              <span className="font-mono text-xs text-[#A33A22]">
                 {attentionCount} need{attentionCount === 1 ? "s" : ""} attention
               </span>
             )}
           </div>
-          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {rows.map((integration) => (
               <IntegrationCard key={integration.source} integration={integration} />
             ))}
@@ -134,3 +124,4 @@ export default function Settings() {
     </div>
   );
 }
+

@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from "react";
 import { cn, formatRelativeTime } from "@/common/utils";
-import { Button } from "@/atoms";
 import { INTEGRATION_SOURCES } from "@/constants/integrations";
 import { ApiError } from "@/repositories/api/client";
 import { useConnectIntegration, useDisconnectIntegration } from "@/repositories/hooks";
@@ -13,25 +12,18 @@ const STATUS_LABEL: Record<Integration["status"], string> = {
 };
 
 const STATUS_DOT: Record<Integration["status"], string> = {
-  connected: "bg-accent",
-  error: "bg-danger",
-  disconnected: "bg-faint",
+  connected: "bg-[#14603C]",
+  error: "bg-[#A33A22]",
+  disconnected: "bg-[#8A887C]",
 };
 
 const STATUS_PILL: Record<Integration["status"], string> = {
-  connected: "border-accent-soft bg-accent-soft text-accent-dim",
-  error: "border-danger/40 bg-danger-soft text-danger",
-  disconnected: "border-border bg-transparent text-faint",
+  connected: "border-[#BFD9C2] bg-[#DCEBDD] text-[#14603C]",
+  error: "border-[#E0B8AC] bg-[#FBEEEA] text-[#A33A22]",
+  disconnected: "border-[#E3DFD2] bg-[#F5F2EA] text-[#8A887C]",
 };
 
-/**
- * Per-source icon badge colors copied verbatim from the design handoff
- * (Logline.html, `integrationCards` -> `monoStyle`) — one-off brand-ish
- * tints that stay fixed across light/dark rather than following the theme
- * palette, same as the handoff. GitHub has no fixed tint there (its mark
- * uses `var(--text)`), so it rides the theme text color instead.
- */
-const DEFAULT_SOURCE_BADGE = { bg: "oklch(0.55 0.02 260 / 0.18)", color: "var(--color-text)" };
+const DEFAULT_SOURCE_BADGE = { bg: "#F5F2EA", color: "#191917" };
 
 const DEFAULT_SOURCE_ICON: ReactNode = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -41,10 +33,10 @@ const DEFAULT_SOURCE_ICON: ReactNode = (
 );
 
 const SOURCE_BADGE: Record<string, { bg: string; color: string }> = {
-  github: { bg: "oklch(0.55 0.02 260 / 0.18)", color: "var(--color-text)" },
-  jira: { bg: "oklch(0.60 0.18 255 / 0.18)", color: "oklch(0.58 0.19 255)" },
-  calendar: { bg: "oklch(0.62 0.18 255 / 0.18)", color: "oklch(0.60 0.18 255)" },
-  slack: { bg: "oklch(0.62 0.16 330 / 0.18)", color: "oklch(0.60 0.17 330)" },
+  github: { bg: "#F5F2EA", color: "#191917" },
+  jira: { bg: "#EBF3FB", color: "#0052CC" },
+  calendar: { bg: "#EBF3FB", color: "#1A73E8" },
+  slack: { bg: "#FBEBF3", color: "#4A154B" },
 };
 
 const SOURCE_ICON: Record<string, ReactNode> = {
@@ -76,11 +68,6 @@ const SOURCE_ICON: Record<string, ReactNode> = {
   ),
 };
 
-/** The detail line under the name — built only from fields the API actually
- * returns today (`status`, `last_synced_at`). No per-source metadata (repo
- * count, board name, channel count …) is available yet — see
- * `Integration.integration_metadata` in the backend model, which exists in
- * the DB but isn't exposed on `IntegrationResponse`. */
 function detailText(integration: Integration): string {
   if (integration.status === "connected") return `Synced ${formatRelativeTime(integration.last_synced_at)}`;
   if (integration.status === "error") return "Needs attention — reconnect to resume syncing.";
@@ -101,7 +88,6 @@ export function IntegrationCard({ integration, className }: IntegrationCardProps
   const badge = SOURCE_BADGE[integration.source] ?? DEFAULT_SOURCE_BADGE;
   const icon = SOURCE_ICON[integration.source] ?? DEFAULT_SOURCE_ICON;
 
-  // Catch 501 (stub) or 404 (unregistered OAuth provider e.g. calendar) as expected "not available" state.
   const connectNotAvailable =
     connect.isError &&
     connect.error instanceof ApiError &&
@@ -120,14 +106,14 @@ export function IntegrationCard({ integration, className }: IntegrationCardProps
   return (
     <div
       className={cn(
-        "flex flex-col rounded-xl border bg-surface p-[18px] transition-colors duration-150",
-        integration.status === "error" ? "border-danger/40 hover:border-danger" : "border-border hover:border-border-2",
+        "flex flex-col rounded-xl border bg-[#FFFDF7] p-5 shadow-xs transition-all duration-150",
+        integration.status === "error" ? "border-[#E0B8AC] hover:border-[#A33A22]" : "border-[#E3DFD2] hover:border-[#CFCABA]",
         className,
       )}
     >
       <div className="flex items-start justify-between gap-2.5">
         <div
-          className="flex h-12 w-12 flex-none items-center justify-center rounded-lg"
+          className="flex h-11 w-11 flex-none items-center justify-center rounded-lg border border-[#E3DFD2]"
           style={{ background: badge.bg, color: badge.color }}
         >
           {icon}
@@ -136,7 +122,7 @@ export function IntegrationCard({ integration, className }: IntegrationCardProps
           role="status"
           aria-label={`Status: ${STATUS_LABEL[integration.status]}`}
           className={cn(
-            "inline-flex flex-none items-center gap-1.5 rounded-pill border px-2.5 py-1 font-mono text-[10.5px]",
+            "inline-flex flex-none items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10.5px] font-medium",
             STATUS_PILL[integration.status],
           )}
         >
@@ -145,53 +131,47 @@ export function IntegrationCard({ integration, className }: IntegrationCardProps
         </span>
       </div>
 
-      <div className="mt-3.5 font-sans text-[15.5px] font-semibold tracking-tight text-text">{name}</div>
-      <p className={cn("mt-1 text-[12.5px] leading-snug", integration.status === "error" ? "text-danger" : "text-muted")}>
+      <div className="mt-4 font-sans text-base font-semibold tracking-tight text-[#191917]">{name}</div>
+      <p className={cn("mt-1 text-xs leading-relaxed", integration.status === "error" ? "text-[#A33A22]" : "text-[#6E6C62]")}>
         {detailText(integration)}
       </p>
 
-      <div className="mt-4 flex gap-2 border-t border-border pt-3.5">
+      <div className="mt-5 flex gap-2 border-t border-[#E3DFD2] pt-4">
         {integration.status === "error" && (
-          <Button
-            variant="danger-solid"
-            size="sm"
-            className="flex-1"
-            working={isConnecting}
-            workingLabel="Reconnecting…"
+          <button
+            type="button"
+            disabled={isConnecting}
             onClick={handleConnect}
+            className="flex-1 rounded-md border border-[#E0B8AC] bg-[#FBEEEA] py-2 text-xs font-semibold text-[#A33A22] hover:bg-[#F7DDD6] disabled:opacity-50"
           >
-            Reconnect
-          </Button>
+            {isConnecting ? "Reconnecting…" : "Reconnect"}
+          </button>
         )}
         {integration.status === "disconnected" ? (
-          <Button
-            variant="primary"
-            size="sm"
-            className="flex-1"
-            working={isConnecting}
-            workingLabel="Connecting…"
+          <button
+            type="button"
+            disabled={isConnecting}
             onClick={handleConnect}
+            className="flex-1 rounded-md border border-[#14603C] bg-[#14603C] py-2 text-xs font-semibold text-[#FFFDF7] shadow-xs hover:bg-[#0F4E31] disabled:opacity-50"
           >
-            Connect
-          </Button>
+            {isConnecting ? "Connecting…" : "Connect"}
+          </button>
         ) : (
-          <Button
-            variant="secondary"
-            size="sm"
-            className="flex-1"
-            working={disconnect.isPending}
-            workingLabel="Disconnecting…"
+          <button
+            type="button"
+            disabled={disconnect.isPending}
             onClick={() => disconnect.mutate(integration.source)}
+            className="flex-1 rounded-md border border-[#E3DFD2] bg-[#F5F2EA] py-2 text-xs font-medium text-[#191917] hover:bg-[#EFEBE0] disabled:opacity-50"
           >
-            Disconnect
-          </Button>
+            {disconnect.isPending ? "Disconnecting…" : "Disconnect"}
+          </button>
         )}
       </div>
 
       {connectNotAvailable && (
-        <p className="mt-2.5 font-mono text-[11px] text-muted">Connecting {name} isn&apos;t available yet — coming soon.</p>
+        <p className="mt-2.5 font-mono text-[11px] text-[#8A887C]">Connecting {name} isn&apos;t available yet — coming soon.</p>
       )}
-      {connectFailed && <p className="mt-2.5 font-mono text-[11px] text-danger">Couldn&apos;t connect {name} — try again.</p>}
+      {connectFailed && <p className="mt-2.5 font-mono text-[11px] text-[#A33A22]">Couldn&apos;t connect {name} — try again.</p>}
     </div>
   );
 }

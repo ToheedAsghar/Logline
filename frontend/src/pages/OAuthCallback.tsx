@@ -1,44 +1,80 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { Button, Loading } from "@/atoms";
 import { AUTH_STRINGS } from "@/constants/authMessages";
 import { useSession } from "@/context/SessionContext";
+import { googleExchange } from "@/repositories/api/auth";
+import { AuthShell } from "./AuthShell";
 
 export default function OAuthCallback() {
   const [searchParams] = useSearchParams();
   const { loginWithToken } = useSession();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(true);
+  const hasExchangedRef = useRef(false);
 
   useEffect(() => {
-    const token = searchParams.get("token");
+    let token = searchParams.get("token") || searchParams.get("code");
+
+    if (!token && window.location.hash) {
+      const hash = window.location.hash.replace(/^#/, "");
+      const hashParams = new URLSearchParams(hash);
+      token = hashParams.get("token") || hashParams.get("code");
+    }
+
     if (token) {
-      loginWithToken(token);
-      navigate("/", { replace: true });
+      if (hasExchangedRef.current) return;
+      hasExchangedRef.current = true;
+
+      const exchangeAndLogin = async () => {
+        try {
+          const { access_token } = await googleExchange(token);
+          loginWithToken(access_token);
+          navigate("/", { replace: true });
+        } catch {
+          setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
+          setIsProcessing(false);
+        }
+      };
+      exchangeAndLogin();
     } else {
-      setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
+      queueMicrotask(() => {
+        setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
+        setIsProcessing(false);
+      });
     }
   }, [searchParams, loginWithToken, navigate]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg font-sans text-text">
-      <div className="w-full max-w-sm p-6 text-center animate-ll-rise">
-        {error ? (
+    <AuthShell
+      title={AUTH_STRINGS.OAUTH_CALLBACK_TITLE}
+      subtitle={AUTH_STRINGS.OAUTH_CALLBACK_SUBTITLE}
+      hideDivider
+    >
+      <div className="mt-4 flex flex-col gap-4">
+        {isProcessing ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-6">
+            <Loading size="md" />
+            <p className="font-mono text-[12px] text-muted">Authenticating with Google…</p>
+          </div>
+        ) : error ? (
           <>
-            <p className="font-mono text-[13px] text-danger mb-4">{error}</p>
-            <button
+            <p className="rounded-md border border-danger/30 bg-danger-soft p-3 font-mono text-[12px] text-danger">
+              {error}
+            </p>
+            <Button
+              type="button"
+              variant="primary"
               onClick={() => navigate("/login")}
-              className="text-[13.5px] font-medium text-accent-dim hover:underline"
+              className="w-full"
             >
               {AUTH_STRINGS.CONTINUE_TO_SIGN_IN}
-            </button>
+            </Button>
           </>
-        ) : (
-          <div>
-            <h1 className="m-0 text-xl font-semibold tracking-[-0.02em]">{AUTH_STRINGS.OAUTH_CALLBACK_TITLE}</h1>
-            <p className="mt-2 text-[13.5px] text-muted">{AUTH_STRINGS.OAUTH_CALLBACK_SUBTITLE}</p>
-          </div>
-        )}
+        ) : null}
       </div>
-    </div>
+    </AuthShell>
   );
 }
+

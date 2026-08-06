@@ -1,12 +1,5 @@
 @import "tailwindcss";
 
-/* ---------------------------------------------------------------------
- * Theme wiring: Tailwind v4 reads token *names* here (--color-bg etc.) and
- * generates utilities from them (bg-bg, text-text, border-border …). Each
- * name points at an indirection var (--ll-*) whose actual value flips with
- * [data-theme] below — this is what lets `bg-bg` etc. respond to the theme
- * toggle without any JS-driven class swapping.
- * ------------------------------------------------------------------- */
 @theme {
   --font-sans: "Space Grotesk", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
@@ -54,16 +47,6 @@
   --animate-ll-toastbar: ll-toastbar 2.6s linear forwards;
 }
 
-/* ---------------------------------------------------------------------
- * Palette values — copied verbatim from the handoff's `DARK` / `LIGHT`
- * consts in Logline.dc.html (renderVals()). Dark is the default: it's what
- * every fallback value in the handoff's raw markup (var(--x, #hex)) renders
- * to, so it's the "as designed" look; light is the actual default state
- * (`state.theme: 'light'` / the `defaultTheme` prop both default to
- * 'light' in the handoff's own JS) — confirmed against the bundled
- * Logline.html export. Both are fully supported and toggleable; light is
- * just what renders on first load, matching the handoff.
- * ------------------------------------------------------------------- */
 @layer base {
   :root,
   :root[data-theme="light"] {
@@ -89,29 +72,6 @@
     --ll-sidebar-border: oklch(0.325 0.024 158);
   }
 
-  :root[data-theme="dark"] {
-    --ll-bg: oklch(0.165 0.008 260);
-    --ll-surface: oklch(0.205 0.009 260);
-    --ll-surface-2: oklch(0.25 0.011 260);
-    --ll-border: oklch(0.3 0.012 260);
-    --ll-border-2: oklch(0.4 0.014 260);
-    --ll-text: oklch(0.94 0.006 260);
-    --ll-muted: oklch(0.7 0.012 260);
-    --ll-faint: oklch(0.55 0.012 260);
-    --ll-accent: oklch(0.87 0.19 122);
-    --ll-accent-ink: oklch(0.24 0.05 122);
-    --ll-accent-dim: oklch(0.8 0.15 122);
-    --ll-accent-soft: oklch(0.87 0.19 122 / 0.16);
-    --ll-danger: oklch(0.7 0.17 25);
-    --ll-danger-soft: oklch(0.7 0.17 25 / 0.16);
-    --ll-shadow: 0 16px 48px oklch(0 0 0 / 0.55);
-    --ll-sidebar-bg: oklch(0.165 0.008 260);
-    --ll-sidebar-surface: oklch(0.25 0.011 260);
-    --ll-sidebar-text: oklch(0.94 0.006 260);
-    --ll-sidebar-muted: oklch(0.7 0.012 260);
-    --ll-sidebar-border: oklch(0.3 0.012 260);
-  }
-
   html,
   body,
   #root {
@@ -130,7 +90,6 @@
     background: var(--color-accent-soft);
   }
 
-  /* Keyframes ported verbatim from the handoff's <style> block. */
   @keyframes ll-blink {
     0%,
     49% {
