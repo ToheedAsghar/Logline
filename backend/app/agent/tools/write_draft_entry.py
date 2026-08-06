@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db.session import SessionLocal
 from app.entries.models import Entry, EntryFormat, EntryStatus, EntryVersion, EntryVersionSource
-from app.entries.schemas import parse_entry_content
+from app.entries.schemas import normalize_entry_content
 
 
 class DraftEntryInput(BaseModel):
@@ -45,7 +45,7 @@ def write_draft_entry(**kwargs) -> dict:
     Also appends an ``ai_draft`` EntryVersion snapshot so the original generated content is preserved in the append-only
     history even if the entry is later edited or approved with changes.
 
-    `content` is validated against `format`'s required shape using the same `parse_entry_content` validator the REST API
+    `content` is validated against `format`'s required shape using the same `normalize_entry_content` validator the REST
     uses (app/entries/schemas.py), so the agent and the API can never disagree on what counts as valid content.
 
     `work_date` is the actual calendar day this entry's content is about (not today's date, unless the entry happens to
@@ -67,7 +67,7 @@ def write_draft_entry(**kwargs) -> dict:
         raise WriteDraftEntryValidationError(str(exc)) from exc
 
     try:
-        validated_content = parse_entry_content(payload.format, payload.content)
+        validated_content = normalize_entry_content(payload.format, payload.content)
     except ValidationError as exc:
         raise WriteDraftEntryValidationError(str(exc)) from exc
 
@@ -76,7 +76,7 @@ def write_draft_entry(**kwargs) -> dict:
             entry = Entry(
                 user_id=payload.user_id,
                 format=payload.format,
-                content=validated_content.model_dump(),
+                content=validated_content,
                 work_date=payload.work_date,
                 status=EntryStatus.draft,
             )
