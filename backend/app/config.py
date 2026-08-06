@@ -22,6 +22,8 @@ class Settings:
     llm_provider: str = os.getenv("LLM_PROVIDER", "openai")
     llm_model: str = os.getenv("LLM_MODEL", "gpt-5-mini")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     jwt_secret_key: str = _require_env("JWT_SECRET_KEY")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
@@ -70,6 +72,20 @@ LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 ALLOW_INSECURE = os.getenv("ALLOW_INSECURE_BASE_URLS", "").strip().lower() in ("1", "true", "yes")
 
 
+_SUPPORTED_LLM_PROVIDERS = frozenset({"openai", "gemini"})
+
+
+def _require_supported_llm_provider(provider: str) -> None:
+    """Fail at boot on an unknown LLM_PROVIDER rather than at first reconciliation call. Duplicates
+    `SUPPORTED_PROVIDERS` from `app.agent.llm` as a literal snapshot instead of importing it -- that module imports
+    `settings` from here, so importing back would cycle.
+    """
+    if provider.lower() not in _SUPPORTED_LLM_PROVIDERS:
+        raise RuntimeError(
+            f"LLM_PROVIDER must be one of {sorted(_SUPPORTED_LLM_PROVIDERS)} (got {provider!r})"
+        )
+
+
 def _require_secure_url(name: str, url: str) -> None:
     """Fail closed: only https, loopback http, or an explicit opt-out (ALLOW_INSECURE_BASE_URLS=true) is accepted."""
     parsed = urlparse(url)
@@ -89,3 +105,4 @@ def _require_secure_url(name: str, url: str) -> None:
 
 _require_secure_url("BACKEND_BASE_URL", settings.backend_base_url)
 _require_secure_url("FRONTEND_BASE_URL", settings.frontend_base_url)
+_require_supported_llm_provider(settings.llm_provider)

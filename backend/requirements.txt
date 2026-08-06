@@ -9,6 +9,7 @@ anthropic
 cryptography
 mcp
 openai>=2.44.0
+google-genai>=2.16.0
 bcrypt
 pyjwt
 email-validator

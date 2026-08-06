@@ -91,12 +91,6 @@ async def run_agent(user_id: int, task: str) -> AgentRunResult:
                     )
                 )
 
-    # The round budget is spent, but the model's last move may have been a
-    # tool call rather than a final answer -- its results are already in
-    # `messages` above, just never shown back to the model for a verdict.
-    # Force exactly one more call with tools disabled so it must synthesize
-    # from whatever evidence was gathered instead of the loop just cutting
-    # off and discarding it.
     logger.warning(
         "Exceeded MAX_TOOL_ROUNDS=%d; forcing a final synthesis-only turn with tools disabled.",
         MAX_TOOL_ROUNDS,
