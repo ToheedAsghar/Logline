@@ -31,6 +31,7 @@ class User(Base):
     remote_events = relationship("RemoteEvent", back_populates="user", cascade="all, delete-orphan")
     project_mappings = relationship("ProjectMapping", back_populates="user", cascade="all, delete-orphan")
     local_sessions = relationship("LocalSession", back_populates="user", cascade="all, delete-orphan")
+    remote_fetch_states = relationship("RemoteFetchState", back_populates="user", cascade="all, delete-orphan")
 
 
 class EmailVerificationToken(Base):

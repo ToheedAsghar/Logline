@@ -38,6 +38,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import app.agent.toolbelt as toolbelt_module
+import app.integrations.config as integrations_config_module
 from app.agent.llm.base import ToolCall
 from app.agent.system_prompt import SYSTEM_PROMPT
 from app.agent.toolbelt import Toolbelt, _query_has_repo_scope, _validate_github_date_syntax, get_user_github_repos
@@ -179,7 +180,7 @@ class TestCommitterDateSyntax:
 
 
 class TestGetUserGithubRepos:
-    """get_user_github_repos must distinguish 'not configured' from 'configured but empty'."""
+    """Tests that get_user_github_repos distinguishes 'not configured' from 'configured but empty'."""
 
     def _patch_session(self, monkeypatch: pytest.MonkeyPatch, integration):
         fake_query = MagicMock()
@@ -190,6 +191,7 @@ class TestGetUserGithubRepos:
         fake_session_cm.__enter__.return_value = fake_db
         fake_session_cm.__exit__.return_value = False
         monkeypatch.setattr(toolbelt_module, "SessionLocal", lambda: fake_session_cm)
+        monkeypatch.setattr(integrations_config_module, "SessionLocal", lambda: fake_session_cm)
 
     def test_returns_none_when_no_integration_row(self, monkeypatch):
         self._patch_session(monkeypatch, integration=None)

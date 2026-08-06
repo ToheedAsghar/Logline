@@ -10,7 +10,7 @@ no way to detect or undo it later.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.local_activity.aggregation import LocalActivityBlock
@@ -78,8 +78,20 @@ def _is_match(resolved: ResolvedLocalBlock, event: RemoteEventData) -> bool:
         return False
 
     block = resolved.block
-    window_end = block.end_time + MATCH_BUFFER
-    return block.start_time <= event.occurred_at < window_end
+
+    start_time = block.start_time
+    if start_time.tzinfo is None:
+        start_time = start_time.replace(tzinfo=timezone.utc)
+
+    end_time = block.end_time
+    if end_time.tzinfo is None:
+        end_time = end_time.replace(tzinfo=timezone.utc)
+
+    occurred_at = event.occurred_at
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+    window_end = end_time + MATCH_BUFFER
+    return start_time <= occurred_at < window_end
 
 
 def match_local_blocks_to_remote_events(

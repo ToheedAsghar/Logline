@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Loading } from "@/atoms";
 import { IntegrationCard } from "@/molecules";
 import { INTEGRATION_SOURCES, type IntegrationId } from "@/constants/integrations";
@@ -9,21 +9,37 @@ function placeholder(source: IntegrationId): Integration {
   return { id: -1, source, status: "disconnected", last_synced_at: null, created_at: "" };
 }
 
+const ERROR_REASON_MESSAGES: Record<string, string> = {
+  denied: "Authorization was denied.",
+  expired: "The connection link expired — try again.",
+  invalid_state: "The connection request could not be verified — try again.",
+  server_error: "Something went wrong on our end — try again.",
+};
+
 export default function Settings() {
   const integrations = useIntegrations();
-  const bySource = new Map((integrations.data ?? []).map((integration) => [integration.source, integration]));
+
+  const bySource = useMemo(() => {
+    const map = new Map<IntegrationId, Integration>();
+    for (const integration of integrations.data ?? []) {
+      map.set(integration.source, integration);
+    }
+    return map;
+  }, [integrations.data]);
+
   const rows = INTEGRATION_SOURCES.map((source) => bySource.get(source.id) ?? placeholder(source.id));
   const connectedCount = rows.filter((integration) => integration.status === "connected").length;
   const attentionCount = rows.filter((integration) => integration.status === "error").length;
 
   const [callbackNotice, setCallbackNotice] = useState<{ type: "success" | "error"; message: string } | null>(() => {
+    if (typeof window === "undefined") return null;
     const params = new URLSearchParams(window.location.search);
     const integration = params.get("integration");
     const status = params.get("status");
     const detail = params.get("detail");
 
     if (integration && status) {
-      const sourceName = INTEGRATION_SOURCES.find((s) => s.id === integration)?.name ?? integration;
+      const sourceName = INTEGRATION_SOURCES.find((s) => s.id === integration)?.name ?? "the integration";
       params.delete("integration");
       params.delete("status");
       params.delete("detail");
@@ -37,9 +53,10 @@ export default function Settings() {
           message: `Successfully connected ${sourceName}!`,
         };
       } else if (status === "error") {
+        const reason = detail && ERROR_REASON_MESSAGES[detail] ? ERROR_REASON_MESSAGES[detail] : "Authorization failed.";
         return {
           type: "error",
-          message: `Couldn't connect ${sourceName}${detail ? `: ${detail}` : " — authorization failed."}`,
+          message: `Couldn't connect ${sourceName}: ${reason}`,
         };
       }
     }

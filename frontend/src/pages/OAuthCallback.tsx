@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Loading } from "@/atoms";
 import { AUTH_STRINGS } from "@/constants/authMessages";
@@ -12,6 +12,7 @@ export default function OAuthCallback() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(true);
+  const hasExchangedRef = useRef(false);
 
   useEffect(() => {
     let token = searchParams.get("token") || searchParams.get("code");
@@ -23,6 +24,9 @@ export default function OAuthCallback() {
     }
 
     if (token) {
+      if (hasExchangedRef.current) return;
+      hasExchangedRef.current = true;
+
       const exchangeAndLogin = async () => {
         try {
           const { access_token } = await googleExchange(token);
