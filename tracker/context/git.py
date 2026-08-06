@@ -58,7 +58,6 @@ def _read_git_file(path: Path) -> Optional[str]:
             fd = None
             return handle.read()
     except (OSError, ValueError):
-        # Any read failure fails closed, degrade to no context, never propagate.
         return None
     finally:
         if fd is not None:

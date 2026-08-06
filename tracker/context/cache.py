@@ -26,6 +26,9 @@ def ttl_cache(ttl_seconds: float) -> Callable[[Callable[..., T]], Callable[..., 
                 if now - timestamp < ttl_seconds:
                     return value
             value = func(*args)
+            for stale_key, (_, stale_timestamp) in list(cache.items()):
+                if now - stale_timestamp >= ttl_seconds:
+                    del cache[stale_key]
             cache[key] = (value, now)
             return value
 
@@ -33,6 +36,7 @@ def ttl_cache(ttl_seconds: float) -> Callable[[Callable[..., T]], Callable[..., 
             cache.clear()
 
         wrapper.cache_clear = cache_clear
+        wrapper.cache = cache  # type: ignore[attr-defined]
         return wrapper
 
     return decorator
