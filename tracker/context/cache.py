@@ -32,7 +32,7 @@ def ttl_cache(ttl_seconds: float) -> Callable[[Callable[..., T]], Callable[..., 
         def cache_clear() -> None:
             cache.clear()
 
-        wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+        wrapper.cache_clear = cache_clear
         return wrapper
 
     return decorator
