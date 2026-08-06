@@ -1,42 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loading } from "@/atoms";
-import { formatMinutes } from "@/common/utils";
+import { formatMinutes, getTodayLocalDate, parseLocalDate } from "@/common/utils";
 import { ALL_ENTRY_TAGS, type DraftEntry, type EntryTag, type WorkLogDraft } from "@/repositories/types";
 import { useApproveDraft, useGenerateDraft } from "@/repositories/hooks";
-
-export function getTodayLocalDate(): string {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-export function minutesToHHMM(totalMinutes: number): string {
-  const h = Math.floor(Math.max(0, totalMinutes) / 60);
-  const m = Math.max(0, totalMinutes) % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-export function parseTimeToMinutes(value: string): number {
-  const trimmed = value.trim();
-  if (!trimmed) return 0;
-
-  if (trimmed.includes(":")) {
-    const parts = trimmed.split(":");
-    const h = parseInt(parts[0], 10) || 0;
-    const m = parseInt(parts[1], 10) || 0;
-    return Math.max(0, h * 60 + m);
-  }
-
-  const num = parseFloat(trimmed);
-  if (isNaN(num)) return 0;
-  if (num > 0 && num < 12 && trimmed.includes(".")) {
-    return Math.round(num * 60);
-  }
-  return Math.round(num);
-}
 
 export function TagSelect({
   value,
@@ -175,14 +142,23 @@ export function ReviewDraft() {
       ...draft,
       entries: draft.entries.map((entry, idx) => {
         if (idx !== entryIndex) return entry;
-        const currentMins = entry.allocations.reduce((sum, a) => sum + a.minutes, 0);
-        if (currentMins === 0 || entry.allocations.length === 0) {
-          return { ...entry, allocations: [{ block_id: 1, minutes: newMinutes }] };
+        const currentTotal = entry.allocations.reduce((sum, a) => sum + a.minutes, 0);
+
+        if (entry.allocations.length === 0) {
+          const available = draft.residual_unassigned_minutes.find((b) => b.minutes > 0);
+          if (!available) return entry;
+          return { ...entry, allocations: [{ block_id: available.block_id, minutes: newMinutes }] };
         }
-        return {
-          ...entry,
-          allocations: entry.allocations.map((a, aIdx) => (aIdx === 0 ? { ...a, minutes: newMinutes } : a)),
-        };
+
+        if (entry.allocations.length === 1) {
+          return { ...entry, allocations: [{ ...entry.allocations[0], minutes: newMinutes }] };
+        }
+
+        const scale = currentTotal > 0 ? newMinutes / currentTotal : 0;
+        const scaled = entry.allocations.map((a) => ({ ...a, minutes: Math.round(a.minutes * scale) }));
+        const drift = newMinutes - scaled.reduce((s, a) => s + a.minutes, 0);
+        scaled[0] = { ...scaled[0], minutes: Math.max(0, scaled[0].minutes + drift) };
+        return { ...entry, allocations: scaled };
       }),
     });
   };
@@ -198,10 +174,13 @@ export function ReviewDraft() {
 
   const addBlankEntry = () => {
     if (!draft) return;
+    const available = draft.residual_unassigned_minutes.find((b) => b.minutes > 0);
+    if (!available) return;
+
     const newEntry: DraftEntry = {
       date: startDate,
       project: "unidentified",
-      allocations: [{ block_id: 1, minutes: 30 }],
+      allocations: [{ block_id: available.block_id, minutes: Math.min(30, available.minutes) }],
       tag: "Coding",
       description: "New workstream block",
       source_remote_event_ids: [],
@@ -214,7 +193,7 @@ export function ReviewDraft() {
   };
 
   const shiftDate = (days: number) => {
-    const curr = new Date(startDate);
+    const curr = parseLocalDate(startDate);
     curr.setDate(curr.getDate() + days);
     const y = curr.getFullYear();
     const m = String(curr.getMonth() + 1).padStart(2, "0");
@@ -691,13 +670,55 @@ export function ReviewDraft() {
                   WHY THIS BLOCK EXISTS
                 </label>
                 <div className="space-y-1.5 text-xs text-[#6E6C62]">
-                  <div className="rounded bg-[#F5F2EA] p-2 space-y-1 border border-[#E3DFD2]">
-                    <div className="flex justify-between font-mono text-[10px] text-[#8A887C]">
-                      <span>LOC Chrome</span>
-                      <span>active</span>
+                  {selectedEntry.review_reason && (
+                    <div className="rounded bg-[#F7EDD8] p-2 space-y-1 border border-[#E4CFA3]">
+                      <div className="flex justify-between font-mono text-[10px] text-[#8A5A0F]">
+                        <span>NEEDS REVIEW</span>
+                      </div>
+                      <p className="text-[11px] text-[#191917]">{selectedEntry.review_reason}</p>
                     </div>
-                    <p className="text-[11px] text-[#191917]">Local activity telemetry signals matched workstream</p>
-                  </div>
+                  )}
+
+                  {selectedEntry.allocations.length > 0 && (
+                    <div className="rounded bg-[#F5F2EA] p-2 space-y-1 border border-[#E3DFD2]">
+                      <div className="flex justify-between font-mono text-[10px] text-[#8A887C]">
+                        <span>LOCAL ACTIVITY</span>
+                        <span>
+                          {formatMinutes(selectedEntry.allocations.reduce((sum, a) => sum + a.minutes, 0))}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#191917]">
+                        {selectedEntry.allocations.length === 1
+                          ? `1 measured block, ${formatMinutes(selectedEntry.allocations[0].minutes)}`
+                          : `${selectedEntry.allocations.length} measured blocks totaling ${formatMinutes(
+                              selectedEntry.allocations.reduce((sum, a) => sum + a.minutes, 0),
+                            )}`}
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedEntry.source_remote_event_ids && selectedEntry.source_remote_event_ids.length > 0 && (
+                    <div className="rounded bg-[#F5F2EA] p-2 space-y-1 border border-[#E3DFD2]">
+                      <div className="flex justify-between font-mono text-[10px] text-[#8A887C]">
+                        <span>REMOTE SIGNALS</span>
+                        <span>{selectedEntry.source_remote_event_ids.length}</span>
+                      </div>
+                      <p className="text-[11px] text-[#191917]">
+                        {selectedEntry.source_remote_event_ids.length === 1
+                          ? "1 linked event (PR, commit, or ticket)"
+                          : `${selectedEntry.source_remote_event_ids.length} linked events (PRs, commits, or tickets)`}
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedEntry.allocations.length === 0 &&
+                    (!selectedEntry.source_remote_event_ids || selectedEntry.source_remote_event_ids.length === 0) && (
+                      <div className="rounded bg-[#F5F2EA] p-2 space-y-1 border border-[#E3DFD2]">
+                        <p className="text-[11px] text-[#8A887C]">
+                          No telemetry signals — this block was added manually.
+                        </p>
+                      </div>
+                    )}
                 </div>
               </div>
 

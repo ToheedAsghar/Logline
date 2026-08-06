@@ -41,3 +41,52 @@ export function formatMinutes(totalMinutes: number): string {
   if (mins === 0) return `${hours}h`;
   return `${hours}h ${mins}m`;
 }
+
+export function escapeCsvField(value: string | number): string {
+  let str = String(value);
+  if (/^[=+\-@]/.test(str)) {
+    str = `'${str}`;
+  }
+  if (/[",\n]/.test(str)) {
+    str = `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+export function getTodayLocalDate(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+export function minutesToHHMM(totalMinutes: number): string {
+  const h = Math.floor(Math.max(0, totalMinutes) / 60);
+  const m = Math.max(0, totalMinutes) % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+export function parseTimeToMinutes(value: string): number {
+  const trimmed = value.trim();
+  if (!trimmed) return 0;
+
+  if (trimmed.includes(":")) {
+    const parts = trimmed.split(":");
+    const h = parseInt(parts[0], 10) || 0;
+    const m = parseInt(parts[1], 10) || 0;
+    return Math.max(0, h * 60 + m);
+  }
+
+  const num = parseFloat(trimmed);
+  if (isNaN(num)) return 0;
+  if (num > 0 && num < 12 && trimmed.includes(".")) {
+    return Math.round(num * 60);
+  }
+  return Math.round(num);
+}

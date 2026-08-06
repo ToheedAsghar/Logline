@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Loading } from "@/atoms";
-import { formatMinutes } from "@/common/utils";
+import { escapeCsvField, formatMinutes } from "@/common/utils";
 import { useEntries } from "@/repositories/hooks";
 
 function getEntryMinutes(content: unknown): number {
@@ -115,13 +115,15 @@ export default function History() {
     if (!periodEntries || periodEntries.length === 0) return;
     const headers = ["ID", "Format", "Created At", "Approved At", "Content"];
     const csvRows = periodEntries.map((e) => [
-      e.id,
-      e.format,
-      e.created_at,
-      e.approved_at || "",
-      `"${JSON.stringify(e.content).replace(/"/g, '""')}"`,
+      escapeCsvField(e.id),
+      escapeCsvField(e.format),
+      escapeCsvField(e.created_at),
+      escapeCsvField(e.approved_at || ""),
+      escapeCsvField(JSON.stringify(e.content)),
     ]);
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...csvRows.map((r) => r.join(","))].join("\n");
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.map(escapeCsvField).join(","), ...csvRows.map((r) => r.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
