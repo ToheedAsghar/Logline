@@ -5,6 +5,7 @@ import OAuthCallback from "../OAuthCallback";
 import { AUTH_STRINGS } from "@/constants/authMessages";
 import { googleExchange } from "@/repositories/api/auth";
 import { useSession } from "@/context/SessionContext";
+import { ToastProvider } from "@/context/ToastContext";
 
 vi.mock("@/repositories/api/auth", () => ({
   googleExchange: vi.fn(),
@@ -28,12 +29,14 @@ describe("OAuthCallback", () => {
     vi.mocked(googleExchange).mockResolvedValue({ access_token: "mock-jwt-token", token_type: "bearer" });
 
     render(
-      <MemoryRouter initialEntries={["/auth/google/callback?code=valid-code"]}>
-        <Routes>
-          <Route path="/auth/google/callback" element={<OAuthCallback />} />
-          <Route path="/" element={<div>Home Page</div>} />
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/auth/google/callback?code=valid-code"]}>
+          <Routes>
+            <Route path="/auth/google/callback" element={<OAuthCallback />} />
+            <Route path="/" element={<div>Home Page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     );
 
     await waitFor(() => {
@@ -47,32 +50,36 @@ describe("OAuthCallback", () => {
     vi.mocked(googleExchange).mockRejectedValue(new Error("Raw backend exception stringified JSON"));
 
     render(
-      <MemoryRouter initialEntries={["/auth/google/callback?code=invalid-code"]}>
-        <Routes>
-          <Route path="/auth/google/callback" element={<OAuthCallback />} />
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/auth/google/callback?code=invalid-code"]}>
+          <Routes>
+            <Route path="/auth/google/callback" element={<OAuthCallback />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     );
 
     await waitFor(() => {
-      expect(screen.getByText(AUTH_STRINGS.GOOGLE_SSO_FAILED)).toBeInTheDocument();
+      expect(screen.getAllByText(AUTH_STRINGS.GOOGLE_SSO_FAILED).length).toBeGreaterThan(0);
       expect(screen.queryByText("Raw backend exception stringified JSON")).not.toBeInTheDocument();
     });
   });
 
   it("does not log in directly from a ?token= query parameter", async () => {
     render(
-      <MemoryRouter initialEntries={["/auth/google/callback?token=raw-url-token"]}>
-        <Routes>
-          <Route path="/auth/google/callback" element={<OAuthCallback />} />
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/auth/google/callback?token=raw-url-token"]}>
+          <Routes>
+            <Route path="/auth/google/callback" element={<OAuthCallback />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     );
 
     await waitFor(() => {
       expect(mockLoginWithToken).not.toHaveBeenCalled();
       expect(googleExchange).not.toHaveBeenCalled();
-      expect(screen.getByText(AUTH_STRINGS.GOOGLE_SSO_FAILED)).toBeInTheDocument();
+      expect(screen.getAllByText(AUTH_STRINGS.GOOGLE_SSO_FAILED).length).toBeGreaterThan(0);
     });
   });
 });

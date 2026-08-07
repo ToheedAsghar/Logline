@@ -3,12 +3,14 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Loading } from "@/atoms";
 import { AUTH_STRINGS } from "@/constants/authMessages";
 import { useSession } from "@/context/SessionContext";
+import { useToast } from "@/context/ToastContext";
 import { googleExchange } from "@/repositories/api/auth";
 import { AuthShell } from "./AuthShell";
 
 export default function OAuthCallback() {
   const [searchParams] = useSearchParams();
   const { loginWithToken } = useSession();
+  const toast = useToast();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(true);
@@ -33,19 +35,20 @@ export default function OAuthCallback() {
           loginWithToken(res.access_token);
           navigate("/", { replace: true });
         })
-        .catch((err) => {
-          console.error("Google SSO exchange failed", err);
+        .catch(() => {
+          toast.error(AUTH_STRINGS.GOOGLE_SSO_FAILED);
           setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
           setIsProcessing(false);
         });
     } else {
       hasExchangedRef.current = true;
       queueMicrotask(() => {
+        toast.error(AUTH_STRINGS.GOOGLE_SSO_FAILED);
         setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
         setIsProcessing(false);
       });
     }
-  }, [searchParams, loginWithToken, navigate]);
+  }, [searchParams, loginWithToken, navigate, toast]);
 
   return (
     <AuthShell
