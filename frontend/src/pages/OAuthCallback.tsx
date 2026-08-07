@@ -18,21 +18,15 @@ export default function OAuthCallback() {
   useEffect(() => {
     if (hasExchangedRef.current) return;
 
-    let token = searchParams.get("token");
     let code = searchParams.get("code");
 
-    if (!token && !code && window.location.hash) {
+    if (!code && window.location.hash) {
       const hash = window.location.hash.replace(/^#/, "");
       const hashParams = new URLSearchParams(hash);
-      token = hashParams.get("token");
       code = hashParams.get("code");
     }
 
-    if (token) {
-      hasExchangedRef.current = true;
-      loginWithToken(token);
-      navigate("/", { replace: true });
-    } else if (code) {
+    if (code) {
       hasExchangedRef.current = true;
       googleExchange(code)
         .then((res) => {
@@ -40,8 +34,8 @@ export default function OAuthCallback() {
           navigate("/", { replace: true });
         })
         .catch((err) => {
-          const msg = err instanceof Error ? err.message : AUTH_STRINGS.GOOGLE_SSO_FAILED;
-          setError(msg || AUTH_STRINGS.GOOGLE_SSO_FAILED);
+          console.error("Google SSO exchange failed", err);
+          setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
           setIsProcessing(false);
         });
     } else {
