@@ -12,14 +12,17 @@ projects, and merging across a gap of MERGE_GAP_THRESHOLD_MINUTES or more.
 from datetime import datetime, timedelta, timezone
 
 from app.local_activity.aggregation import LocalActivityBlock, RawSessionRow, aggregate_local_activity
-from app.local_activity.constants import MERGE_GAP_THRESHOLD_MINUTES
+from app.local_activity.classification import SessionCategory
+from app.local_activity.constants import MERGE_GAP_THRESHOLD_MINUTES, MICRO_IDLE_ABSORB_SECONDS
 
 PROJECT_A = "/Users/dev/projects/logline"
 PROJECT_B = "/Users/dev/projects/other-repo"
 
 
-def _row(project: str, app: str, start: datetime, end: datetime) -> RawSessionRow:
-    return RawSessionRow(project=project, app=app, start_time=start, end_time=end)
+def _row(
+    project: str, app: str, start: datetime, end: datetime, category: SessionCategory = SessionCategory.coding
+) -> RawSessionRow:
+    return RawSessionRow(project=project, app=app, start_time=start, end_time=end, category=category)
 
 
 def _at(minute_offset: int) -> datetime:
@@ -58,6 +61,7 @@ class TestBasicMerging:
                 end_time=_at(5),
                 duration=timedelta(minutes=5),
                 apps=["vscode"],
+                category=SessionCategory.coding,
             )
         ]
 
@@ -108,13 +112,11 @@ class TestGapBoundary:
 
 
 class TestProjectIsolation:
-    def test_interleaved_different_projects_never_merge_even_with_close_timestamps(self):
-        """Each project's own rows have small (mergeable) gaps, so within a
-        project they legitimately collapse to one block -- but a version
-        that grouped by time instead of by project would see zero gap
-        between these interleaved, back-to-back rows and merge everything
-        into a single block spanning both projects. That must not happen:
-        the correct result is exactly one block per project."""
+    def test_interleaved_different_projects_never_merge_across_each_other(self):
+        """Each project's rows here have a small (mergeable-sized) gap to the row's own next occurrence,
+        but every one of those gaps is bridged by the *other* project's row sitting in between. A block
+        must never span across another project's real, interleaved activity -- so this collapses to one
+        block per row (four total), not one merged block per project spanning the other project's time."""
         rows = [
             _row(PROJECT_A, "vscode", _at(0), _at(5)),
             _row(PROJECT_B, "terminal", _at(5), _at(10)),
@@ -124,11 +126,26 @@ class TestProjectIsolation:
 
         blocks = aggregate_local_activity(rows)
 
-        assert len(blocks) == 2
-        block_a = next(block for block in blocks if block.project == PROJECT_A)
-        block_b = next(block for block in blocks if block.project == PROJECT_B)
-        assert (block_a.start_time, block_a.end_time) == (_at(0), _at(15))
-        assert (block_b.start_time, block_b.end_time) == (_at(5), _at(20))
+        assert len(blocks) == 4
+        assert [(block.project, block.start_time, block.end_time) for block in blocks] == [
+            (PROJECT_A, _at(0), _at(5)),
+            (PROJECT_B, _at(5), _at(10)),
+            (PROJECT_A, _at(10), _at(15)),
+            (PROJECT_B, _at(15), _at(20)),
+        ]
+
+    def test_same_project_rows_with_no_interleaving_still_merge_normally(self):
+        """Contrast with the above: when nothing else sits between two same-key rows, the ordinary gap
+        rule still applies and they merge into one block."""
+        rows = [
+            _row(PROJECT_A, "vscode", _at(0), _at(5)),
+            _row(PROJECT_A, "terminal", _at(7), _at(12)),
+        ]
+
+        blocks = aggregate_local_activity(rows)
+
+        assert len(blocks) == 1
+        assert (blocks[0].start_time, blocks[0].end_time) == (_at(0), _at(12))
 
 
 class TestChronologicalOrdering:
@@ -210,3 +227,38 @@ class TestTimezoneAwareDatetimes:
         blocks = aggregate_local_activity(rows)
 
         assert len(blocks) == 2
+
+
+class TestIdleAbsorption:
+    """Same 'one precise, tested meaning' standard as TestGapBoundary above, against
+    MICRO_IDLE_ABSORB_SECONDS instead of MERGE_GAP_THRESHOLD_MINUTES: an idle row strictly shorter than the
+    threshold is absorbed, one of exactly the threshold (or longer) is not."""
+
+    def test_idle_just_under_the_threshold_is_absorbed_into_the_preceding_block(self):
+        idle_duration = timedelta(seconds=MICRO_IDLE_ABSORB_SECONDS) - timedelta(milliseconds=1)
+        rows = [
+            _row(PROJECT_A, "vscode", _at(0), _at(5), SessionCategory.coding),
+            _row(None, "loginwindow", _at(5), _at(5) + idle_duration, SessionCategory.idle),
+            _row(PROJECT_B, "terminal", _at(5) + idle_duration, _at(10), SessionCategory.coding),
+        ]
+
+        blocks = aggregate_local_activity(rows)
+
+        assert len(blocks) == 2
+        assert blocks[0].project == PROJECT_A
+        assert blocks[0].end_time == _at(5) + idle_duration
+        assert blocks[1].project == PROJECT_B
+        assert blocks[1].start_time == _at(5) + idle_duration
+
+    def test_idle_of_exactly_the_threshold_is_not_absorbed(self):
+        idle_duration = timedelta(seconds=MICRO_IDLE_ABSORB_SECONDS)
+        rows = [
+            _row(PROJECT_A, "vscode", _at(0), _at(5), SessionCategory.coding),
+            _row(None, "loginwindow", _at(5), _at(5) + idle_duration, SessionCategory.idle),
+            _row(PROJECT_B, "terminal", _at(5) + idle_duration + timedelta(seconds=1), _at(10), SessionCategory.coding),
+        ]
+
+        blocks = aggregate_local_activity(rows)
+
+        assert len(blocks) == 3
+        assert blocks[1].category == SessionCategory.idle

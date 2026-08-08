@@ -375,7 +375,6 @@ export function ReviewDraft() {
     ? draft.entries.reduce((sum, e) => sum + e.allocations.reduce((aSum, a) => aSum + a.minutes, 0), 0)
     : 0;
   const blocksCount = draft ? draft.entries.length : 0;
-  const unsureCount = draft ? draft.entries.filter((e) => !!e.review_reason).length : 0;
   const unaccountedMins = draft ? draft.residual_unassigned_minutes.reduce((sum, a) => sum + a.minutes, 0) : 0;
 
   const selectedEntry = selectedIndex !== null && draft?.entries[selectedIndex] ? draft.entries[selectedIndex] : null;
@@ -476,12 +475,6 @@ export function ReviewDraft() {
           <div className="flex flex-col">
             <span className="font-mono text-[10px] tracking-wider text-[#8A887C]">BLOCKS</span>
             <span className="font-mono text-sm font-medium text-[#191917]">{blocksCount}</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="font-mono text-[10px] tracking-wider text-[#8A887C]">UNSURE</span>
-            <span className={`font-mono text-sm font-medium ${unsureCount > 0 ? "text-[#8A5A0F]" : "text-[#191917]"}`}>
-              {unsureCount}
-            </span>
           </div>
           <div className="flex flex-col">
             <span className="font-mono text-[10px] tracking-wider text-[#8A887C]">UNACCOUNTED</span>
@@ -626,19 +619,9 @@ export function ReviewDraft() {
       {draft && (
         <div className="flex gap-6 items-start">
           <div className="flex-1 min-w-0 space-y-3">
-            {unsureCount > 0 && (
-              <div className="flex items-center gap-3 rounded-lg border border-[#E4CFA3] bg-[#F7EDD8] p-3 text-xs text-[#8A5A0F]">
-                <span className="font-mono font-bold uppercase rounded border border-[#E4CFA3] bg-[#FFFDF7] px-2 py-0.5">
-                  {unsureCount} UNSURE
-                </span>
-                <span>One or more blocks were inferred from very few signals. Please review before saving.</span>
-              </div>
-            )}
-
             {draft.entries.map((entry, idx) => {
               const entryMins = entry.allocations.reduce((sum, a) => sum + a.minutes, 0);
               const isSelected = selectedIndex === idx;
-              const isLowConfidence = !!entry.review_reason;
 
               return (
                 <div
@@ -646,12 +629,10 @@ export function ReviewDraft() {
                   className={`flex rounded-lg border bg-[#FFFDF7] transition-all ${
                     isSelected
                       ? "border-[#14603C] ring-2 ring-[#14603C]/20 shadow-md"
-                      : isLowConfidence
-                      ? "border-[#E4CFA3] hover:border-[#CFCABA]"
                       : "border-[#E3DFD2] hover:border-[#CFCABA]"
                   }`}
                 >
-                  <div className={`w-1 rounded-l-lg ${isLowConfidence ? "bg-[#8A5A0F]" : "bg-[#14603C]"}`} />
+                  <div className="w-1 rounded-l-lg bg-[#14603C]" />
                   <div className="flex-1 p-4">
                     <div className="flex items-baseline gap-3">
                       <span className="font-mono text-sm font-medium text-[#191917]">{formatMinutes(entryMins)}</span>
@@ -660,16 +641,11 @@ export function ReviewDraft() {
                           ? `${entry.source_remote_event_ids?.length} remote signals`
                           : "local activity"}
                       </span>
-                      {isLowConfidence && (
-                        <span className="font-mono text-[10px] tracking-wider rounded border border-[#E4CFA3] bg-[#F7EDD8] px-1.5 py-0.5 text-[#8A5A0F]">
-                          UNSURE
-                        </span>
-                      )}
                     </div>
 
                     <p className="mt-2 text-sm text-[#191917] leading-relaxed">{entry.description}</p>
 
-                    {isLowConfidence && (
+                    {entry.review_reason && (
                       <p className="mt-1.5 text-xs text-[#8A5A0F] leading-snug">{entry.review_reason}</p>
                     )}
 
@@ -692,15 +668,13 @@ export function ReviewDraft() {
                         >
                           {isSelected ? "Editing" : "Edit"}
                         </button>
-                        {isLowConfidence && (
-                          <button
-                            type="button"
-                            onClick={() => deleteEntry(idx)}
-                            className="text-xs text-[#8A887C] hover:text-[#A33A22]"
-                          >
-                            Discard
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => deleteEntry(idx)}
+                          className="text-xs text-[#8A887C] hover:text-[#A33A22]"
+                        >
+                          Discard
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -823,7 +797,7 @@ export function ReviewDraft() {
                   {selectedEntry.review_reason && (
                     <div className="rounded bg-[#F7EDD8] p-2 space-y-1 border border-[#E4CFA3]">
                       <div className="flex justify-between font-mono text-[10px] text-[#8A5A0F]">
-                        <span>NEEDS REVIEW</span>
+                        <span>REVIEW NOTE</span>
                       </div>
                       <p className="text-[11px] text-[#191917]">{selectedEntry.review_reason}</p>
                     </div>

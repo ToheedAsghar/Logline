@@ -22,17 +22,25 @@ from app.agent.reconciliation.verifier import (
     verify_draft,
 )
 from app.local_activity.aggregation import LocalActivityBlock
+from app.local_activity.classification import SessionCategory
 from app.matching.matcher import MatchedGroup, RemoteEventData
 
 UTC = timezone.utc
 DAY = date(2026, 7, 24)
 
 
-def make_block(project="logline", start_hour=9, start_minute=0, minutes=90, apps=("vscode",)):
+def make_block(
+    project="logline", start_hour=9, start_minute=0, minutes=90, apps=("vscode",), category=SessionCategory.coding
+):
     start = datetime(2026, 7, 24, start_hour, start_minute, tzinfo=UTC)
     duration = timedelta(minutes=minutes)
     return LocalActivityBlock(
-        project=project, start_time=start, end_time=start + duration, duration=duration, apps=list(apps)
+        project=project,
+        start_time=start,
+        end_time=start + duration,
+        duration=duration,
+        apps=list(apps),
+        category=category,
     )
 
 

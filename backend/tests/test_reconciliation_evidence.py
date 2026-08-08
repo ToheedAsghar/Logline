@@ -13,13 +13,22 @@ from app.agent.reconciliation.evidence import (
     NO_BLOCKS_LINE, NO_MATCHED_EVIDENCE_LINE, NO_UNMATCHED_EVENTS_LINE, build_evidence,
 )
 from app.local_activity.aggregation import LocalActivityBlock
+from app.local_activity.classification import SessionCategory
 from app.matching.matcher import MatchedGroup, RemoteEventData
 
 UTC = timezone.utc
 KARACHI = timezone(timedelta(hours=5))
 
 
-def make_block(project="logline", start_hour=9, minutes=90, apps=None, day=24):
+def make_block(
+    project="logline",
+    start_hour=9,
+    minutes=90,
+    apps=None,
+    day=24,
+    category=SessionCategory.coding,
+    title_digest=None,
+):
     start = datetime(2026, 7, day, start_hour, 0, tzinfo=UTC)
     duration = timedelta(minutes=minutes)
     return LocalActivityBlock(
@@ -28,6 +37,8 @@ def make_block(project="logline", start_hour=9, minutes=90, apps=None, day=24):
         end_time=start + duration,
         duration=duration,
         apps=["vscode", "terminal"] if apps is None else apps,
+        category=category,
+        title_digest=[] if title_digest is None else title_digest,
     )
 
 
@@ -154,6 +165,43 @@ class TestRendering:
         assert "Total measured time across all blocks: 0 min." in content
 
 
+class TestZeroMinuteBlockExclusion:
+    """A block that rounds to 0 measured minutes can never be legally cited -- BlockAllocation.minutes
+    requires a value greater than zero -- so it must never be assigned an id or rendered at all."""
+
+    def test_unmatched_zero_minute_block_gets_no_id_and_is_not_rendered(self):
+        zero = make_block(project="flicker", minutes=0)
+        real = make_block(project="logline", minutes=30)
+
+        bundle = build_evidence([], [zero, real], [])
+
+        assert list(bundle.blocks_by_id.values()) == [real]
+        assert "flicker" not in bundle.user_content
+
+    def test_matched_zero_minute_block_folds_its_events_into_unmatched_instead_of_dropping_them(self):
+        zero = make_block(project="flicker", minutes=0)
+        event = make_event(external_id="gh:pr:99", summary="Quick fix")
+
+        bundle = build_evidence([MatchedGroup(block=zero, events=[event])], [], [])
+
+        assert bundle.blocks_by_id == {}
+        assert "gh:pr:99" in bundle.remote_event_ids
+        assert "id: gh:pr:99" in bundle.user_content
+
+    def test_zero_minute_blocks_do_not_affect_total_measured_time(self):
+        zero = make_block(project="flicker", minutes=0)
+        real = make_block(project="logline", minutes=45)
+
+        content = build_evidence([], [zero, real], []).user_content
+
+        assert "Total measured time across all blocks: 45 min." in content
+
+    def test_all_blocks_zero_minutes_renders_the_no_blocks_marker(self):
+        content = build_evidence([], [make_block(project="flicker", minutes=0)], []).user_content
+
+        assert NO_BLOCKS_LINE in content
+
+
 class TestTimezoneHandling:
     def test_datetimes_are_rendered_in_the_requested_timezone(self):
         block = make_block(start_hour=20, minutes=60)
@@ -171,6 +219,7 @@ class TestTimezoneHandling:
             end_time=datetime(2026, 7, 24, 10, 0),
             duration=timedelta(minutes=60),
             apps=["vscode"],
+            category=SessionCategory.coding,
         )
 
         with pytest.raises(ValueError, match="timezone-aware"):

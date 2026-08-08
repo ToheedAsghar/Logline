@@ -28,6 +28,7 @@ from app.agent.reconciliation.schemas import (
     find_duration_language,
 )
 from app.local_activity.aggregation import LocalActivityBlock
+from app.local_activity.classification import SessionCategory
 from app.matching.matcher import MatchedGroup, RemoteEventData
 from app.reminders.generator import Reminder
 
@@ -35,11 +36,12 @@ UTC = timezone.utc
 DAY = date(2026, 7, 24)
 
 
-def make_block(project="logline", start_hour=9, minutes=90):
+def make_block(project="logline", start_hour=9, minutes=90, category=SessionCategory.coding):
     start = datetime(2026, 7, 24, start_hour, 0, tzinfo=UTC)
     duration = timedelta(minutes=minutes)
     return LocalActivityBlock(
-        project=project, start_time=start, end_time=start + duration, duration=duration, apps=["vscode"]
+        project=project, start_time=start, end_time=start + duration, duration=duration, apps=["vscode"],
+        category=category,
     )
 
 

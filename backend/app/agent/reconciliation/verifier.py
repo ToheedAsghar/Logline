@@ -16,14 +16,16 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.agent.reconciliation.evidence import EvidenceBundle, block_minutes
+from app.agent.reconciliation.evidence import EvidenceBundle, block_minutes, compute_overlaps
 from app.agent.reconciliation.schemas import WorkLogDraft
+from app.local_activity.classification import SessionCategory
 
 CHECK_CONSERVATION = "conservation"
 CHECK_UNKNOWN_ID = "unknown_id"
 CHECK_COMPLETENESS = "completeness"
 CHECK_CROSS_ENTRY_DUPLICATE = "cross_entry_duplicate"
 CHECK_DUPLICATE_REMINDER = "duplicate_reminder"
+CHECK_UNEXPLAINED_OVERLAP = "unexplained_overlap"
 
 RESIDUAL_FIELD = "residual_unassigned_minutes"
 
@@ -287,12 +289,57 @@ def _check_duplicate_reminders(draft: WorkLogDraft, issues: list[VerificationIss
         )
 
 
+def _check_unexplained_overlap(evidence: EvidenceBundle, issues: list[VerificationIssue]) -> None:
+    """Any two blocks whose measured time windows overlap must involve a Meeting block.
+
+    Overlapping blocks are allowed by design -- a meeting's full span and a genuinely concurrent
+    workstream may legitimately both be charged at their full measured minutes (see
+    `aggregation.py::_merge_unlimited_within_day` for how a Meeting block's span is produced). This is not
+    an exemption from conservation: `_check_conservation` above still requires each block's own charged
+    minutes to equal its own measured minutes, independently, so an overlap never lets time be double
+    -counted within a single block's total. What this check guards against is a different failure: two
+    *non*-Meeting blocks overlapping in time should be structurally impossible (raw tracker sessions are
+    exclusive, and non-Meeting aggregation still uses the ordinary gap threshold), so if it happens anyway
+    it signals a classification or aggregation bug quietly inflating the day's total tracked minutes
+    beyond what real, non-double-booked time supports -- exactly the kind of silently-lost-or-invented time
+    this whole verifier exists to catch.
+    """
+    overlaps = compute_overlaps(evidence.blocks_by_id)
+    reported: set[frozenset[int]] = set()
+
+    for block_id, overlapping_ids in overlaps.items():
+        block = evidence.blocks_by_id[block_id]
+        for other_id in overlapping_ids:
+            pair = frozenset({block_id, other_id})
+            if pair in reported:
+                continue
+
+            other = evidence.blocks_by_id[other_id]
+            if block.category == SessionCategory.meeting or other.category == SessionCategory.meeting:
+                continue
+
+            reported.add(pair)
+            issues.append(
+                VerificationIssue(
+                    severity="error",
+                    check=CHECK_UNEXPLAINED_OVERLAP,
+                    detail=(
+                        f"block {block_id} ({block.category.value}) and block {other_id} "
+                        f"({other.category.value}) have overlapping measured time windows, but neither is a "
+                        f"Meeting block -- overlap is only legitimate when a meeting's span covers "
+                        f"concurrent work"
+                    ),
+                    block_id=block_id,
+                )
+            )
+
+
 def verify_draft(draft: WorkLogDraft, evidence: EvidenceBundle) -> VerificationResult:
     """Check a Stage 5 draft against its evidence and report every problem.
 
     Verifies: block charged minutes equal measured minutes; all named block/event ids were in evidence;
     every block is accounted for; no block is overcharged across entries; no remote event has duplicate
-    reminders.
+    reminders; no two overlapping blocks exist unless a Meeting block explains the overlap.
 
     Returns `VerificationResult` with `passed` True only if no error-severity issue exists. Warnings
     mark things for human review but do not fail the draft. The draft is never modified; a failing
@@ -308,6 +355,7 @@ def verify_draft(draft: WorkLogDraft, evidence: EvidenceBundle) -> VerificationR
     _check_completeness(charges, evidence, issues)
     _check_cross_entry_duplicates(charges, evidence, issues)
     _check_duplicate_reminders(draft, issues)
+    _check_unexplained_overlap(evidence, issues)
 
     passed = not any(issue.severity == "error" for issue in issues)
     return VerificationResult(passed=passed, issues=issues)

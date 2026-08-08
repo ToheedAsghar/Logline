@@ -34,6 +34,7 @@ from app.db.session import get_db
 from app.entries.models import Entry, EntryFormat, EntryStatus, EntryVersion, EntryVersionSource
 from app.entries.schemas import EntryResponse, normalize_entry_content
 from app.local_activity.aggregation import RawSessionRow, aggregate_local_activity
+from app.local_activity.classification import SessionCategory, classify_session
 from app.matching.matcher import MatchResult, RemoteEventData, ResolvedLocalBlock, match_local_blocks_to_remote_events
 from app.matching.models import RemoteEvent
 from app.matching.resolution import resolve_project_identities
@@ -79,11 +80,23 @@ class ReconciliationApproveRequest(ReconciliationDateRange):
 
 
 def _gather_evidence(db: Session, user_id: int, start_dt: datetime, end_dt: datetime) -> MatchResult:
-    """Run Stages 3-4 for one user and range: read stored evidence, then match local work to remote events.
+    """Run Stages 3-4 for one user and range: classify and aggregate local work, then match it to remote events.
 
     Reads only. Remote events are whatever `remote_events` already holds -- populating that table is the
     fetch pipeline's job, not this endpoint's, so reconciliation reports on the evidence that exists
     rather than silently depending on a live fetch succeeding.
+
+    Sessions are filtered only on `is_idle` -- unlike an earlier version of this function, they are never
+    filtered on `project_path`. A missing project is no longer a reason to drop a session; it is just a
+    session `classify_session` (Pass 1) has to categorize without project context, which most browser
+    activity has anyway. Classification happens here, per row, before `aggregate_local_activity` groups
+    rows by (project, category) instead of by project alone.
+
+    Idle-category blocks (screen-locked time the `is_idle` DB flag misses -- see `classification.py`) are
+    dropped here, after aggregation, before matching -- excluded from the day's tracked total entirely,
+    never folded into `residual_unassigned_minutes`. Idle time is proven non-work; residual is genuine
+    ambiguity about real work. Conflating them would misrepresent a block the system is certain about as
+    one it merely couldn't classify.
     """
     remote_events = [
         RemoteEventData(
@@ -113,27 +126,41 @@ def _gather_evidence(db: Session, user_id: int, start_dt: datetime, end_dt: date
             LocalSession.started_at < end_dt,
             LocalSession.ended_at > start_dt,
             LocalSession.is_idle.is_(False),
-            LocalSession.project_path.isnot(None),
         )
         .order_by(LocalSession.started_at.asc(), LocalSession.id.asc())
         .all()
     )
 
-    blocks = aggregate_local_activity(
-        [
+    raw_rows = []
+    for session in sessions:
+        classification = classify_session(
+            bundle_id=session.bundle_id,
+            window_title=session.window_title,
+            project_path=session.project_path,
+            context_detail=session.context_detail,
+        )
+        raw_rows.append(
             RawSessionRow(
                 project=session.project_path,
                 app=session.app_name,
                 start_time=session.started_at,
                 end_time=session.ended_at,
+                category=classification.category,
+                window_title=session.window_title,
+                meeting_name=classification.meeting_name,
             )
-            for session in sessions
-        ]
-    )
+        )
+
+    blocks = [
+        block for block in aggregate_local_activity(raw_rows) if block.category != SessionCategory.idle
+    ]
 
     identity_cache: dict[str, dict[str, str | None]] = {}
     resolved = []
     for block in blocks:
+        if block.project is None:
+            resolved.append(ResolvedLocalBlock(block=block, remote_identities={}))
+            continue
         if block.project not in identity_cache:
             identity_cache[block.project] = resolve_project_identities(db, user_id, block.project)
         resolved.append(ResolvedLocalBlock(block=block, remote_identities=identity_cache[block.project]))

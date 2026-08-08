@@ -16,6 +16,7 @@ No real LLM/MCP/database calls are made anywhere in this file.
 from datetime import datetime, timedelta, timezone
 
 from app.local_activity.aggregation import LocalActivityBlock
+from app.local_activity.classification import SessionCategory
 from app.matching.constants import MATCH_BUFFER_MINUTES
 from app.matching.matcher import MatchedGroup, RemoteEventData, ResolvedLocalBlock, match_local_blocks_to_remote_events
 
@@ -27,13 +28,16 @@ def _at(minute_offset: int) -> datetime:
     return datetime(2026, 7, 24, 9, 0) + timedelta(minutes=minute_offset)
 
 
-def _block(start: int, end: int, project: str = "/Users/dev/logline") -> LocalActivityBlock:
+def _block(
+    start: int, end: int, project: str = "/Users/dev/logline", category: SessionCategory = SessionCategory.coding
+) -> LocalActivityBlock:
     return LocalActivityBlock(
         project=project,
         start_time=_at(start),
         end_time=_at(end),
         duration=_at(end) - _at(start),
         apps=["vscode"],
+        category=category,
     )
 
 
@@ -209,9 +213,12 @@ class TestTimezoneAwareDatetimes:
             end_time=self._aware_at(end),
             duration=self._aware_at(end) - self._aware_at(start),
             apps=["vscode"],
+            category=SessionCategory.coding,
         )
 
-    def _aware_event(self, minute_offset: int, external_id: str, remote_project_id: str = GITHUB_REPO) -> RemoteEventData:
+    def _aware_event(
+        self, minute_offset: int, external_id: str, remote_project_id: str = GITHUB_REPO
+    ) -> RemoteEventData:
         return RemoteEventData(
             external_id=external_id,
             source="github",
