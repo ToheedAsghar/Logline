@@ -1,30 +1,16 @@
-"""Tests for the Stage 5 reconciliation call (app/agent/reconciliation/reconciler.py).
+"""Test reconciliation orchestration, descriptions, reminders, and attached verification results."""
 
-Runs entirely against a scripted fake `LLMProvider` -- the same pattern as test_llm_run_structured_default.py --
-so the merge behaviour is observed against a known model response rather than a real one.
-
-The central thing under test is the pre-built-reminder merge: pre-built reminders must survive the call
-untouched, model reminders must survive it untouched, and neither may be dropped or duplicated. Pre-built
-reminders are derived from `unmatched_events` (never accepted as a separate argument), so every test below
-that wants a pre-built reminder gets one by including its underlying event in `unmatched_events`, not by
-constructing a `Reminder` by hand.
-
-`TestVerificationIsAttachedToTheResult` covers the Stage 5/Stage 6 wiring, whose one non-negotiable property is
-that a draft failing verification still comes back in full. A scripted provider is what makes that testable at
-all: it can return a draft broken in one exact way, which no real model can be relied on to do.
-"""
-
+import asyncio
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from app.agent.llm.base import AgentResponse, LLMProvider, Message
-from app.agent.reconciliation.prompt import SYSTEM_PROMPT
+from app.agent.llm.base import AgentResponse, LLMProvider, LLMStructuredOutputError, Message
 from app.agent.reconciliation.reconciler import (
-    NOTE_LAST_RESORT, prebuilt_reminder_to_draft_reminder, reconcile_evidence,
+    MAX_CONCURRENT_DESCRIPTION_REQUESTS, NOTE_LAST_RESORT, prebuilt_reminder_to_draft_reminder, reconcile_evidence,
 )
 from app.agent.reconciliation.schemas import (
-    REMINDER_NOTE_MAX_LENGTH, BlockAllocation, DraftEntry, DraftReminder, EntryTag, WorkLogDraft,
+    DESCRIPTION_MAX_LENGTH, REMINDER_NOTE_MAX_LENGTH, EntryDescriptionProposal, EntryTag, TagSuggestion,
     find_duration_language,
 )
 from app.local_activity.aggregation import LocalActivityBlock
@@ -36,16 +22,16 @@ UTC = timezone.utc
 DAY = date(2026, 7, 24)
 
 
-def make_block(project="logline", start_hour=9, minutes=90, category=SessionCategory.coding):
+def make_block(project="logline", start_hour=9, minutes=90, category=SessionCategory.coding, meeting_name=None):
     start = datetime(2026, 7, 24, start_hour, 0, tzinfo=UTC)
     duration = timedelta(minutes=minutes)
     return LocalActivityBlock(
         project=project, start_time=start, end_time=start + duration, duration=duration, apps=["vscode"],
-        category=category,
+        category=category, meeting_name=meeting_name,
     )
 
 
-def make_event(external_id="gh:pr:41", source="github", project="Toheed/logline", summary="Add schema", hour=9):
+def make_event(external_id="logline#41", source="github", project="logline", summary="Add schema", hour=9):
     return RemoteEventData(
         external_id=external_id,
         source=source,
@@ -56,34 +42,19 @@ def make_event(external_id="gh:pr:41", source="github", project="Toheed/logline"
     )
 
 
-def make_draft_entry(block_id=1, minutes=90, description="Worked on the reconciliation schema"):
-    return DraftEntry(
-        date=DAY,
-        project="logline",
-        allocations=[BlockAllocation(block_id=block_id, minutes=minutes)],
-        tag=EntryTag.coding,
-        description=description,
-        source_remote_event_ids=["gh:pr:41"],
-    )
-
-
-def make_model_reminder(note="Which project did the unattributed block belong to?"):
-    return DraftReminder(note=note, source="slack", day=DAY, source_remote_event_ids=["slack:msg:9"])
-
-
 class ScriptedProvider(LLMProvider):
-    """Returns a fixed draft and records exactly what it was asked."""
+    """Returns a fixed `EntryDescriptionProposal` for every description call, and records every call."""
 
-    def __init__(self, draft: WorkLogDraft):
-        self.draft = draft
-        self.calls: list[tuple[list[Message], type]] = []
+    def __init__(self, proposal: EntryDescriptionProposal | None = None):
+        self.proposal = proposal or EntryDescriptionProposal(description="Worked on this entry.")
+        self.calls: list[list[Message]] = []
 
     async def run_turn(self, messages, tools) -> AgentResponse:
         raise AssertionError("reconcile_evidence must use run_structured, never run_turn")
 
     async def run_structured(self, messages, response_model):
-        self.calls.append((messages, response_model))
-        return self.draft
+        self.calls.append(messages)
+        return self.proposal
 
 
 class ExplodingProvider(LLMProvider):
@@ -97,58 +68,268 @@ class ExplodingProvider(LLMProvider):
         raise self.error
 
 
+class ConcurrencyTrackingProvider(LLMProvider):
+    """Records how many `run_structured` calls were ever simultaneously in flight."""
+
+    def __init__(self):
+        self.in_flight = 0
+        self.max_in_flight = 0
+
+    async def run_turn(self, messages, tools) -> AgentResponse:
+        raise AssertionError("not exercised")
+
+    async def run_structured(self, messages, response_model):
+        self.in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        await asyncio.sleep(0)
+        self.in_flight -= 1
+        return EntryDescriptionProposal(description="ok")
+
+
 class TestTheCallItself:
     @pytest.mark.asyncio
-    async def test_calls_run_structured_with_the_system_prompt_and_the_worklogdraft_schema(self):
-        provider = ScriptedProvider(WorkLogDraft())
+    async def test_one_provider_call_happens_per_non_meeting_entry(self):
+        blocks = [make_block(project="logline", minutes=30), make_block(project="other-repo", minutes=20)]
+        provider = ScriptedProvider()
 
-        await reconcile_evidence([MatchedGroup(block=make_block(), events=[make_event()])], [], [], provider)
+        await reconcile_evidence([], blocks, [], provider)
 
-        assert len(provider.calls) == 1
-        messages, response_model = provider.calls[0]
-        assert response_model is WorkLogDraft
-        assert [m.role for m in messages] == ["system", "user"]
-        assert messages[0].content == SYSTEM_PROMPT
+        assert len(provider.calls) == 2
 
     @pytest.mark.asyncio
-    async def test_user_message_is_the_assembled_evidence(self):
-        provider = ScriptedProvider(WorkLogDraft())
+    async def test_meeting_entries_never_call_the_provider(self):
+        meeting = make_block(project=None, minutes=30, category=SessionCategory.meeting)
+        provider = ScriptedProvider()
+
+        event = make_event(external_id="cal:evt:1", source="calendar", summary="Design Review")
+        await reconcile_evidence([MatchedGroup(block=meeting, events=[event])], [], [], provider)
+
+        assert provider.calls == []
+
+    @pytest.mark.asyncio
+    async def test_the_entrys_own_evidence_is_sent_not_the_whole_days(self):
+        provider = ScriptedProvider()
 
         await reconcile_evidence([], [make_block(project="logline", minutes=45)], [], provider)
 
-        messages, _ = provider.calls[0]
-        user_content = messages[1].content
-        assert "block 1 |" in user_content
-        assert "45 min measured" in user_content
-        assert "project: logline" in user_content
+        sent = "\n".join(m.content or "" for m in provider.calls[0])
+        assert "block 1 |" in sent
+        assert "45 min measured" in sent
+        assert "project: logline" in sent
 
     @pytest.mark.asyncio
-    async def test_provider_errors_propagate_rather_than_being_swallowed_into_an_empty_draft(self):
+    async def test_provider_errors_other_than_structured_output_error_propagate(self):
+        """A gate violation or an LLMStructuredOutputError both fall back safely inside describe_entry; a raw,
+        unexpected error is a different class of problem and must not be silently swallowed."""
         provider = ExplodingProvider(RuntimeError("upstream exploded"))
 
         with pytest.raises(RuntimeError, match="upstream exploded"):
             await reconcile_evidence([], [make_block()], [], provider)
 
+    @pytest.mark.asyncio
+    async def test_a_structured_output_error_does_not_propagate_it_falls_back_instead(self):
+        provider = ExplodingProvider(LLMStructuredOutputError("truncated"))
+
+        result = await reconcile_evidence([], [make_block()], [], provider)
+
+        assert len(result.draft.entries) == 1
+        assert result.draft.entries[0].description
+
+
+class TestConcurrency:
+    @pytest.mark.asyncio
+    async def test_description_requests_are_concurrent_and_bounded(self):
+        provider = ConcurrencyTrackingProvider()
+        blocks = [
+            make_block(project=f"proj-{i}", start_hour=9 + i, minutes=10)
+            for i in range(MAX_CONCURRENT_DESCRIPTION_REQUESTS + 3)
+        ]
+
+        await reconcile_evidence([], blocks, [], provider)
+
+        assert provider.max_in_flight > 1
+        assert provider.max_in_flight <= MAX_CONCURRENT_DESCRIPTION_REQUESTS
+
+
+class TestMeetingEntriesAreDeterministic:
+    @pytest.mark.asyncio
+    async def test_description_is_the_calendar_events_title_verbatim(self):
+        meeting = make_block(project=None, minutes=30, category=SessionCategory.meeting)
+        event = make_event(external_id="cal:evt:1", source="calendar", summary="Team Standup Meeting")
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence([MatchedGroup(block=meeting, events=[event])], [], [], provider)
+
+        assert result.draft.entries[0].description == "Team Standup Meeting"
+        assert result.draft.entries[0].tag == EntryTag.meeting
+
+    @pytest.mark.asyncio
+    async def test_no_matched_event_and_no_tracked_name_falls_back_to_the_unidentified_label(self):
+        meeting = make_block(project=None, minutes=30, category=SessionCategory.meeting)
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence([], [meeting], [], provider)
+
+        assert result.draft.entries[0].description == "Meeting (unidentified)"
+
+    @pytest.mark.asyncio
+    async def test_no_matched_event_uses_the_blocks_own_tracked_meeting_name(self):
+        """The tracker captured the real Meet/Zoom name -- it beats the generic placeholder whenever it exists."""
+        meeting = make_block(
+            project=None, minutes=30, category=SessionCategory.meeting, meeting_name="Phase 4 Pipeline Sync"
+        )
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence([], [meeting], [], provider)
+
+        assert result.draft.entries[0].description == "Phase 4 Pipeline Sync"
+
+    @pytest.mark.asyncio
+    async def test_a_matched_event_title_still_wins_over_the_tracked_meeting_name(self):
+        meeting = make_block(
+            project=None, minutes=30, category=SessionCategory.meeting, meeting_name="meet.google.com/abc-defg-hij"
+        )
+        event = make_event(external_id="cal:evt:1", source="calendar", summary="Team Standup Meeting")
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence([MatchedGroup(block=meeting, events=[event])], [], [], provider)
+
+        assert result.draft.entries[0].description == "Team Standup Meeting"
+
+    @pytest.mark.asyncio
+    async def test_an_over_long_calendar_title_is_truncated_and_verifies(self):
+        meeting = make_block(project=None, minutes=30, category=SessionCategory.meeting)
+        event = make_event(external_id="cal:evt:1", source="calendar", summary="Planning " * 100)
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence([MatchedGroup(block=meeting, events=[event])], [], [], provider)
+
+        description = result.draft.entries[0].description
+        assert len(description) <= DESCRIPTION_MAX_LENGTH
+        assert description.endswith("...")
+        assert result.verification.passed
+
+    @pytest.mark.asyncio
+    async def test_calendar_title_with_duration_language_uses_safe_fallback_and_verifies(self):
+        meeting = make_block(project=None, minutes=30, category=SessionCategory.meeting)
+        event = make_event(external_id="cal:evt:1", source="calendar", summary="30 min planning sync")
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence([MatchedGroup(block=meeting, events=[event])], [], [], provider)
+
+        assert result.draft.entries[0].description == "Meeting"
+        assert result.verification.passed
+
+    @pytest.mark.asyncio
+    async def test_a_matched_event_without_a_title_falls_back_to_the_tracked_meeting_name(self):
+        meeting = make_block(
+            project=None, minutes=30, category=SessionCategory.meeting, meeting_name="Phase 4 Pipeline Sync"
+        )
+        event = make_event(external_id="cal:evt:1", source="calendar", summary=None)
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence([MatchedGroup(block=meeting, events=[event])], [], [], provider)
+
+        assert result.draft.entries[0].description == "Phase 4 Pipeline Sync"
+
+    @pytest.mark.asyncio
+    async def test_a_whitespace_only_tracked_name_is_treated_as_absent(self):
+        meeting = make_block(project=None, minutes=30, category=SessionCategory.meeting, meeting_name="   ")
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence([], [meeting], [], provider)
+
+        assert result.draft.entries[0].description == "Meeting (unidentified)"
+
+    @pytest.mark.asyncio
+    async def test_an_over_long_tracked_name_is_truncated_rather_than_failing_validation(self):
+        """`DraftEntry.description` caps length -- an over-long window-title-derived name must not lose the entry."""
+        meeting = make_block(
+            project=None, minutes=30, category=SessionCategory.meeting, meeting_name="Sync " * 200
+        )
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence([], [meeting], [], provider)
+
+        description = result.draft.entries[0].description
+        assert len(description) <= DESCRIPTION_MAX_LENGTH
+        assert description.endswith("...")
+
+    @pytest.mark.asyncio
+    async def test_multiple_matched_events_use_the_earliest_and_flag_review_reason(self):
+        meeting = make_block(project=None, minutes=60, category=SessionCategory.meeting)
+        later = make_event(external_id="cal:evt:2", source="calendar", summary="Later Title", hour=9)
+        earlier = make_event(external_id="cal:evt:1", source="calendar", summary="Earlier Title", hour=8)
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence([MatchedGroup(block=meeting, events=[later, earlier])], [], [], provider)
+
+        assert result.draft.entries[0].description == "Earlier Title"
+        assert result.draft.entries[0].review_reason is not None
+
+
+class TestEntryFormationFlowsIntoTheDraft:
+    @pytest.mark.asyncio
+    async def test_two_separate_projects_each_get_their_own_entry_and_description(self):
+        provider = ScriptedProvider(EntryDescriptionProposal(description="Session description."))
+        blocks = [make_block(project="logline", minutes=30), make_block(project="other-repo", minutes=20)]
+
+        result = await reconcile_evidence([], blocks, [], provider)
+
+        assert len(result.draft.entries) == 2
+        assert all(entry.description == "Session description." for entry in result.draft.entries)
+
+    @pytest.mark.asyncio
+    async def test_residual_unassigned_minutes_is_always_empty(self):
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence([], [make_block(minutes=90)], [], provider)
+
+        assert result.draft.residual_unassigned_minutes == []
+
+    @pytest.mark.asyncio
+    async def test_a_valid_tag_override_from_the_provider_is_used(self):
+        proposal = EntryDescriptionProposal(
+            description="Debugging a flaky test.",
+            tag_suggestion=TagSuggestion(tag=EntryTag.debugging, reason="Evidence shows debugging"),
+        )
+        provider = ScriptedProvider(proposal)
+
+        result = await reconcile_evidence([], [make_block(category=SessionCategory.coding)], [], provider)
+
+        assert result.draft.entries[0].tag == EntryTag.debugging
+
+    @pytest.mark.asyncio
+    async def test_overlap_review_reason_from_entry_formation_survives_into_the_draft(self):
+        meeting = make_block(project=None, start_hour=9, minutes=60, category=SessionCategory.meeting)
+        coding = make_block(project="logline", start_hour=9, minutes=20, category=SessionCategory.coding)
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence([], [meeting, coding], [], provider)
+
+        coding_entry = next(e for e in result.draft.entries if e.tag == EntryTag.coding)
+        assert coding_entry.review_reason is not None
+        assert "Meeting" in coding_entry.review_reason
+
 
 class TestPrebuiltReminderMerge:
     @pytest.mark.asyncio
     async def test_the_reminders_built_note_text_is_not_sent_to_the_model(self):
-        """The raw unmatched event legitimately appears in the evidence (the model needs to know not to
-        re-raise it), but the reminder's synthesized note is only built after the model responds --
-        `build_evidence` has no reminders parameter, so there is no path for that wording to reach the prompt.
-        """
+        """The raw unmatched event legitimately appears in the evidence (the model needs to know not to re-raise it),
+        but the reminder's synthesized note is only built after the call -- `build_evidence` has no reminders parameter,
+        so there is no path for that wording to reach the prompt."""
         event = make_event(external_id="ABC-99", source="jira", project="ABC", summary="Moved to Done")
-        provider = ScriptedProvider(WorkLogDraft())
+        provider = ScriptedProvider()
 
         result = await reconcile_evidence([], [make_block()], [event], provider)
 
-        sent = "\n".join(m.content or "" for m in provider.calls[0][0])
+        sent = "\n".join(m.content or "" for m in provider.calls[0])
         assert result.draft.reminders[0].note not in sent
 
     @pytest.mark.asyncio
     async def test_prebuilt_reminders_appear_in_the_returned_draft(self):
         event = make_event(external_id="ABC-99", source="jira", project="ABC")
-        provider = ScriptedProvider(WorkLogDraft())
+        provider = ScriptedProvider()
 
         draft = (await reconcile_evidence([], [make_block()], [event], provider)).draft
 
@@ -157,97 +338,30 @@ class TestPrebuiltReminderMerge:
         assert draft.reminders[0].source_remote_event_ids == ["ABC-99"]
 
     @pytest.mark.asyncio
-    async def test_prebuilt_reminders_come_first_then_model_reminders_in_order(self):
-        events = [make_event("ABC-1", "jira", project="ABC"), make_event("gh:pr:2")]
-        model_reminders = [make_model_reminder("First model question?"), make_model_reminder("Second question?")]
-        provider = ScriptedProvider(WorkLogDraft(reminders=model_reminders))
+    async def test_multiple_prebuilt_reminders_preserve_generation_order(self):
+        events = [make_event("ABC-1", "jira", project="ABC"), make_event("logline#2")]
+        provider = ScriptedProvider()
 
         draft = (await reconcile_evidence([], [make_block()], events, provider)).draft
 
-        assert len(draft.reminders) == 4
-        assert [r.source for r in draft.reminders[:2]] == ["jira", "github"]
-        assert [r.note for r in draft.reminders[2:]] == ["First model question?", "Second question?"]
-
-    @pytest.mark.asyncio
-    async def test_model_reminders_survive_when_there_are_no_prebuilt_ones(self):
-        model_reminder = make_model_reminder()
-        provider = ScriptedProvider(WorkLogDraft(reminders=[model_reminder]))
-
-        draft = (await reconcile_evidence([], [make_block()], [], provider)).draft
-
-        assert draft.reminders == [model_reminder]
-
-    @pytest.mark.asyncio
-    async def test_no_reminder_is_duplicated_by_the_merge(self):
-        event = make_event("ABC-1", "jira", project="ABC")
-        provider = ScriptedProvider(WorkLogDraft(reminders=[make_model_reminder()]))
-
-        draft = (await reconcile_evidence([], [make_block()], [event], provider)).draft
-
-        notes = [r.note for r in draft.reminders]
-        assert len(notes) == len(set(notes)) == 2
+        assert len(draft.reminders) == 2
+        assert [r.source for r in draft.reminders] == ["jira", "github"]
 
     @pytest.mark.asyncio
     async def test_empty_reminder_list_yields_a_draft_with_no_reminders(self):
-        provider = ScriptedProvider(WorkLogDraft())
+        provider = ScriptedProvider()
 
         draft = (await reconcile_evidence([], [make_block()], [], provider)).draft
 
         assert draft.reminders == []
 
 
-class TestNothingElseFromTheModelIsDropped:
-    @pytest.mark.asyncio
-    async def test_entries_pass_through_unchanged(self):
-        entries = [make_draft_entry(block_id=1, minutes=60), make_draft_entry(block_id=2, minutes=30)]
-        provider = ScriptedProvider(WorkLogDraft(entries=entries))
-
-        draft = (await reconcile_evidence([], [make_block(), make_block()], [], provider)).draft
-
-        assert draft.entries == entries
-
-    @pytest.mark.asyncio
-    async def test_residual_unassigned_minutes_pass_through_unchanged(self):
-        residual = [BlockAllocation(block_id=3, minutes=12)]
-        provider = ScriptedProvider(WorkLogDraft(residual_unassigned_minutes=residual))
-
-        draft = (await reconcile_evidence([], [make_block()], [], provider)).draft
-
-        assert draft.residual_unassigned_minutes == residual
-
-    @pytest.mark.asyncio
-    async def test_a_fully_populated_draft_survives_the_merge_intact(self):
-        entries = [make_draft_entry()]
-        residual = [BlockAllocation(block_id=2, minutes=5)]
-        model_reminder = make_model_reminder()
-        provider = ScriptedProvider(
-            WorkLogDraft(entries=entries, reminders=[model_reminder], residual_unassigned_minutes=residual)
-        )
-        event = make_event("ABC-1", "jira", project="ABC")
-
-        draft = (await reconcile_evidence([], [make_block(), make_block()], [event], provider)).draft
-
-        assert draft.entries == entries
-        assert draft.residual_unassigned_minutes == residual
-        assert draft.reminders[-1] == model_reminder
-        assert len(draft.reminders) == 2
-
-
 class TestVerificationIsAttachedToTheResult:
     """Stage 6 runs inside Stage 5, and its verdict rides along with the draft instead of replacing it."""
 
     @pytest.mark.asyncio
-    async def test_a_correct_draft_comes_back_passed_with_no_issues(self):
-        """One 90-minute block, fully allocated to one entry, citing the one event that was really in evidence."""
-        entry = DraftEntry(
-            date=DAY,
-            project="logline",
-            allocations=[BlockAllocation(block_id=1, minutes=90)],
-            tag=EntryTag.coding,
-            description="Worked on the reconciliation schema",
-            source_remote_event_ids=["gh:pr:41"],
-        )
-        provider = ScriptedProvider(WorkLogDraft(entries=[entry]))
+    async def test_a_normal_days_evidence_passes_verification_cleanly(self):
+        provider = ScriptedProvider()
 
         result = await reconcile_evidence(
             [MatchedGroup(block=make_block(minutes=90), events=[make_event()])], [], [], provider
@@ -255,135 +369,38 @@ class TestVerificationIsAttachedToTheResult:
 
         assert result.verification.passed is True
         assert result.verification.issues == []
-        assert result.draft.entries == [entry]
 
     @pytest.mark.asyncio
-    async def test_a_draft_citing_a_nonexistent_block_is_returned_rather_than_raising(self):
-        """The headline guarantee: a broken draft is reported, not withheld and not turned into an exception."""
-        entry = make_draft_entry(block_id=99, minutes=90)
-        provider = ScriptedProvider(WorkLogDraft(entries=[entry]))
+    async def test_two_non_meeting_blocks_overlapping_is_still_caught_end_to_end(self):
+        """Deterministic entry formation guarantees conservation and citations are correct by construction, so this is
+        the one kind of problem that can still reach Stage 6 through this call: something wrong with the evidence itself
+        (two non-meeting blocks whose time windows overlap, which a real matcher run should never produce) rather than
+        with what entries.py or description.py did with it."""
+        overlapping_a = make_block(project="logline", start_hour=9, minutes=60, category=SessionCategory.coding)
+        overlapping_b = make_block(project="docs", start_hour=9, minutes=30, category=SessionCategory.code_review)
+        provider = ScriptedProvider()
 
-        result = await reconcile_evidence(
-            [MatchedGroup(block=make_block(minutes=90), events=[make_event()])], [], [], provider
-        )
+        result = await reconcile_evidence([], [overlapping_a, overlapping_b], [], provider)
 
         assert result.verification.passed is False
-        assert result.draft.entries == [entry], "the draft must survive intact for the human who has to fix it"
-
-        unknown = [i for i in result.verification.issues if i.check == "unknown_id" and i.block_id == 99]
-        assert len(unknown) == 1
-        assert unknown[0].severity == "error"
-
-    @pytest.mark.asyncio
-    async def test_the_real_underlying_error_is_reported_not_a_generic_failure(self):
-        """A verification failure is only useful to a reviewer if it says which block and how far off it is."""
-        entry = make_draft_entry(block_id=1, minutes=30)
-        provider = ScriptedProvider(WorkLogDraft(entries=[entry]))
-
-        result = await reconcile_evidence(
-            [MatchedGroup(block=make_block(minutes=90), events=[make_event()])], [], [], provider
-        )
-
-        conservation = [i for i in result.verification.issues if i.check == "conservation"]
-        assert len(conservation) == 1
-        assert conservation[0].block_id == 1
-        assert "30 min charged" in conservation[0].detail and "90 min measured" in conservation[0].detail
-
-    @pytest.mark.asyncio
-    async def test_verification_sees_the_merged_draft_not_the_raw_model_output(self):
-        """The duplicate-reminder check only fires post-merge, so seeing it proves the ordering is right."""
-        model_reminder = DraftReminder(
-            note="Was the Jira transition part of this work?", source="jira", day=DAY,
-            source_remote_event_ids=["ABC-99"],
-        )
-        provider = ScriptedProvider(WorkLogDraft(reminders=[model_reminder]))
-
-        result = await reconcile_evidence([], [make_block(minutes=90)], [make_event("ABC-99", "jira")], provider)
-
-        duplicates = [i for i in result.verification.issues if i.check == "duplicate_reminder"]
-        assert len(duplicates) == 1
-        assert "ABC-99" in duplicates[0].detail
-
-    @pytest.mark.asyncio
-    async def test_verification_uses_the_same_evidence_the_model_was_shown(self):
-        """Block ids are assigned during evidence assembly; verifying against a re-derived set could differ."""
-        entry = DraftEntry(
-            date=DAY,
-            project="logline",
-            allocations=[BlockAllocation(block_id=2, minutes=45)],
-            tag=EntryTag.coding,
-            description="Second block only",
-        )
-        provider = ScriptedProvider(WorkLogDraft(entries=[entry]))
-
-        result = await reconcile_evidence([], [make_block(minutes=90), make_block(minutes=45)], [], provider)
-
-        # Block 2 is correctly allocated; only block 1 -- untouched by the draft -- should be complained about.
-        assert {i.block_id for i in result.verification.issues} == {1}
-
-    @pytest.mark.asyncio
-    async def test_warnings_alone_do_not_fail_the_draft(self):
-        residual = [BlockAllocation(block_id=1, minutes=30)]
-        entry = DraftEntry(
-            date=DAY,
-            project="logline",
-            allocations=[BlockAllocation(block_id=1, minutes=60)],
-            tag=EntryTag.coding,
-            description="Part of this block is attributable, part is not",
-        )
-        provider = ScriptedProvider(WorkLogDraft(entries=[entry], residual_unassigned_minutes=residual))
-
-        result = await reconcile_evidence([], [make_block(minutes=90)], [], provider)
-
-        assert result.verification.passed is True
-        assert [i.severity for i in result.verification.issues] == ["warning"]
-
-    @pytest.mark.asyncio
-    async def test_a_failing_verification_triggers_no_second_call_to_the_model(self):
-        """Auto-retry on failure is deliberately out of scope; this pins that it was not built in by accident."""
-        provider = ScriptedProvider(WorkLogDraft(entries=[make_draft_entry(block_id=99)]))
-
-        result = await reconcile_evidence([], [make_block(minutes=90)], [], provider)
-
-        assert result.verification.passed is False
-        assert len(provider.calls) == 1, "a failed verification must not silently re-prompt the model"
-
-    @pytest.mark.asyncio
-    async def test_nothing_in_the_draft_is_corrected_to_make_verification_pass(self):
-        """Every field the model sent is still there afterwards, wrong values included."""
-        entry = make_draft_entry(block_id=1, minutes=500)
-        residual = [BlockAllocation(block_id=77, minutes=13)]
-        provider = ScriptedProvider(WorkLogDraft(entries=[entry], residual_unassigned_minutes=residual))
-
-        result = await reconcile_evidence([], [make_block(minutes=90)], [], provider)
-
-        assert result.verification.passed is False
-        assert result.draft.entries[0].allocations[0].minutes == 500
-        assert result.draft.residual_unassigned_minutes == residual
-
-    @pytest.mark.asyncio
-    async def test_an_empty_draft_over_measured_time_fails_rather_than_passing_vacuously(self):
-        """A model that returns nothing must not read as a clean result just because there is nothing to fault."""
-        provider = ScriptedProvider(WorkLogDraft())
-
-        result = await reconcile_evidence([], [make_block(minutes=90)], [], provider)
-
-        assert result.verification.passed is False
-        assert any(i.check == "completeness" for i in result.verification.issues)
+        assert any(issue.check == "unexplained_overlap" for issue in result.verification.issues)
 
 
 class TestReminderConsistencyWithUnmatchedEvents:
-    """The bug this guards against: `reconcile_evidence` used to accept `reminders` as an independent
-    argument from `unmatched_events`, so nothing stopped a caller from passing reminders built from a
-    different matcher run than the evidence. A reminder citing an event id the evidence never saw looks,
-    to Stage 6, exactly like a fabricated citation -- it fails an otherwise-correct draft. Removing the
-    parameter and deriving reminders from `unmatched_events` internally makes that construction impossible.
+    """The bug this guards against: `reconcile_evidence` used to accept `reminders` as an independent argument from
+    `unmatched_events`, so nothing stopped a caller from passing reminders built from a different matcher run than the
+    evidence.
+
+    A reminder citing an event id the evidence never saw looks, to Stage 6, exactly like a fabricated citation -- it
+    fails an otherwise-correct draft. Removing the parameter and deriving reminders from `unmatched_events` internally
+    makes that construction impossible.
     """
 
     @pytest.mark.asyncio
     async def test_reconcile_evidence_no_longer_accepts_a_reminders_argument(self):
-        """Pins the signature itself: there is no seam left for a caller to inject reminders from
-        elsewhere. A TypeError here is not a bug in the test -- it is the fix.
+        """Pins the signature itself: there is no seam left for a caller to inject reminders from elsewhere.
+
+        A TypeError here is not a bug in the test -- it is the fix.
         """
         import inspect
 
@@ -392,17 +409,9 @@ class TestReminderConsistencyWithUnmatchedEvents:
 
     @pytest.mark.asyncio
     async def test_a_reminder_can_only_cite_an_event_present_in_the_evidence_it_ships_with(self):
-        """Reproduces the original bug's failure mode directly: build a reminder from one event (as the
-        old code allowed, sourced from a stale/different matcher run) and evidence from a different one,
-        then confirm the merged draft's reminder can never cite an id verification would reject.
-
-        Because `reconcile_evidence` derives reminders from `unmatched_events` itself, every reminder in
-        the result necessarily cites only ids drawn from that same list -- the mismatch this test used to
-        be able to construct by hand can no longer be expressed at all.
-        """
         stale_event = make_event(external_id="stale:from-another-run", source="jira", project="ABC")
         current_event = make_event(external_id="ABC-99", source="jira", project="ABC")
-        provider = ScriptedProvider(WorkLogDraft())
+        provider = ScriptedProvider()
 
         result = await reconcile_evidence([], [], [current_event], provider)
 
@@ -414,6 +423,18 @@ class TestReminderConsistencyWithUnmatchedEvents:
         assert result.verification.passed is True
         unknown_id_issues = [i for i in result.verification.issues if i.check == "unknown_id"]
         assert unknown_id_issues == []
+
+    @pytest.mark.asyncio
+    async def test_event_matched_only_to_a_zero_rounded_block_becomes_a_reminder(self):
+        event = make_event(external_id="ABC-99", source="jira", project="ABC")
+        provider = ScriptedProvider()
+
+        result = await reconcile_evidence(
+            [MatchedGroup(block=make_block(minutes=0), events=[event])], [], [], provider
+        )
+
+        assert [reminder.source_remote_event_ids for reminder in result.draft.reminders] == [["ABC-99"]]
+        assert result.verification.passed
 
 
 class TestPrebuiltReminderConversion:
@@ -469,7 +490,7 @@ class TestPrebuiltReminderConversion:
         assert "unidentified" in note
 
     def test_long_summaries_are_truncated_to_the_schema_limit(self):
-        events = [make_event(external_id=f"gh:pr:{i}", summary="A very long summary " * 10) for i in range(5)]
+        events = [make_event(external_id=f"logline#{i}", summary="A very long summary " * 10) for i in range(5)]
         reminder = Reminder(source="github", remote_project_id="Toheed/logline", day=DAY, events=events)
 
         note = prebuilt_reminder_to_draft_reminder(reminder).note
@@ -477,11 +498,11 @@ class TestPrebuiltReminderConversion:
         assert len(note) <= REMINDER_NOTE_MAX_LENGTH
 
     def test_every_event_id_is_cited(self):
-        events = [make_event(external_id=f"gh:pr:{i}") for i in range(3)]
+        events = [make_event(external_id=f"logline#{i}") for i in range(3)]
         reminder = Reminder(source="github", remote_project_id="Toheed/logline", day=DAY, events=events)
 
         assert prebuilt_reminder_to_draft_reminder(reminder).source_remote_event_ids == [
-            "gh:pr:0", "gh:pr:1", "gh:pr:2"
+            "logline#0", "logline#1", "logline#2"
         ]
 
     def test_day_is_carried_over_unchanged(self):

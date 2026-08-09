@@ -1,14 +1,4 @@
-"""Tests for Stage 6 draft verification (app/agent/reconciliation/verifier.py).
-
-Everything here runs offline. The evidence is always built by the real `build_evidence`, never hand-assembled,
-so the block ids and event ids the drafts are checked against are the same ones Stage 5 would really have put in
-front of the model -- a verifier tested against a hand-made `EvidenceBundle` would only prove it agrees with the
-test's own idea of the input.
-
-Each of the five checks gets a deliberately broken draft proving that specific failure is caught, and the suite
-is anchored at both ends: a reconstruction of Stage 5's real live-run evidence must pass with zero issues, and
-the judgment-quality shortcomings that live run actually exhibited must not be reported as failures.
-"""
+"""Test structural and factual reconciliation-draft verification against real evidence bundles."""
 
 from datetime import date, datetime, timedelta, timezone
 
@@ -18,8 +8,8 @@ from pydantic import ValidationError
 from app.agent.reconciliation.evidence import build_evidence
 from app.agent.reconciliation.schemas import BlockAllocation, DraftEntry, DraftReminder, EntryTag, WorkLogDraft
 from app.agent.reconciliation.verifier import (
-    CHECK_COMPLETENESS, CHECK_CONSERVATION, CHECK_CROSS_ENTRY_DUPLICATE, CHECK_DUPLICATE_REMINDER, CHECK_UNKNOWN_ID,
-    verify_draft,
+    CHECK_COMPLETENESS, CHECK_CONSERVATION, CHECK_CROSS_ENTRY_DUPLICATE, CHECK_DESCRIPTION_DURATION_LANGUAGE,
+    CHECK_DUPLICATE_REMINDER, CHECK_UNKNOWN_ID, verify_draft,
 )
 from app.local_activity.aggregation import LocalActivityBlock
 from app.local_activity.classification import SessionCategory
@@ -82,7 +72,6 @@ def errors_of(result):
     return [issue for issue in result.issues if issue.severity == "error"]
 
 
-# A two-block day used by most of the broken-draft cases: block 1 measures 90 min, block 2 measures 60 min.
 SIMPLE_EVIDENCE = build_evidence(
     [MatchedGroup(block=make_block(minutes=90), events=[make_event()])],
     [make_block(project="docs", start_hour=14, minutes=60)],
@@ -379,7 +368,10 @@ class TestReminderSanityCheck:
         assert "indices 0, 1" in issues[0].detail
 
     def test_neither_duplicate_reminder_is_dropped_from_the_draft(self):
-        """Verification reports; it never repairs. Both reminders must still be there afterwards."""
+        """Verification reports; it never repairs.
+
+        Both reminders must still be there afterwards.
+        """
         evidence = build_evidence(
             [], [], [make_event(external_id="ABC-99", source="jira", project="ABC", hour=17)]
         )
@@ -417,9 +409,43 @@ class TestReminderSanityCheck:
         assert checks_of(result, CHECK_DUPLICATE_REMINDER) == []
 
 
-# Stage 5's live run, reconstructed from the fixtures in test_reconciliation_live.py: 115 + 50 + 20 = 185
-# measured minutes across three blocks, two of them corroborated by GitHub events, plus one unmatched Jira
-# ticket carried by a pre-built reminder.
+class TestDescriptionDurationLanguageCheck:
+    """A second, independent check over the same rule description.py's per-entry gate already enforces at generation
+    time -- should never fire in practice, but exists in case the gate is ever bypassed or has a bug of its own."""
+
+    def test_a_description_stating_a_duration_is_an_error(self):
+        draft = WorkLogDraft(entries=[make_entry([(1, 90)], description="Spent about 2 hours on this today.")])
+
+        result = verify_draft(draft, SIMPLE_EVIDENCE)
+
+        assert not result.passed
+        issues = checks_of(result, CHECK_DESCRIPTION_DURATION_LANGUAGE)
+        assert len(issues) == 1
+        assert issues[0].severity == "error"
+        assert issues[0].entry_index == 0
+
+    def test_a_clean_description_is_not_flagged(self):
+        draft = WorkLogDraft(entries=[make_entry([(1, 90)], description="Worked on the reconciliation schema.")])
+
+        result = verify_draft(draft, SIMPLE_EVIDENCE)
+
+        assert checks_of(result, CHECK_DESCRIPTION_DURATION_LANGUAGE) == []
+
+    def test_each_entry_is_checked_independently(self):
+        draft = WorkLogDraft(
+            entries=[
+                make_entry([(1, 90)], description="Clean description."),
+                make_entry([(2, 60)], event_ids=[], description="Took roughly 45 minutes."),
+            ]
+        )
+
+        result = verify_draft(draft, SIMPLE_EVIDENCE)
+
+        issues = checks_of(result, CHECK_DESCRIPTION_DURATION_LANGUAGE)
+        assert len(issues) == 1
+        assert issues[0].entry_index == 1
+
+
 LIVE_EVIDENCE = build_evidence(
     [
         MatchedGroup(
@@ -505,7 +531,10 @@ class TestAgainstStageFivesRealLiveRun:
 
 class TestScopeIsStructuralNotJudgmental:
     def test_an_entry_with_no_review_reason_and_no_citations_is_not_an_error(self):
-        """Observed in Stage 5's live run. That is a prompt-quality concern, not a verification failure."""
+        """Observed in Stage 5's live run.
+
+        That is a prompt-quality concern, not a verification failure.
+        """
         draft = WorkLogDraft(
             entries=[
                 DraftEntry(

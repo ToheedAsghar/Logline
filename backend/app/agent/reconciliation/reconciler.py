@@ -1,56 +1,35 @@
-"""Stage 5: the AI reconciliation call, with Stage 6 verification attached.
+"""Form deterministic entries, generate per-entry descriptions, and verify the resulting reconciliation draft."""
 
-Assembles evidence, makes one structured-output call, merges pre-built reminders into the draft, and
-verifies the result. The draft and its verification are always returned together in a
-`ReconciliationResult`, even if verification fails — a human needs to see what the model said to fix it.
-
-Pre-built reminders never reach the model; they are appended in code so the model cannot reword or
-claim credit for them. No retry or auto-correction logic — that is a policy decision left to the
-caller, not settled here by accident.
-
-Reminders are derived here from `unmatched_events`, not accepted as a separate parameter -- a reminder
-citing an event id the evidence never saw would look like a fabricated citation to Stage 6. Deriving
-both from the same list structurally rules that out; it cannot happen by a caller passing mismatched
-values from two different matcher runs.
-"""
-
+import asyncio
 from datetime import timezone, tzinfo
 from typing import get_args
 
 from pydantic import BaseModel
 
-from app.agent.llm.base import LLMProvider, Message
-from app.agent.reconciliation.evidence import build_evidence
-from app.agent.reconciliation.prompt import SYSTEM_PROMPT
+from app.agent.llm.base import LLMProvider
+from app.agent.reconciliation.constants import DESCRIPTION_TRUNCATION_SUFFIX as TRUNCATION_SUFFIX
+from app.agent.reconciliation.constants import (
+    ERROR_UNKNOWN_REMINDER_SOURCE, MAX_CONCURRENT_DESCRIPTION_REQUESTS, MEETING_MULTIPLE_EVENTS_REVIEW_REASON,
+    MEETING_NO_EVENT_DESCRIPTION, MEETING_UNSAFE_DESCRIPTION, NOTE_LAST_RESORT, NOTE_WITH_SUMMARIES,
+    NOTE_WITHOUT_SUMMARIES, REMINDER_NOTE_MAX_LENGTH, UNIDENTIFIED_PROJECT,
+)
+from app.agent.reconciliation.description import describe_entry
+from app.agent.reconciliation.entries import FormedEntry, form_entries
+from app.agent.reconciliation.evidence import EvidenceBundle, build_evidence
 from app.agent.reconciliation.schemas import (
-    REMINDER_NOTE_MAX_LENGTH, DraftReminder, ReminderSource, WorkLogDraft, find_duration_language,
+    DraftEntry, DraftReminder, ReminderSource, WorkLogDraft, find_duration_language, truncate_description,
 )
 from app.agent.reconciliation.verifier import VerificationResult, verify_draft
 from app.local_activity.aggregation import LocalActivityBlock
+from app.local_activity.classification import SessionCategory
 from app.matching.matcher import MatchedGroup, RemoteEventData
 from app.reminders.generator import Reminder, generate_reminders
 
 VALID_REMINDER_SOURCES: frozenset[str] = frozenset(get_args(ReminderSource))
 
-UNIDENTIFIED_PROJECT = "an unidentified project"
-NOTE_WITH_SUMMARIES = "Unlogged {source} activity on {project}: {summaries}"
-NOTE_WITHOUT_SUMMARIES = "Unlogged {source} activity on {project}, with no measured local activity."
-NOTE_LAST_RESORT = "Unlogged remote activity with no measured local activity."
-TRUNCATION_SUFFIX = "..."
-
-ERROR_UNKNOWN_REMINDER_SOURCE = (
-    "cannot convert a reminder from source {source!r} into a DraftReminder; DraftReminder.source accepts only "
-    "{allowed}. A reminder reached Stage 5 from a source the draft schema does not model."
-)
-
 
 class ReconciliationResult(BaseModel):
-    """One reconciliation: the model's draft and the result of code-side verification.
-
-    Both fields are always populated. `verification.passed` being False means the draft has problems
-    for human review, not that it is absent — a failing verification is information about a draft,
-    not a reason to withhold it.
-    """
+    """Contain a reconciliation draft and its code-side verification result."""
 
     draft: WorkLogDraft
     verification: VerificationResult
@@ -64,14 +43,7 @@ def _truncate_note(note: str) -> str:
 
 
 def _build_note(reminder: Reminder) -> str:
-    """Build a note for a pre-built reminder that passes `DraftReminder`'s duration-language validator.
-
-    Remote summaries may contain duration language (e.g., PR title "Cut build time by 30 minutes"),
-    which would fail validation if inlined directly. Candidates are tried richest-first; the first
-    passing the same check `DraftReminder` applies is used. A fixed fallback with no interpolation
-    ensures project names or sources that read as duration cannot exhaust candidates.
-    """
-
+    """Build a duration-free note for a generated reminder."""
     project = reminder.remote_project_id or UNIDENTIFIED_PROJECT
     summaries = "; ".join(event.summary for event in reminder.events if event.summary)
 
@@ -105,6 +77,55 @@ def prebuilt_reminder_to_draft_reminder(reminder: Reminder) -> DraftReminder:
     )
 
 
+def _safe_meeting_description(description: str, empty_fallback: str) -> str:
+    """Return a bounded, duration-free meeting description from uncontrolled calendar or tracker text."""
+    candidate = truncate_description(description.strip())
+    if not candidate:
+        return empty_fallback
+    if find_duration_language(candidate) is not None:
+        return MEETING_UNSAFE_DESCRIPTION
+    return candidate
+
+
+def _local_meeting_description(entry: FormedEntry, bundle: EvidenceBundle) -> str:
+    """Return a safe tracked meeting name or the unidentified-meeting fallback."""
+    meeting_name = bundle.blocks_by_id[entry.block_ids[0]].meeting_name or ""
+    return _safe_meeting_description(meeting_name, MEETING_NO_EVENT_DESCRIPTION)
+
+
+def _meeting_entry_description(entry: FormedEntry, bundle: EvidenceBundle) -> tuple[str, str | None]:
+    """Return a safe meeting description and an ambiguity review reason when needed."""
+    events = bundle.block_events.get(entry.block_ids[0], [])
+    if not events:
+        return _local_meeting_description(entry, bundle), None
+    earliest = min(events, key=lambda event: event.occurred_at)
+    review_reason = MEETING_MULTIPLE_EVENTS_REVIEW_REASON if len(events) > 1 else None
+    if earliest.summary and earliest.summary.strip():
+        return _safe_meeting_description(earliest.summary, MEETING_UNSAFE_DESCRIPTION), review_reason
+    return _local_meeting_description(entry, bundle), review_reason
+
+
+async def _resolve_entry(entry: FormedEntry, bundle: EvidenceBundle, llm_provider: LLMProvider) -> DraftEntry:
+    """Resolve one formed entry into a draft entry with its description and optional tag override."""
+    if entry.category == SessionCategory.meeting:
+        description, review_reason = _meeting_entry_description(entry, bundle)
+        tag = entry.base_tag
+    else:
+        description, tag_override = await describe_entry(entry, bundle, llm_provider)
+        review_reason = entry.review_reason
+        tag = tag_override or entry.base_tag
+
+    return DraftEntry(
+        date=entry.date,
+        project=entry.project,
+        allocations=entry.allocations,
+        tag=tag,
+        description=description,
+        source_remote_event_ids=entry.source_remote_event_ids,
+        review_reason=review_reason,
+    )
+
+
 async def reconcile_evidence(
     matched_groups: list[MatchedGroup],
     unmatched_blocks: list[LocalActivityBlock],
@@ -112,31 +133,29 @@ async def reconcile_evidence(
     llm_provider: LLMProvider,
     tz: tzinfo = timezone.utc,
 ) -> ReconciliationResult:
-    """Reconcile one day's evidence into a verified `WorkLogDraft` via a single structured-output call.
+    """Reconcile evidence into a verified draft with deterministic entries and generated reminders.
 
-    Pre-built reminders are derived from `unmatched_events` here, not accepted from the caller -- see
-    the module docstring for why.
-
-    Raises `LLMStructuredOutputError` if the provider cannot produce a valid draft, and `ValueError` if
-    evidence contains naive datetimes or a reminder from an unknown source.
+    Raises `ValueError` for naive evidence datetimes or unsupported reminder sources.
     """
+    bundle = build_evidence(matched_groups, unmatched_blocks, unmatched_events)
+    formed_entries = form_entries(bundle)
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_DESCRIPTION_REQUESTS)
 
-    bundle = build_evidence(matched_groups, unmatched_blocks, unmatched_events, tz=tz)
-    messages = [
-        Message(role="system", content=SYSTEM_PROMPT),
-        Message(role="user", content=bundle.user_content),
-    ]
+    async def resolve_with_limit(entry: FormedEntry) -> DraftEntry:
+        async with semaphore:
+            return await _resolve_entry(entry, bundle, llm_provider)
 
-    draft = await llm_provider.run_structured(messages, WorkLogDraft)
+    draft_entries = await asyncio.gather(
+        *(resolve_with_limit(entry) for entry in formed_entries)
+    )
 
-    reminders = generate_reminders(unmatched_events, tz=tz)
+    reminders = generate_reminders(bundle.unmatched_events, tz=tz)
     merged_reminders = [prebuilt_reminder_to_draft_reminder(reminder) for reminder in reminders]
-    merged_reminders.extend(draft.reminders)
 
     merged_draft = WorkLogDraft(
-        entries=draft.entries,
+        entries=list(draft_entries),
         reminders=merged_reminders,
-        residual_unassigned_minutes=draft.residual_unassigned_minutes,
+        residual_unassigned_minutes=[],
     )
 
     return ReconciliationResult(draft=merged_draft, verification=verify_draft(merged_draft, bundle))
