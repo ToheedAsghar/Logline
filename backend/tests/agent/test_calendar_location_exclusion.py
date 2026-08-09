@@ -42,8 +42,6 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 import app.agent.runner as runner_module
 import app.agent.tools.flag_gap as flag_gap_module
 import app.agent.tools.write_event as write_event_module
