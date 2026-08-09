@@ -1,10 +1,6 @@
-"""Tests for the reconciliation endpoints (app/agent/reconciliation/routers.py) against real Postgres.
+"""Test reconciliation generation and approval endpoints against Postgres."""
 
-The behaviour worth pinning here is the approval path, not the model call: `/approve` re-derives the
-evidence server-side and re-runs verification, so a caller cannot approve a draft that charges more
-minutes than were measured, and every entry it writes must carry a `human_approved` version snapshot.
-"""
-
+import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -13,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.agent.llm import get_llm_provider
 from app.agent.llm.base import LLMProvider
-from app.agent.reconciliation.schemas import WorkLogDraft
+from app.agent.reconciliation.schemas import EntryDescriptionProposal
 from app.auth.deps import get_current_user
 from app.auth.models import User
 from app.db.session import SessionLocal
@@ -32,16 +28,16 @@ WORK_DATE = "2026-07-30"
 
 
 class _ScriptedProvider(LLMProvider):
-    """Returns a fixed draft, so `/generate` can be exercised without a live model."""
+    """Returns a fixed description proposal for every entry, so `/generate` can be exercised without a live model."""
 
-    def __init__(self, draft: WorkLogDraft):
-        self._draft = draft
+    def __init__(self, description: str = "Worked on the reconciliation endpoints."):
+        self._description = description
 
-    async def run_turn(self, messages, tools):  # pragma: no cover
+    async def run_turn(self, messages, tools):
         raise NotImplementedError
 
     async def run_structured(self, messages, response_model):
-        return self._draft
+        return EntryDescriptionProposal(description=self._description)
 
 
 def _draft(minutes: int = BLOCK_MINUTES, *, description: str = "Worked on the reconciliation endpoints.") -> dict:
@@ -98,6 +94,17 @@ def recon_user():
                 ended_at=SESSION_END,
                 end_reason="app_switch",
                 is_idle=False,
+                context_detail=json.dumps(
+                    {
+                        "git_branch": "feature/context-evidence",
+                        "project_name": "logline",
+                        "active_file": "routers.py",
+                        "tool": "codex",
+                        "url": "https://example.com/dashboard",
+                        "cwd": "/Users/dev/projects/logline",
+                        "browser": "Google Chrome",
+                    }
+                ),
             )
         )
         db.commit()
@@ -260,12 +267,10 @@ class TestApproveWritesThroughTheSharedApprovalPath:
 
 class TestGenerate:
     def test_generate_returns_draft_and_verification_without_writing(self, client, recon_user):
-        scripted = WorkLogDraft.model_validate(_draft())
-
         import app.agent.reconciliation.routers as routers_module
 
         original = routers_module.get_llm_provider
-        routers_module.get_llm_provider = lambda: _ScriptedProvider(scripted)
+        routers_module.get_llm_provider = lambda: _ScriptedProvider()
         try:
             response = client.post(
                 "/reconciliation/generate",
@@ -284,6 +289,42 @@ class TestGenerate:
             assert db.query(Entry).filter(Entry.user_id == recon_user).count() == 0
         finally:
             db.close()
+
+    def test_context_detail_reaches_the_generated_entry_evidence(self, client, recon_user):
+        class _CapturingProvider(_ScriptedProvider):
+            def __init__(self):
+                super().__init__()
+                self.user_messages = []
+
+            async def run_structured(self, messages, response_model):
+                self.user_messages.append(messages[-1].content)
+                return await super().run_structured(messages, response_model)
+
+        import app.agent.reconciliation.routers as routers_module
+
+        provider = _CapturingProvider()
+        original = routers_module.get_llm_provider
+        routers_module.get_llm_provider = lambda: provider
+        try:
+            response = client.post(
+                "/reconciliation/generate",
+                json={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE},
+            )
+        finally:
+            routers_module.get_llm_provider = original
+
+        assert response.status_code == 200, response.text
+        evidence = "\n".join(provider.user_messages)
+        assert "topic: branch feature/context-evidence" in evidence
+        assert "branches: feature/context-evidence" in evidence
+        assert "project names: logline" in evidence
+        assert "active files: routers.py" in evidence
+        assert "tools: codex" in evidence
+        assert "urls: https://example.com/dashboard" in evidence
+        assert "working dirs: /Users/dev/projects/logline" in evidence
+        assert "browsers: Google Chrome" in evidence
+        assert "end reasons: app_switch" in evidence
+        assert "bundle ids: com.microsoft.VSCode" in evidence
 
 
 class TestAuthenticationRequired:

@@ -1,11 +1,4 @@
-"""Tests that idle/screen-lock time never reaches Stage 5 evidence, against real Postgres.
-
-Companion to `test_reconciliation_router.py` -- same fixture shape, scoped to its own user so it does not
-disturb that file's shared `recon_user` fixture. Proves the fix for the real 2026-08-06 production bug:
-`com.apple.loginwindow` sessions survive the `is_idle=false` filter (the tracker's IdleWatcher does not fire
-on a locked screen) and must be excluded by category instead, entirely before the model ever sees them --
-never folded into `residual_unassigned_minutes`, since idle is proven non-work, not genuine ambiguity.
-"""
+"""Test that classified idle and screen-lock time is excluded before reconciliation evidence generation."""
 
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -15,7 +8,7 @@ from fastapi.testclient import TestClient
 
 import app.agent.reconciliation.routers as routers_module
 from app.agent.llm.base import LLMProvider
-from app.agent.reconciliation.schemas import WorkLogDraft
+from app.agent.reconciliation.schemas import EntryDescriptionProposal
 from app.auth.deps import get_current_user
 from app.auth.models import User
 from app.db.session import SessionLocal
@@ -31,17 +24,17 @@ WORK_DATE = "2026-07-30"
 
 
 class _CapturingProvider(LLMProvider):
-    """Records the evidence text it was called with and returns an empty draft."""
+    """Records the per-entry evidence text each description call was made with and returns a clean proposal for it."""
 
     def __init__(self):
         self.last_user_content: str | None = None
 
-    async def run_turn(self, messages, tools):  # pragma: no cover
+    async def run_turn(self, messages, tools):
         raise NotImplementedError
 
     async def run_structured(self, messages, response_model):
         self.last_user_content = messages[-1].content
-        return WorkLogDraft(entries=[], reminders=[], residual_unassigned_minutes=[])
+        return EntryDescriptionProposal(description="Worked on this entry.")
 
 
 def _cleanup_sessions_and_entries(db, user_id: int) -> None:
@@ -61,8 +54,8 @@ def _cleanup(db, user_id: int) -> None:
 
 @pytest.fixture
 def idle_and_real_sessions_user():
-    """One real 30-minute coding session and one 45-minute loginwindow session, both is_idle=False --
-    reproducing the real gap where the tracker's idle watcher never fires on a locked screen."""
+    """One real 30-minute coding session and one 45-minute loginwindow session, both is_idle=False -- reproducing the
+    real gap where the tracker's idle watcher never fires on a locked screen."""
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.email == USER_EMAIL).first()
@@ -150,22 +143,27 @@ class TestIdleTimeNeverReachesEvidence:
     def test_only_the_real_sessions_measured_minutes_are_in_the_evidence_total(
         self, client, idle_and_real_sessions_user
     ):
-        """30 real minutes, not 75 -- the 45 idle minutes must not inflate the tracked total."""
+        """30 real minutes, not 75 -- the 45 idle minutes must not inflate what gets charged."""
         _, provider = idle_and_real_sessions_user
 
-        client.post(
+        response = client.post(
             "/reconciliation/generate",
             json={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE},
         )
 
-        assert "Total measured time across all blocks: 30 min." in provider.last_user_content
+        assert "30 min measured" in provider.last_user_content
+        allocations = [a for e in response.json()["draft"]["entries"] for a in e["allocations"]]
+        assert sum(a["minutes"] for a in allocations) == 30
 
     def test_the_generated_drafts_verification_still_passes_with_idle_time_excluded(
         self, client, idle_and_real_sessions_user
     ):
-        """Excluding idle blocks from evidence must not itself break conservation/completeness -- an empty
-        draft with nothing charged should still fail completeness on the one real block, proving the idle
-        block was never counted as needing to be accounted for in the first place."""
+        """Excluding idle blocks from evidence must not itself break conservation/completeness.
+
+        Entry formation is deterministic and accounts for every real (non-idle) block by construction, so the idle-
+        excluded loginwindow session correctly never needs accounting for at all -- verification passes clean, not
+        because the idle block was charged somewhere, but because it was never evidence in the first place.
+        """
         _, provider = idle_and_real_sessions_user
 
         response = client.post(
@@ -174,7 +172,5 @@ class TestIdleTimeNeverReachesEvidence:
         )
 
         body = response.json()
-        assert body["verification"]["passed"] is False
-        completeness_issues = [issue for issue in body["verification"]["issues"] if issue["check"] == "completeness"]
-        assert len(completeness_issues) == 1
-        assert completeness_issues[0]["block_id"] == 1
+        assert body["verification"]["passed"] is True
+        assert body["verification"]["issues"] == []

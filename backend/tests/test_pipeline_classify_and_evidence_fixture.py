@@ -1,21 +1,9 @@
-"""End-to-end fixture proving the classify-before-aggregate pipeline fix against the real scenario that
-motivated it: a day with a meeting, concurrent multitasking during that meeting, a browser-only session with
-no project, and local-only coding work with no remote evidence at all.
-
-This drives the real functions from every touched stage -- `classify_session`, `aggregate_local_activity`,
-`match_local_blocks_to_remote_events`, `build_evidence`, `verify_draft` -- the same functions
-`_gather_evidence`/`reconcile_evidence` call in production, just without the DB/HTTP layer (which is already
-covered by `tests/test_reconciliation_router.py`). No LLM call is made here; the "correct draft" is
-hand-built to prove the pipeline stages *can* represent this day correctly and that verification accepts it
--- the actual live-model comparison is a separate, real-data run against 2026-08-06 (see the PR description).
-
-The fixture below is a compressed version of the real day (minutes scaled down so assertions stay legible),
-not the literal real timestamps.
-"""
+"""Test classify-before-aggregate behavior with meetings, multitasking, and local-only work."""
 
 import json
 from datetime import date, datetime, timezone
 
+from app.agent.reconciliation.entries import form_entries
 from app.agent.reconciliation.evidence import build_evidence
 from app.agent.reconciliation.schemas import BlockAllocation, DraftEntry, EntryTag, WorkLogDraft
 from app.agent.reconciliation.verifier import CHECK_CONSERVATION, verify_draft
@@ -113,8 +101,8 @@ def _classify_and_build_rows() -> list[RawSessionRow]:
 
 
 class TestOldPipelineWouldHaveDroppedMostOfTheDay:
-    """Reproduces the old `project_path IS NOT NULL` filter directly, to prove -- against this exact
-    fixture -- that it silently discarded roughly half the real day, all of it browser-based."""
+    """Reproduces the old `project_path IS NOT NULL` filter directly, to prove -- against this exact fixture -- that it
+    silently discarded roughly half the real day, all of it browser-based."""
 
     def test_project_path_filter_drops_the_meeting_and_the_browser_only_review(self):
         surviving = [session for session in RAW_SESSIONS if session["project_path"] is not None]
@@ -132,6 +120,47 @@ class TestOldPipelineWouldHaveDroppedMostOfTheDay:
         assert dropped_minutes == 55
         assert kept_minutes == 85
         assert kept_minutes / (kept_minutes + dropped_minutes) < 0.65
+
+
+class TestLegacyNamedMeetingFragments:
+    def test_title_derived_name_carries_sub_minute_standup_fragments_into_an_entry(self):
+        """Reproduces the July 27 standup loss: legacy rows had no context detail, and every foreground fragment rounded
+        to zero independently despite the call spanning a substantial wall-clock window."""
+        title = "Meet - Daily Standup - Microphone recording - Google Chrome - Toheed (arbisoft.com)"
+        spans = [
+            (datetime(2026, 7, 27, 10, 53, 8, tzinfo=UTC), datetime(2026, 7, 27, 10, 53, 13, tzinfo=UTC)),
+            (datetime(2026, 7, 27, 10, 59, 3, tzinfo=UTC), datetime(2026, 7, 27, 10, 59, 12, tzinfo=UTC)),
+            (datetime(2026, 7, 27, 11, 13, 53, tzinfo=UTC), datetime(2026, 7, 27, 11, 13, 58, tzinfo=UTC)),
+        ]
+        rows = []
+        for started_at, ended_at in spans:
+            classification = classify_session(
+                bundle_id="com.google.Chrome",
+                window_title=title,
+                project_path=None,
+                context_detail=None,
+            )
+            rows.append(
+                RawSessionRow(
+                    project=None,
+                    app="Google Chrome",
+                    start_time=started_at,
+                    end_time=ended_at,
+                    category=classification.category,
+                    window_title=title,
+                    meeting_name=classification.meeting_name,
+                )
+            )
+
+        blocks = aggregate_local_activity(rows)
+        evidence = build_evidence([], blocks, [])
+        entries = form_entries(evidence)
+
+        assert len(blocks) == 1
+        assert blocks[0].meeting_name == "Daily Standup"
+        assert len(entries) == 1
+        assert entries[0].category == SessionCategory.meeting
+        assert entries[0].total_minutes == 21
 
 
 class TestNewPipelineClassifiesAggregatesAndMatchesTheWholeDay:
@@ -207,10 +236,10 @@ class TestACorrectDraftForThisDayPassesVerification:
         return evidence, by_category
 
     def test_charging_every_block_its_own_full_measured_minutes_passes_with_no_errors(self):
-        """This is the shape a correct model response takes: the meeting and the concurrent coding block
-        are each charged their own full measured minutes in separate entries -- neither shrinks to make
-        room for the other, which is exactly what rule 8 of the prompt requires and what the old strict
-        single-booking conservation check would have wrongly rejected."""
+        """This is the shape a correct model response takes: the meeting and the concurrent coding block are each
+        charged their own full measured minutes in separate entries -- neither shrinks to make room for the other, which
+        is exactly what rule 8 of the prompt requires and what the old strict single-booking conservation check would
+        have wrongly rejected."""
         evidence, by_category = self._evidence_and_block_ids()
         meeting_id = by_category[SessionCategory.meeting]
         coding_logline_id = next(
@@ -267,9 +296,9 @@ class TestACorrectDraftForThisDayPassesVerification:
         assert result.issues == []
 
     def test_shrinking_the_meeting_to_make_room_for_the_overlap_still_fails_conservation(self):
-        """Proves the new invariant did not become "anything goes": it permits the overlap to exist, but
-        each block's own measured minutes still must be charged in full -- moving minutes between the two
-        overlapping blocks is still a conservation violation, not a legitimate way to resolve the overlap."""
+        """Proves the new invariant did not become "anything goes": it permits the overlap to exist, but each block's
+        own measured minutes still must be charged in full -- moving minutes between the two overlapping blocks is still
+        a conservation violation, not a legitimate way to resolve the overlap."""
         evidence, by_category = self._evidence_and_block_ids()
         meeting_id = by_category[SessionCategory.meeting]
         coding_logline_id = next(
