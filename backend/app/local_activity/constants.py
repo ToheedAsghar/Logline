@@ -9,13 +9,8 @@ imported: the tracker is a separate top-level desktop-app project (see backend/C
 has no dependency on it. Keep both lists in sync by hand if the tracker adds a new IDE or terminal.
 """
 
-# --- Block merging ---
-
 MERGE_GAP_THRESHOLD_MINUTES = 15
 
-# A tracker idle row shorter than this is noise (e.g. a momentary input gap), not a real break -- it gets
-# folded into whichever row came right before it instead of becoming its own block. See "Pass 0" in
-# aggregation.py::aggregate_local_activity.
 MICRO_IDLE_ABSORB_SECONDS = 5
 
 KNOWN_IDE_BUNDLE_IDS = frozenset(
@@ -53,4 +48,16 @@ KNOWN_COMMS_BUNDLE_IDS = frozenset(
         "net.whatsapp.WhatsApp",
         "com.microsoft.Outlook",
     }
+)
+
+CONTEXT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("branch", "branches"),
+    ("project_name", "project_names"),
+    ("active_file", "active_files"),
+    ("tool", "tools"),
+    ("url", "urls"),
+    ("cwd", "cwds"),
+    ("browser", "browsers"),
+    ("end_reason", "end_reasons"),
+    ("bundle_id", "bundle_ids"),
 )
