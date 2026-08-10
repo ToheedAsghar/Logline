@@ -1,4 +1,9 @@
-import type { Entry, ReconciliationGenerateParams, ReconciliationResult, WorkLogDraft } from "../types";
+import type {
+  Entry,
+  ReconciliationApproveParams,
+  ReconciliationGenerateParams,
+  ReconciliationResult,
+} from "../types";
 import { apiRequest } from "./client";
 
 export function generateDraft(params: ReconciliationGenerateParams): Promise<ReconciliationResult> {
@@ -8,9 +13,9 @@ export function generateDraft(params: ReconciliationGenerateParams): Promise<Rec
   });
 }
 
-export function approveDraft(draft: WorkLogDraft): Promise<Entry[]> {
+export function approveDraft(params: ReconciliationApproveParams): Promise<Entry[]> {
   return apiRequest<Entry[]>("/reconciliation/approve", {
     method: "POST",
-    body: draft,
+    body: params,
   });
 }

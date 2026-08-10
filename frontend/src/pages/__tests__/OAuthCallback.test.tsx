@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import OAuthCallback from "../OAuthCallback";
-import { AUTH_STRINGS } from "@/constants/authMessages";
+import { AUTH_STRINGS } from "@/constants";
 import { googleExchange } from "@/repositories/api/auth";
 import { useSession } from "@/context/SessionContext";
 import { ToastProvider } from "@/context/ToastContext";

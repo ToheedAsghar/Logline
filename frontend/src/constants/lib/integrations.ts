@@ -17,4 +17,3 @@ export const INTEGRATION_SOURCES: IntegrationSource[] = [
   { id: "calendar", name: "Google Calendar" },
   { id: "slack", name: "Slack" },
 ];
-

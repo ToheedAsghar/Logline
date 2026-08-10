@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { IntegrationId } from "@/constants/integrations";
+import type { IntegrationId } from "@/constants";
 import { connectIntegration, disconnectIntegration, listIntegrations } from "../api/integrations";
 
 const INTEGRATIONS_KEY = "integrations";

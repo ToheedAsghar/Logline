@@ -1,6 +1,6 @@
 import { cn, formatTimeRange } from "@/common/utils";
 import { ConfidenceTier } from "@/atoms";
-import { CONFIDENCE_TIERS, type ConfidenceTier as Tier } from "@/constants/tokens";
+import { CONFIDENCE_TIERS, type ConfidenceTier as Tier } from "@/constants";
 import type { Event } from "@/repositories/types";
 
 /** Sources the backend treats as non-work time rather than a confidence level

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, type ReactNode } from "react";
-import type { ThemeName } from "@/constants/tokens";
+import type { ThemeName } from "@/constants";
 
 const THEME_STORAGE_KEY = "logline_theme";
 

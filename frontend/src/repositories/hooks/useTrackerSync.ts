@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { TRACKER_SYNC_POLL_MS } from "@/constants/tracker";
+import { TRACKER_SYNC_POLL_MS } from "@/constants";
 import { enrollTrackerDevice, getTrackerSyncStatus } from "../api/tracker";
 
 export const TRACKER_SYNC_KEY = "tracker-sync-status";
@@ -28,4 +28,3 @@ export function useEnrollTrackerDevice() {
     },
   });
 }
-

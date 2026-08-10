@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { cn, formatRelativeTime } from "@/common/utils";
-import { INTEGRATION_SOURCES } from "@/constants/integrations";
+import { INTEGRATION_SOURCES } from "@/constants";
 import { ApiError } from "@/repositories/api/client";
 import { useConnectIntegration, useDisconnectIntegration } from "@/repositories/hooks";
 import type { Integration } from "@/repositories/types";

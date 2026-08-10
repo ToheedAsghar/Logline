@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Loading } from "@/atoms";
 import { IntegrationCard, TrackerDeviceEnrollment, TrackerSyncNotice } from "@/molecules";
 
-import { INTEGRATION_SOURCES, type IntegrationId } from "@/constants/integrations";
+import { INTEGRATION_SOURCES, type IntegrationId } from "@/constants";
 import { useIntegrations, useTrackerSyncStatus } from "@/repositories/hooks";
 import type { Integration } from "@/repositories/types";
 
@@ -140,5 +140,4 @@ export default function Settings() {
     </div>
   );
 }
-
 

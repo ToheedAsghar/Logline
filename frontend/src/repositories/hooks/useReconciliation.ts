@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { approveDraft, generateDraft } from "../api/reconciliation";
-import type { ReconciliationGenerateParams, WorkLogDraft } from "../types";
+import type { ReconciliationApproveParams, ReconciliationGenerateParams } from "../types";
 import { ENTRIES_KEY } from "./useEntries";
 
 export const RECONCILIATION_KEY = "reconciliation";
@@ -14,7 +14,7 @@ export function useGenerateDraft() {
 export function useApproveDraft() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (draft: WorkLogDraft) => approveDraft(draft),
+    mutationFn: (params: ReconciliationApproveParams) => approveDraft(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [ENTRIES_KEY] });
     },

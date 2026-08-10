@@ -1,4 +1,4 @@
-import { TRACKER_STALE_AFTER_MINUTES } from "@/constants/tracker";
+import { TRACKER_STALE_AFTER_MINUTES } from "@/constants";
 import { formatRelativeTime } from "@/common/utils";
 import type { TrackerSyncStatus } from "@/repositories/types";
 
