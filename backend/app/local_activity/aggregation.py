@@ -6,7 +6,9 @@ from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from typing import Optional
 
 from app.local_activity.classification import SessionCategory
-from app.local_activity.constants import CONTEXT_FIELDS, MERGE_GAP_THRESHOLD_MINUTES, MICRO_IDLE_ABSORB_SECONDS
+from app.local_activity.constants import (
+    BRANCH_CATEGORY_SEGMENTS, CONTEXT_FIELDS, MERGE_GAP_THRESHOLD_MINUTES, MICRO_IDLE_ABSORB_SECONDS,
+)
 
 MERGE_GAP_THRESHOLD = timedelta(minutes=MERGE_GAP_THRESHOLD_MINUTES)
 PR_TITLE_RE = re.compile(r"(?:pull request|\bpr)\s*#(\d+)", re.IGNORECASE)
@@ -162,6 +164,19 @@ def _finalize_block(
     )
 
 
+def normalize_branch(branch: str) -> str:
+    """Return a branch name with any leading username segment removed, so one branch has one identity.
+
+    This repo's convention changed from `<category>/<description>` to `<username>/<category>/<description>` and back,
+    leaving the same work under two names; comparing them raw splits one branch's work into unrelated groups. Only a
+    segment sitting directly before a known category word is dropped, so `main` and `demo/x` are left alone.
+    """
+    segments = branch.split("/")
+    if len(segments) > 2 and segments[1] in BRANCH_CATEGORY_SEGMENTS:
+        return "/".join(segments[1:])
+    return branch
+
+
 def _deterministic_topic(row: RawSessionRow) -> Optional[DeterministicTopic]:
     """Return the exact PR, branch, or project-name topic used for grouping."""
     if row.category == SessionCategory.code_review:
@@ -169,7 +184,7 @@ def _deterministic_topic(row: RawSessionRow) -> Optional[DeterministicTopic]:
         if match:
             return ("pr", match.group(1))
     if row.branch:
-        return ("branch", row.branch)
+        return ("branch", normalize_branch(row.branch))
     if row.project_name:
         return ("project_name", row.project_name)
     return None

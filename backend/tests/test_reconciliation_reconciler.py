@@ -280,12 +280,26 @@ class TestEntryFormationFlowsIntoTheDraft:
         assert all(entry.description == "Session description." for entry in result.draft.entries)
 
     @pytest.mark.asyncio
-    async def test_residual_unassigned_minutes_is_always_empty(self):
+    async def test_work_that_reaches_an_entry_leaves_no_residual(self):
         provider = ScriptedProvider()
 
         result = await reconcile_evidence([], [make_block(minutes=90)], [], provider)
 
         assert result.draft.residual_unassigned_minutes == []
+
+    @pytest.mark.asyncio
+    async def test_a_sub_floor_block_with_no_related_entry_becomes_residual(self):
+        """A stray couple of minutes with nothing to fold into is reported rather than forced into unrelated work."""
+        provider = ScriptedProvider()
+        blocks = [
+            make_block(project="logline", minutes=90, category=SessionCategory.coding),
+            make_block(project="other-repo", minutes=2, category=SessionCategory.comms, start_hour=15),
+        ]
+
+        result = await reconcile_evidence([], blocks, [], provider)
+
+        assert [allocation.minutes for allocation in result.draft.residual_unassigned_minutes] == [2]
+        assert all(entry.allocations for entry in result.draft.entries)
 
     @pytest.mark.asyncio
     async def test_a_valid_tag_override_from_the_provider_is_used(self):

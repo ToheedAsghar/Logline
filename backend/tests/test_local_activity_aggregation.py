@@ -174,7 +174,7 @@ class TestDeterministicTopicIsolation:
             ("branch", "feature/settings-ui"),
         ]
 
-    def test_branch_names_are_not_fuzzily_normalized(self):
+    def test_username_prefixed_and_bare_forms_of_one_branch_share_a_topic(self):
         rows = [
             _row(PROJECT_A, "vscode", _at(0), _at(5), branch="feature/sso"),
             _row(PROJECT_A, "vscode", _at(5), _at(10), branch="toheed/feature/sso"),
@@ -182,7 +182,23 @@ class TestDeterministicTopicIsolation:
 
         blocks = aggregate_local_activity(rows)
 
-        assert len(blocks) == 2
+        assert len(blocks) == 1
+        assert blocks[0].deterministic_topic == ("branch", "feature/sso")
+
+    def test_branch_names_are_not_fuzzily_normalized(self):
+        rows = [
+            _row(PROJECT_A, "vscode", _at(0), _at(5), branch="feature/sso"),
+            _row(PROJECT_A, "vscode", _at(5), _at(10), branch="feature/sso-v2"),
+            _row(PROJECT_A, "vscode", _at(10), _at(15), branch="demo/sso"),
+        ]
+
+        blocks = aggregate_local_activity(rows)
+
+        assert [block.deterministic_topic for block in blocks] == [
+            ("branch", "feature/sso"),
+            ("branch", "feature/sso-v2"),
+            ("branch", "demo/sso"),
+        ]
 
     def test_pr_number_takes_priority_over_branch_and_project_name(self):
         row = _row(

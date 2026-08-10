@@ -13,6 +13,33 @@ MERGE_GAP_THRESHOLD_MINUTES = 15
 
 MICRO_IDLE_ABSORB_SECONDS = 5
 
+BRANCH_CATEGORY_SEGMENTS = frozenset(
+    {
+        "feature",
+        "feat",
+        "bugfix",
+        "hotfix",
+        "fix",
+        "chore",
+        "refactor",
+        "docs",
+        "test",
+        "wip",
+    }
+)
+
+TOPIC_SESSION_GAP_MINUTES = 45
+
+TOPIC_INHERIT_WINDOW_MINUTES = 20
+
+MAX_TOPIC_STRAND_MINUTES = 120
+
+TOPIC_DOMINANT_FILE_LIMIT = 3
+
+TOPIC_DOMINANT_FILE_SHARE = 0.2
+
+TOPIC_SIGNATURE_FILE_LIMIT = 2
+
 KNOWN_IDE_BUNDLE_IDS = frozenset(
     {
         "com.microsoft.VSCode",

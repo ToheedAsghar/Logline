@@ -1,6 +1,7 @@
 """Form deterministic entries, generate per-entry descriptions, and verify the resulting reconciliation draft."""
 
 import asyncio
+from dataclasses import replace
 from datetime import timezone, tzinfo
 from typing import get_args
 
@@ -14,7 +15,7 @@ from app.agent.reconciliation.constants import (
     NOTE_WITHOUT_SUMMARIES, REMINDER_NOTE_MAX_LENGTH, UNIDENTIFIED_PROJECT,
 )
 from app.agent.reconciliation.description import describe_entry
-from app.agent.reconciliation.entries import FormedEntry, form_entries
+from app.agent.reconciliation.entries import FormedEntry, fold_small_entries, form_entries, merge_adjacent_entries
 from app.agent.reconciliation.evidence import EvidenceBundle, build_evidence, compute_tracked_wall_clock_minutes
 from app.agent.reconciliation.schemas import (
     DraftEntry, DraftReminder, ReminderSource, WorkLogDraft, find_duration_language, truncate_description,
@@ -22,6 +23,7 @@ from app.agent.reconciliation.schemas import (
 from app.agent.reconciliation.verifier import VerificationResult, verify_draft
 from app.local_activity.aggregation import LocalActivityBlock
 from app.local_activity.classification import SessionCategory
+from app.local_activity.topic_refinement import refine_blocks_by_id
 from app.matching.matcher import MatchedGroup, RemoteEventData
 from app.reminders.generator import Reminder, generate_reminders
 
@@ -140,7 +142,9 @@ async def reconcile_evidence(
     Raises `ValueError` for naive evidence datetimes or unsupported reminder sources.
     """
     bundle = build_evidence(matched_groups, unmatched_blocks, unmatched_events)
-    formed_entries = form_entries(bundle, tz)
+    bundle = replace(bundle, blocks_by_id=refine_blocks_by_id(bundle.blocks_by_id))
+    folding = fold_small_entries(merge_adjacent_entries(form_entries(bundle, tz), bundle), bundle)
+    formed_entries = folding.entries
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_DESCRIPTION_REQUESTS)
 
     async def resolve_with_limit(entry: FormedEntry) -> DraftEntry:
@@ -157,7 +161,7 @@ async def reconcile_evidence(
     merged_draft = WorkLogDraft(
         entries=list(draft_entries),
         reminders=merged_reminders,
-        residual_unassigned_minutes=[],
+        residual_unassigned_minutes=folding.residual,
         tracked_wall_clock_minutes=compute_tracked_wall_clock_minutes(
             [group.block for group in matched_groups] + list(unmatched_blocks)
         ),
