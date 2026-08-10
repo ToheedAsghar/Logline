@@ -56,20 +56,35 @@ describe("AccountSettingsModal", () => {
     expect(screen.getByText("Work email")).toBeInTheDocument();
   });
 
-  it("allows form fields to be editable", async () => {
+  it("disables the name, email, and channel fields since none of them save", async () => {
     render(<AccountSettingsModal open={true} onClose={mockOnClose} />);
-    
+
     await waitFor(() => {
       expect(screen.getByDisplayValue("Test User")).toBeInTheDocument();
     });
-    
-    const nameInput = screen.getByDisplayValue("Test User");
-    
-    await userEvent.clear(nameInput);
-    await userEvent.type(nameInput, "New Name");
-    expect(nameInput).toHaveValue("New Name");
+
+    expect(screen.getByDisplayValue("Test User")).toBeDisabled();
+    expect(screen.getByDisplayValue("test@example.com")).toBeDisabled();
+    expect(screen.getByLabelText("Default standup channel")).toBeDisabled();
   });
-  
+
+  it("does not offer Handle or Role fields, which have no backing data at all", async () => {
+    render(<AccountSettingsModal open={true} onClose={mockOnClose} />);
+
+    await waitFor(() => expect(screen.getByDisplayValue("Test User")).toBeInTheDocument());
+
+    expect(screen.queryByText("Handle")).not.toBeInTheDocument();
+    expect(screen.queryByText("Role")).not.toBeInTheDocument();
+  });
+
+  it("shows the account's real default channel instead of a false blank", async () => {
+    vi.mocked(me).mockResolvedValue(userResponse({ default_channel: "genesis-standups" }));
+
+    render(<AccountSettingsModal open={true} onClose={mockOnClose} />);
+
+    await waitFor(() => expect(screen.getByLabelText("Default standup channel")).toHaveValue("genesis-standups"));
+  });
+
   it("does not render when open is false", () => {
     const { container } = render(<AccountSettingsModal open={false} onClose={mockOnClose} />);
     expect(container).toBeEmptyDOMElement();
