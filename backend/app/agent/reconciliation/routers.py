@@ -2,7 +2,7 @@
 
 import logging
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, model_validator
@@ -17,6 +17,7 @@ from app.agent.reconciliation.schemas import WorkLogDraft
 from app.agent.reconciliation.verifier import verify_draft
 from app.auth.deps import get_current_user
 from app.auth.models import User
+from app.core.timezones import resolve_timezone
 from app.db.session import get_db
 from app.entries.models import Entry, EntryFormat, EntryStatus, EntryVersion, EntryVersionSource
 from app.entries.schemas import EntryResponse, normalize_entry_content
@@ -52,8 +53,8 @@ def _resolve_user_timezone(user: User) -> ZoneInfo:
             ),
         )
     try:
-        return ZoneInfo(user.timezone)
-    except (ZoneInfoNotFoundError, ValueError):
+        return resolve_timezone(user.timezone)
+    except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(

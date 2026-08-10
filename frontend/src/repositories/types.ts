@@ -77,6 +77,7 @@ export interface UserResponse {
   email: string;
   name: string | null;
   default_channel: string | null;
+  timezone: string | null;
   created_at: string;
 }
 
