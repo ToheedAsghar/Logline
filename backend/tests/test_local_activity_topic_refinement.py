@@ -5,9 +5,15 @@ from datetime import datetime, timedelta, timezone
 from app.local_activity.aggregation import LocalActivityBlock, TitleCluster
 from app.local_activity.classification import SessionCategory
 from app.local_activity.constants import MAX_TOPIC_STRAND_MINUTES
-from app.local_activity.topic_refinement import normalize_file_name, refine_block_topics, refine_blocks_by_id
+from app.local_activity.topic_refinement import normalize_file_name, refine_blocks_by_id
 
 UTC = timezone.utc
+
+
+def refine(blocks):
+    """Refine a plain list of blocks, assigning sequential ids and returning results in the same order."""
+    refined = refine_blocks_by_id(dict(enumerate(blocks)))
+    return [refined[index] for index in range(len(blocks))]
 
 
 def make_block(
@@ -39,25 +45,27 @@ class TestTopicsThatMustNotChange:
     def test_a_pr_topic_is_left_alone(self):
         block = make_block(titles=[("routers.py — logline", 600)], topic=("pr", "36"))
 
-        assert refine_block_topics([block])[0].deterministic_topic == ("pr", "36")
+        assert refine([block])[0].deterministic_topic == ("pr", "36")
 
     def test_a_branch_topic_is_left_alone(self):
         block = make_block(titles=[("routers.py — logline", 600)], topic=("branch", "toheed/feature/sso"))
 
-        assert refine_block_topics([block])[0].deterministic_topic == ("branch", "toheed/feature/sso")
+        assert refine([block])[0].deterministic_topic == ("branch", "toheed/feature/sso")
 
     def test_a_meeting_block_is_left_alone(self):
         block = make_block(category=SessionCategory.meeting, meeting_name="Daily Standup", titles=[("Meet", 60)])
 
-        assert refine_block_topics([block])[0].deterministic_topic is None
+        assert refine([block])[0].deterministic_topic is None
 
-    def test_input_order_is_preserved_so_callers_can_zip_ids_back(self):
-        late = make_block(start_hour=15, titles=[("a.py — x", 60)])
-        early = make_block(start_hour=9, titles=[("b.py — x", 60)])
+    def test_topics_are_correlated_by_id_not_by_dict_iteration_order(self):
+        early = make_block(start_hour=9, titles=[("a.py — x", 60)])
+        late = make_block(start_hour=15, titles=[("b.py — x", 60)])
 
-        refined = refine_block_topics([late, early])
+        refined = refine_blocks_by_id({30: late, 5: early})
 
-        assert [block.start_time for block in refined] == [late.start_time, early.start_time]
+        assert refined[30].start_time == late.start_time
+        assert refined[5].start_time == early.start_time
+        assert refined[30].deterministic_topic != refined[5].deterministic_topic
 
     def test_refining_by_id_keeps_every_block_id(self):
         blocks_by_id = {7: make_block(start_hour=9, titles=[("a.py — x", 60)]), 3: make_block(start_hour=15)}
@@ -70,7 +78,7 @@ class TestTopicsThatMustNotChange:
     def test_measured_durations_are_never_changed(self):
         blocks = [make_block(start_hour=9, minutes=30), make_block(start_hour=10, minutes=45)]
 
-        refined = refine_block_topics(blocks)
+        refined = refine(blocks)
 
         assert [block.duration for block in refined] == [timedelta(minutes=30), timedelta(minutes=45)]
 
@@ -79,7 +87,7 @@ class TestFileClusterTopics:
     def test_a_topicless_block_gains_a_topic_from_its_dominant_files(self):
         block = make_block(titles=[("prompt.py — logline", 600), ("system_prompt.py — logline", 400)])
 
-        kind, value = refine_block_topics([block])[0].deterministic_topic
+        kind, value = refine([block])[0].deterministic_topic
 
         assert kind == "files"
         assert "prompt.py" in value
@@ -87,7 +95,7 @@ class TestFileClusterTopics:
     def test_a_project_wide_topic_is_refined_by_files(self):
         block = make_block(titles=[("prompt.py — logline", 600)], topic=("project_name", "logline"))
 
-        kind, value = refine_block_topics([block])[0].deterministic_topic
+        kind, value = refine([block])[0].deterministic_topic
 
         assert kind == "files"
         assert value.startswith("logline:")
@@ -96,7 +104,7 @@ class TestFileClusterTopics:
         first = make_block(start_hour=9, titles=[("prompt.py — logline", 600)])
         second = make_block(start_hour=9, start_minute=35, titles=[("prompt.py — logline", 300)])
 
-        refined = refine_block_topics([first, second])
+        refined = refine([first, second])
 
         assert refined[0].deterministic_topic == refined[1].deterministic_topic
 
@@ -104,7 +112,7 @@ class TestFileClusterTopics:
         first = make_block(start_hour=9, titles=[("prompt.py — logline", 600)])
         second = make_block(start_hour=9, start_minute=35, titles=[("routers.py — logline", 600)])
 
-        refined = refine_block_topics([first, second])
+        refined = refine([first, second])
 
         assert refined[0].deterministic_topic != refined[1].deterministic_topic
 
@@ -114,7 +122,7 @@ class TestFileClusterTopics:
             start_hour=9, start_minute=35, titles=[("shared.py — x", 600)], topic=("project_name", "logline-recon")
         )
 
-        refined = refine_block_topics([first, second])
+        refined = refine([first, second])
 
         assert refined[0].deterministic_topic != refined[1].deterministic_topic
 
@@ -126,7 +134,7 @@ class TestOverlapIsMeasuredAgainstDominantFiles:
         bridge = make_block(start_hour=9, start_minute=55, titles=[("prompt.py — logline", 60), ("api.py — l", 3000)])
         last = make_block(start_hour=10, start_minute=50, titles=[("api.py — l", 60), ("tracker.py — l", 3000)])
 
-        refined = refine_block_topics([first, bridge, last])
+        refined = refine([first, bridge, last])
 
         assert refined[0].deterministic_topic != refined[2].deterministic_topic
 
@@ -136,7 +144,7 @@ class TestBoundedInheritance:
         anchor = make_block(start_hour=9, titles=[("prompt.py — logline", 600)])
         quiet = make_block(start_hour=9, start_minute=35, titles=[("Terminal", 300)])
 
-        refined = refine_block_topics([anchor, quiet])
+        refined = refine([anchor, quiet])
 
         assert refined[1].deterministic_topic == refined[0].deterministic_topic
 
@@ -144,14 +152,14 @@ class TestBoundedInheritance:
         anchor = make_block(start_hour=9, minutes=10, titles=[("prompt.py — logline", 600)])
         distant = make_block(start_hour=9, start_minute=40, titles=[("Terminal", 300)])
 
-        refined = refine_block_topics([anchor, distant])
+        refined = refine([anchor, distant])
 
         assert refined[1].deterministic_topic != refined[0].deterministic_topic
 
     def test_a_block_with_no_files_at_all_gets_a_general_topic(self):
         block = make_block(titles=[("Terminal", 300)])
 
-        assert refine_block_topics([block])[0].deterministic_topic[0] == "general"
+        assert refine([block])[0].deterministic_topic[0] == "general"
 
 
 class TestSessionGaps:
@@ -159,7 +167,7 @@ class TestSessionGaps:
         first = make_block(start_hour=9, minutes=30, titles=[("Terminal", 300)])
         second = make_block(start_hour=11, minutes=30, titles=[("Terminal", 300)])
 
-        refined = refine_block_topics([first, second])
+        refined = refine([first, second])
 
         assert refined[0].deterministic_topic != refined[1].deterministic_topic
 
@@ -168,7 +176,7 @@ class TestSessionGaps:
         first = make_block(start_hour=9, minutes=30, titles=[("prompt.py — logline", 600)])
         second = make_block(start_hour=13, minutes=30, titles=[("prompt.py — logline", 600)])
 
-        refined = refine_block_topics([first, second])
+        refined = refine([first, second])
 
         assert refined[0].deterministic_topic == refined[1].deterministic_topic
 
@@ -180,7 +188,7 @@ class TestDurationBackstop:
             for step in range(5)
         ]
 
-        refined = refine_block_topics(blocks)
+        refined = refine(blocks)
 
         assert len({block.deterministic_topic for block in refined}) > 1
 
@@ -190,7 +198,7 @@ class TestDurationBackstop:
             for step in range(5)
         ]
 
-        refined = refine_block_topics(blocks)
+        refined = refine(blocks)
 
         minutes_by_topic: dict[tuple[str, str], float] = {}
         for block in refined:
@@ -205,7 +213,7 @@ class TestDurationBackstop:
             make_block(start_hour=11, start_minute=30, minutes=60, titles=[("prompt.py — logline", 3600)]),
         ]
 
-        refined = refine_block_topics(blocks)
+        refined = refine(blocks)
 
         assert refined[0].deterministic_topic == refined[1].deterministic_topic
         assert refined[2].deterministic_topic != refined[1].deterministic_topic
@@ -232,7 +240,7 @@ class TestTimestampedFileNames:
             make_block(start_hour=9, start_minute=30, titles=[("logs_2026-08-04.md", 600)]),
         ]
 
-        refined = refine_block_topics(blocks)
+        refined = refine(blocks)
 
         assert refined[0].deterministic_topic == refined[1].deterministic_topic
         assert refined[0].deterministic_topic[0] == "files"
@@ -240,6 +248,6 @@ class TestTimestampedFileNames:
     def test_newly_recognised_extensions_produce_a_file_topic(self):
         blocks = [make_block(titles=[("trace.jsonl", 600), ("notes.txt", 600)])]
 
-        refined = refine_block_topics(blocks)
+        refined = refine(blocks)
 
         assert refined[0].deterministic_topic[0] == "files"
