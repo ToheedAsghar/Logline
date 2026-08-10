@@ -66,8 +66,12 @@ def _overlap_review_reason(bundle: EvidenceBundle, block_ids: list[int]) -> str 
 def form_entries(bundle: EvidenceBundle, tz: tzinfo = timezone.utc) -> list[FormedEntry]:
     """Group bundle blocks into entries ordered by descending allocated minutes.
 
-    Meetings remain separate. Other blocks group by date, project, category, and deterministic topic; short PR and
-    branch-topic groups fold into the matching topic-less group.
+    Named meetings remain separate, one entry each. Every other block, including an unnamed meeting, groups by date,
+    project, category, and deterministic topic; short PR and branch-topic groups fold into the matching topic-less
+    group. Dates are the block start read in `tz`.
+
+    Unnamed meetings group rather than staying separate because a desktop meeting client carries no meeting name and
+    is interleaved with other apps, so its time arrives as dozens of sub-minute blocks that would each become an entry.
     """
     meeting_entries: list[FormedEntry] = []
     candidate_groups: dict[
@@ -75,7 +79,7 @@ def form_entries(bundle: EvidenceBundle, tz: tzinfo = timezone.utc) -> list[Form
     ] = {}
 
     for block_id, block in bundle.blocks_by_id.items():
-        if block.category == SessionCategory.meeting:
+        if block.category == SessionCategory.meeting and block.meeting_name:
             meeting_entries.append(
                 FormedEntry(
                     date=local_date(block.start_time, tz),

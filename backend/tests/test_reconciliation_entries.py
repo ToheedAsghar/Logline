@@ -19,13 +19,14 @@ def make_block(
     category=SessionCategory.coding,
     apps=None,
     deterministic_topic=None,
+    meeting_name=None,
 ):
     start = datetime(2026, 8, 6, start_hour, start_minute, tzinfo=UTC)
     duration = timedelta(minutes=minutes)
     return LocalActivityBlock(
         project=project, start_time=start, end_time=start + duration, duration=duration,
         apps=apps if apps is not None else ["vscode"], category=category,
-        deterministic_topic=deterministic_topic,
+        deterministic_topic=deterministic_topic, meeting_name=meeting_name,
     )
 
 
@@ -37,10 +38,15 @@ def make_event(external_id="gh:pr:41", source="github", occurred_hour=9, occurre
     )
 
 
-class TestMeetingBlocksAlwaysGetTheirOwnEntry:
-    def test_two_meeting_blocks_never_merge_even_with_the_same_project_and_category(self):
-        first = make_block(project=None, start_hour=9, minutes=15, category=SessionCategory.meeting)
-        second = make_block(project=None, start_hour=9, start_minute=15, minutes=15, category=SessionCategory.meeting)
+class TestNamedMeetingBlocksAlwaysGetTheirOwnEntry:
+    def test_two_named_meeting_blocks_never_merge_even_with_the_same_project_and_category(self):
+        first = make_block(
+            project=None, start_hour=9, minutes=15, category=SessionCategory.meeting, meeting_name="Daily Standup"
+        )
+        second = make_block(
+            project=None, start_hour=9, start_minute=15, minutes=15, category=SessionCategory.meeting,
+            meeting_name="Design Review",
+        )
         bundle = build_evidence([], [first, second], [])
 
         entries = form_entries(bundle)
@@ -48,6 +54,59 @@ class TestMeetingBlocksAlwaysGetTheirOwnEntry:
         assert len(entries) == 2
         assert all(entry.category == SessionCategory.meeting for entry in entries)
         assert all(len(entry.block_ids) == 1 for entry in entries)
+
+    def test_two_blocks_of_the_same_named_meeting_still_get_their_own_entries(self):
+        """Same-name blocks are already merged during aggregation, so two here are two distinct sittings."""
+        first = make_block(
+            project=None, start_hour=9, minutes=15, category=SessionCategory.meeting, meeting_name="Daily Standup"
+        )
+        second = make_block(
+            project=None, start_hour=14, minutes=15, category=SessionCategory.meeting, meeting_name="Daily Standup"
+        )
+        bundle = build_evidence([], [first, second], [])
+
+        assert len(form_entries(bundle)) == 2
+
+
+class TestUnnamedMeetingBlocksGroupIntoOneEntry:
+    """A desktop meeting client reports no meeting name and interleaves with other apps, producing many tiny blocks."""
+
+    def test_unnamed_meeting_blocks_on_one_day_merge_into_a_single_entry(self):
+        first = make_block(project=None, start_hour=9, minutes=15, category=SessionCategory.meeting)
+        second = make_block(project=None, start_hour=9, start_minute=20, minutes=15, category=SessionCategory.meeting)
+        bundle = build_evidence([], [first, second], [])
+
+        entries = form_entries(bundle)
+
+        assert len(entries) == 1
+        assert entries[0].category == SessionCategory.meeting
+        assert entries[0].total_minutes == 30
+
+    def test_an_unnamed_meeting_never_merges_into_a_named_one(self):
+        named = make_block(
+            project=None, start_hour=9, minutes=15, category=SessionCategory.meeting, meeting_name="Daily Standup"
+        )
+        unnamed = make_block(project=None, start_hour=14, minutes=15, category=SessionCategory.meeting)
+        bundle = build_evidence([], [named, unnamed], [])
+
+        entries = form_entries(bundle)
+
+        assert len(entries) == 2
+        assert all(len(entry.block_ids) == 1 for entry in entries)
+
+    def test_an_unnamed_meeting_never_merges_into_another_category(self):
+        meeting = make_block(project=None, start_hour=9, minutes=15, category=SessionCategory.meeting)
+        admin = make_block(project=None, start_hour=9, start_minute=20, minutes=15, category=SessionCategory.admin)
+        bundle = build_evidence([], [meeting, admin], [])
+
+        assert len(form_entries(bundle)) == 2
+
+    def test_a_grouped_unnamed_meeting_still_carries_the_meeting_tag(self):
+        first = make_block(project=None, start_hour=9, minutes=15, category=SessionCategory.meeting)
+        second = make_block(project=None, start_hour=9, start_minute=20, minutes=15, category=SessionCategory.meeting)
+        bundle = build_evidence([], [first, second], [])
+
+        assert form_entries(bundle)[0].base_tag == CATEGORY_TO_TAG[SessionCategory.meeting]
 
 
 class TestNonMeetingGrouping:

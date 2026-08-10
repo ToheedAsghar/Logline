@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from app.local_activity.constants import (
-    IDLE_BUNDLE_IDS, KNOWN_COMMS_BUNDLE_IDS, KNOWN_IDE_BUNDLE_IDS, KNOWN_TERMINAL_BUNDLE_IDS,
+    IDLE_BUNDLE_IDS, KNOWN_COMMS_BUNDLE_IDS, KNOWN_IDE_BUNDLE_IDS, KNOWN_MEETING_BUNDLE_IDS, KNOWN_TERMINAL_BUNDLE_IDS,
 )
 
 
@@ -91,12 +91,16 @@ def parse_context_detail(raw: str | dict | None) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _is_meeting(detail: dict, window_title: Optional[str]) -> bool:
+def _is_meeting(detail: dict, window_title: Optional[str], bundle_id: Optional[str]) -> bool:
     """Return whether a session is a meeting.
 
-    Trust `is_meeting` when present. Otherwise recognize supported meeting URLs and legacy titles beginning with
-    `Meet`; the word-boundary rule prevents matching `Meeting`.
+    A desktop meeting client is recognized by bundle id ahead of the `is_meeting` flag, which the tracker only sets
+    for browser tabs -- a native Zoom or Teams window carries no URL to match and would otherwise reach the Admin
+    catch-all. Otherwise trust `is_meeting` when present, then recognize supported meeting URLs and legacy titles
+    beginning with `Meet`; the word-boundary rule prevents matching `Meeting`.
     """
+    if bundle_id in KNOWN_MEETING_BUNDLE_IDS:
+        return True
     if "is_meeting" in detail:
         return detail.get("is_meeting") is True
     text = window_title or ""
@@ -199,7 +203,7 @@ def classify_session(
 
     detail = parse_context_detail(context_detail)
 
-    if _is_meeting(detail, window_title):
+    if _is_meeting(detail, window_title, bundle_id):
         return SessionClassification(category=SessionCategory.meeting, meeting_name=_meeting_name(detail, window_title))
     if _is_code_review(detail, window_title):
         return SessionClassification(category=SessionCategory.code_review)

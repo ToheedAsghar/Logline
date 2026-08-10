@@ -12,6 +12,9 @@ CHROME_BUNDLE_ID = "com.google.Chrome"
 UNKNOWN_BUNDLE_ID = "com.example.SomeRandomApp"
 LOGINWINDOW_BUNDLE_ID = "com.apple.loginwindow"
 SECURITY_AGENT_BUNDLE_ID = "com.apple.SecurityAgent"
+ZOOM_BUNDLE_ID = "us.zoom.xos"
+TEAMS_BUNDLE_ID = "com.microsoft.teams"
+NEW_TEAMS_BUNDLE_ID = "com.microsoft.teams2"
 
 
 def _detail(**kwargs) -> str:
@@ -121,6 +124,49 @@ class TestMeeting:
         result = _classify(bundle_id=SLACK_BUNDLE_ID, context_detail=_detail(is_meeting=True))
 
         assert result.category == SessionCategory.meeting
+
+
+class TestDesktopMeetingApps:
+    def test_the_zoom_desktop_app_classifies_as_a_meeting(self):
+        """The real tracker records native Zoom windows with no URL and no context detail at all."""
+        result = _classify(bundle_id=ZOOM_BUNDLE_ID, window_title="Zoom Meeting", context_detail=None)
+
+        assert result.category == SessionCategory.meeting
+
+    def test_the_teams_desktop_app_classifies_as_a_meeting(self):
+        result = _classify(bundle_id=TEAMS_BUNDLE_ID, window_title="Chat | Microsoft Teams", context_detail=None)
+
+        assert result.category == SessionCategory.meeting
+
+    def test_the_new_teams_desktop_app_classifies_as_a_meeting(self):
+        result = _classify(bundle_id=NEW_TEAMS_BUNDLE_ID, window_title="Microsoft Teams", context_detail=None)
+
+        assert result.category == SessionCategory.meeting
+
+    def test_a_zoom_window_with_no_title_still_classifies_as_a_meeting(self):
+        """Most real native Zoom rows carry an empty window title, so the bundle id has to carry the decision alone."""
+        result = _classify(bundle_id=ZOOM_BUNDLE_ID, window_title=None, context_detail=None)
+
+        assert result.category == SessionCategory.meeting
+
+    def test_a_desktop_meeting_app_outranks_the_browser_is_meeting_flag(self):
+        """`is_meeting` is a browser-tab signal; a false value must not demote a native meeting client to Admin."""
+        result = _classify(
+            bundle_id=ZOOM_BUNDLE_ID, window_title="Zoom Meeting", context_detail=_detail(is_meeting=False)
+        )
+
+        assert result.category == SessionCategory.meeting
+
+    def test_a_locked_screen_during_a_meeting_still_classifies_as_idle(self):
+        """Idle is checked before Meeting, so a lock event is never absorbed into meeting time."""
+        result = _classify(bundle_id=LOGINWINDOW_BUNDLE_ID, window_title="Zoom Meeting", context_detail=None)
+
+        assert result.category == SessionCategory.idle
+
+    def test_an_unrelated_bundle_id_is_not_promoted_to_a_meeting(self):
+        result = _classify(bundle_id=UNKNOWN_BUNDLE_ID, window_title="Weekly notes", context_detail=None)
+
+        assert result.category != SessionCategory.meeting
 
 
 class TestCodeReview:

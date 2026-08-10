@@ -50,6 +50,14 @@ KNOWN_COMMS_BUNDLE_IDS = frozenset(
     }
 )
 
+KNOWN_MEETING_BUNDLE_IDS = frozenset(
+    {
+        "us.zoom.xos",
+        "com.microsoft.teams",
+        "com.microsoft.teams2",
+    }
+)
+
 CONTEXT_FIELDS: tuple[tuple[str, str], ...] = (
     ("branch", "branches"),
     ("project_name", "project_names"),
