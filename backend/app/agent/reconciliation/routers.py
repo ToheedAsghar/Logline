@@ -148,6 +148,7 @@ def _gather_evidence(
                 start_time=session.started_at,
                 end_time=session.ended_at,
                 category=classification.category,
+                session_id=session.id,
                 window_title=session.window_title,
                 meeting_name=classification.meeting_name,
                 branch=_context_string(context_detail, "git_branch")

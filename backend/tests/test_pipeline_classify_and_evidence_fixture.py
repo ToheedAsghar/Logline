@@ -1,6 +1,7 @@
 """Test classify-before-aggregate behavior with meetings, multitasking, and local-only work."""
 
 import json
+import uuid
 from datetime import date, datetime, timezone
 
 from app.agent.reconciliation.entries import form_entries
@@ -93,6 +94,7 @@ def _classify_and_build_rows() -> list[RawSessionRow]:
                 start_time=session["started_at"],
                 end_time=session["ended_at"],
                 category=classification.category,
+                session_id=uuid.uuid4(),
                 window_title=session["window_title"],
                 meeting_name=classification.meeting_name,
             )
@@ -147,6 +149,7 @@ class TestLegacyNamedMeetingFragments:
                     start_time=started_at,
                     end_time=ended_at,
                     category=classification.category,
+                    session_id=uuid.uuid4(),
                     window_title=title,
                     meeting_name=classification.meeting_name,
                 )

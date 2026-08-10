@@ -1,5 +1,6 @@
 """Test category-aware aggregation, named-meeting spans, and title clustering."""
 
+import uuid
 from datetime import datetime, timedelta
 
 from app.local_activity.aggregation import RawSessionRow, TitleCluster, aggregate_local_activity
@@ -25,6 +26,7 @@ def _row(
         start_time=start,
         end_time=end,
         category=category,
+        session_id=uuid.uuid4(),
         window_title=window_title,
         meeting_name=meeting_name,
         **context,

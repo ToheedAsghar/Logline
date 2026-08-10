@@ -1,5 +1,6 @@
 """Test local-activity aggregation of continuous in-memory tracker sessions."""
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from app.local_activity.aggregation import LocalActivityBlock, RawSessionRow, aggregate_local_activity
@@ -21,6 +22,7 @@ def _row(
     project_name: str | None = None,
     active_file: str | None = None,
     tool: str | None = None,
+    session_id: uuid.UUID | None = None,
 ) -> RawSessionRow:
     return RawSessionRow(
         project=project,
@@ -28,6 +30,7 @@ def _row(
         start_time=start,
         end_time=end,
         category=category,
+        session_id=session_id or uuid.uuid4(),
         window_title=window_title,
         branch=branch,
         project_name=project_name,
@@ -308,6 +311,19 @@ class TestChronologicalOrdering:
         blocks = aggregate_local_activity(rows)
 
         assert [block.project for block in blocks] == [PROJECT_A, PROJECT_B]
+
+    def test_a_genuine_start_end_tie_is_broken_by_session_id_not_input_order(self):
+        """Two rows sharing the exact same (start_time, end_time) but different categories form two separate,
+        equally-timed blocks, so their relative order in the result depends entirely on the tie-break. That order
+        must come out the same regardless of which row the caller happened to list first."""
+        tied_start, tied_end = _at(0), _at(5)
+        coding_row = _row(PROJECT_A, "vscode", tied_start, tied_end, category=SessionCategory.coding)
+        admin_row = _row(PROJECT_A, "vscode", tied_start, tied_end, category=SessionCategory.admin)
+
+        forward = aggregate_local_activity([coding_row, admin_row])
+        reverse = aggregate_local_activity([admin_row, coding_row])
+
+        assert [block.category for block in forward] == [block.category for block in reverse]
 
 
 class TestLargeGapWithinSameProject:

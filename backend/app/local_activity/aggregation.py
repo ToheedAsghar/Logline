@@ -1,6 +1,7 @@
 """Aggregate classified raw tracker sessions into continuous local activity blocks."""
 
 import re
+import uuid
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from typing import Optional
@@ -21,7 +22,8 @@ class RawSessionRow:
     """Represent one classified tracker session and its local context.
 
     `project`, `category`, and the deterministic topic fields determine aggregation. Other context fields are retained
-    as evidence only.
+    as evidence only. `session_id` is the source tracker session's own id, used only to break ties deterministically
+    when two rows share an exact `(start_time, end_time)` -- never as evidence.
     """
 
     project: Optional[str]
@@ -29,6 +31,7 @@ class RawSessionRow:
     start_time: datetime
     end_time: datetime
     category: SessionCategory
+    session_id: uuid.UUID
     window_title: Optional[str] = None
     meeting_name: Optional[str] = None
     branch: Optional[str] = None
@@ -262,13 +265,15 @@ def aggregate_local_activity(
     threshold-sized gap splits. Zero-duration rows do not affect ordinary aggregation, but named meeting rows may
     anchor meeting spans.
 
-    Sorts rows by `(start_time, end_time)` and returns blocks by `start_time`. Pure transformation; does not classify.
-    Blocks may still span a `tz` midnight -- call `split_blocks_at_local_midnight` to cut them.
+    Sorts rows by `(start_time, end_time, session_id)` and returns blocks by `start_time`. The session id tie-breaker
+    makes this deterministic for its own input regardless of the order rows arrive in, rather than depending on a
+    caller happening to pre-sort them. Pure transformation; does not classify. Blocks may still span a `tz` midnight --
+    call `split_blocks_at_local_midnight` to cut them.
     """
     if not rows:
         return []
 
-    rows = sorted(rows, key=lambda row: (row.start_time, row.end_time))
+    rows = sorted(rows, key=lambda row: (row.start_time, row.end_time, row.session_id))
 
     absorbed_rows: list[RawSessionRow] = []
     for row in rows:

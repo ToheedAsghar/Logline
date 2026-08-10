@@ -1,5 +1,6 @@
 """Test that zero-duration tracker transitions cannot affect aggregate block boundaries."""
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from app.local_activity.aggregation import RawSessionRow, aggregate_local_activity
@@ -23,6 +24,7 @@ def _row(
         start_time=start,
         end_time=end,
         category=category,
+        session_id=uuid.uuid4(),
         meeting_name=meeting_name,
     )
 
