@@ -1,6 +1,7 @@
 """Assemble structured reconciliation evidence from activity blocks and remote events."""
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone, tzinfo
 
@@ -99,6 +100,32 @@ def _format_context_line(block: LocalActivityBlock) -> str | None:
     if not rendered:
         return None
     return EVENT_INDENT + "context | " + " | ".join(rendered)
+
+
+def compute_tracked_wall_clock_minutes(blocks: Iterable[LocalActivityBlock]) -> int:
+    """Return the union of the given block spans in whole minutes, counting concurrent time once.
+
+    Summing each block instead would double-count genuinely overlapping work, such as a meeting running alongside
+    a non-meeting block, so the spans are merged before measuring. Pass measured aggregation blocks, whose span
+    equals their duration -- a bundle's merged cluster blocks span the gaps between their fragments and would
+    inflate the total.
+    """
+    spans = sorted((block.start_time, block.end_time) for block in blocks)
+
+    tracked = timedelta()
+    merged_start: datetime | None = None
+    merged_end: datetime | None = None
+    for start, end in spans:
+        if merged_end is None or start > merged_end:
+            if merged_end is not None:
+                tracked += merged_end - merged_start
+            merged_start, merged_end = start, end
+            continue
+        merged_end = max(merged_end, end)
+    if merged_end is not None:
+        tracked += merged_end - merged_start
+
+    return round(tracked.total_seconds() / 60)
 
 
 def compute_overlaps(blocks_by_id: dict[int, LocalActivityBlock]) -> dict[int, list[int]]:

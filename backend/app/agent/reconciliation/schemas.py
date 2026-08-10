@@ -225,13 +225,18 @@ class DraftReminder(BaseModel):
 
 
 class WorkLogDraft(BaseModel):
-    """Complete reconciliation draft output containing entries, AI reminders, and residual block allocations."""
+    """Complete reconciliation draft output containing entries, AI reminders, and residual block allocations.
+
+    `tracked_wall_clock_minutes` is measured wall-clock time with concurrency counted once, so it can legitimately be
+    less than the entries' allocated total when real overlapping work exists.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     entries: list[DraftEntry] = Field(default_factory=list)
     reminders: list[DraftReminder] = Field(default_factory=list)
     residual_unassigned_minutes: list[BlockAllocation] = Field(default_factory=list)
+    tracked_wall_clock_minutes: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def _reject_repeated_residual_blocks(self) -> "WorkLogDraft":

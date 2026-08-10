@@ -42,7 +42,12 @@ def _strict_schema() -> dict:
 def test_schema_survives_the_strict_transform():
     schema = _strict_schema()
     assert schema["additionalProperties"] is False
-    assert set(schema["required"]) == {"entries", "reminders", "residual_unassigned_minutes"}
+    assert set(schema["required"]) == {
+        "entries",
+        "reminders",
+        "residual_unassigned_minutes",
+        "tracked_wall_clock_minutes",
+    }
 
 
 def test_safety_constraints_survive_into_the_wire_schema():

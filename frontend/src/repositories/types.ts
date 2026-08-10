@@ -147,6 +147,7 @@ export interface WorkLogDraft {
   entries: DraftEntry[];
   reminders: DraftReminder[];
   residual_unassigned_minutes: BlockAllocation[];
+  tracked_wall_clock_minutes: number;
 }
 
 export interface VerificationIssue {

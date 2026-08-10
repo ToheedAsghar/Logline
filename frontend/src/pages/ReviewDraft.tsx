@@ -371,9 +371,10 @@ export function ReviewDraft() {
     setPickerOpen(false);
   };
 
-  const totalTrackedMins = draft
+  const allocatedMins = draft
     ? draft.entries.reduce((sum, e) => sum + e.allocations.reduce((aSum, a) => aSum + a.minutes, 0), 0)
     : 0;
+  const trackedMins = draft ? draft.tracked_wall_clock_minutes : 0;
   const blocksCount = draft ? draft.entries.length : 0;
   const unaccountedMins = draft ? draft.residual_unassigned_minutes.reduce((sum, a) => sum + a.minutes, 0) : 0;
 
@@ -470,7 +471,20 @@ export function ReviewDraft() {
         <div className="flex flex-1 items-center justify-around gap-4 px-4 py-2">
           <div className="flex flex-col">
             <span className="font-mono text-[10px] tracking-wider text-[#8A887C]">TRACKED</span>
-            <span className="font-mono text-sm font-medium text-[#191917]">{formatMinutes(totalTrackedMins)}</span>
+            <span className="font-mono text-sm font-medium text-[#191917]">{formatMinutes(trackedMins)}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="font-mono text-[10px] tracking-wider text-[#8A887C]">ALLOCATED</span>
+            <span
+              className="font-mono text-sm font-medium text-[#191917]"
+              title={
+                allocatedMins > trackedMins
+                  ? "Exceeds tracked time because concurrent work, such as a meeting running alongside other activity, is allocated to more than one entry."
+                  : undefined
+              }
+            >
+              {formatMinutes(allocatedMins)}
+            </span>
           </div>
           <div className="flex flex-col">
             <span className="font-mono text-[10px] tracking-wider text-[#8A887C]">BLOCKS</span>

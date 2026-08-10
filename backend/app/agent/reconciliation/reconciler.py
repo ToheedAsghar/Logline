@@ -15,7 +15,7 @@ from app.agent.reconciliation.constants import (
 )
 from app.agent.reconciliation.description import describe_entry
 from app.agent.reconciliation.entries import FormedEntry, form_entries
-from app.agent.reconciliation.evidence import EvidenceBundle, build_evidence
+from app.agent.reconciliation.evidence import EvidenceBundle, build_evidence, compute_tracked_wall_clock_minutes
 from app.agent.reconciliation.schemas import (
     DraftEntry, DraftReminder, ReminderSource, WorkLogDraft, find_duration_language, truncate_description,
 )
@@ -158,6 +158,9 @@ async def reconcile_evidence(
         entries=list(draft_entries),
         reminders=merged_reminders,
         residual_unassigned_minutes=[],
+        tracked_wall_clock_minutes=compute_tracked_wall_clock_minutes(
+            [group.block for group in matched_groups] + list(unmatched_blocks)
+        ),
     )
 
     return ReconciliationResult(draft=merged_draft, verification=verify_draft(merged_draft, bundle))
