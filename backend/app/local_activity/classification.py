@@ -74,6 +74,8 @@ COMMS_URL_RE = re.compile(
 )
 COMMS_TITLE_RE = re.compile(r"\bslack\b|\bwhatsapp\b|\bdiscord\b|\bgmail\b|\boutlook\b", re.IGNORECASE)
 
+AI_ASSISTANT_URL_RE = re.compile(r"claude\.ai", re.IGNORECASE)
+AI_ASSISTANT_TITLE_RE = re.compile(r"(?:^|[-–—])\s*claude\s*$", re.IGNORECASE)
 
 def parse_context_detail(raw: Optional[str]) -> dict:
     """Parse tracker context JSON, returning an empty dict for malformed or non-object input."""
@@ -155,9 +157,30 @@ def _is_idle(bundle_id: Optional[str]) -> bool:
     return bundle_id in IDLE_BUNDLE_IDS
 
 
-def _is_coding(bundle_id: Optional[str]) -> bool:
-    """Return whether a bundle id identifies an IDE or terminal."""
-    return bundle_id in KNOWN_IDE_BUNDLE_IDS or bundle_id in KNOWN_TERMINAL_BUNDLE_IDS
+def _is_ai_assistant_chat(detail: dict, window_title: Optional[str]) -> bool:
+    """Return whether URL or title evidence identifies a claude.ai browser chat session.
+
+    Browser tab titles for claude.ai read "Claude" for an unnamed chat, or "<chat name> - Claude" once named --
+    never the bare word "Claude" elsewhere in a longer title, hence the anchored suffix match rather than a
+    plain substring/word-boundary check.
+    """
+    url = detail.get("url") or ""
+    text = (window_title or "").strip()
+    return bool(AI_ASSISTANT_URL_RE.search(url) or AI_ASSISTANT_TITLE_RE.search(text))
+
+
+def _is_coding(bundle_id: Optional[str], detail: dict, window_title: Optional[str]) -> bool:
+    """Return whether a bundle id identifies an IDE or terminal, or evidence identifies an AI-assistant chat.
+
+    An AI-assistant browser session is grouped with Coding rather than Comms: it is development-support work, not
+    person-to-person messaging -- confirmed against hand-filled ground truth (see references/pipeline.py's
+    activity_of()), and previously fell through to the Admin catch-all with no matching predicate at all.
+    """
+    return (
+        bundle_id in KNOWN_IDE_BUNDLE_IDS
+        or bundle_id in KNOWN_TERMINAL_BUNDLE_IDS
+        or _is_ai_assistant_chat(detail, window_title)
+    )
 
 
 def classify_session(
@@ -181,6 +204,6 @@ def classify_session(
         return SessionClassification(category=SessionCategory.documentation)
     if _is_comms(detail, window_title, bundle_id):
         return SessionClassification(category=SessionCategory.comms)
-    if _is_coding(bundle_id):
+    if _is_coding(bundle_id, detail, window_title):
         return SessionClassification(category=SessionCategory.coding)
     return SessionClassification(category=SessionCategory.admin)

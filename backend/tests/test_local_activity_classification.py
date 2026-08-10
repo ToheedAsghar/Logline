@@ -233,6 +233,38 @@ class TestCoding:
         assert result.category == SessionCategory.coding
 
 
+class TestAiAssistantChat:
+    def test_claude_ai_url_classifies_as_coding(self):
+        result = _classify(context_detail=_detail(url="https://claude.ai/chat/abc123"))
+
+        assert result.category == SessionCategory.coding
+
+    def test_named_claude_chat_title_fallback_when_url_unavailable_eg_firefox(self):
+        """A real claude.ai tab's Chrome/Firefox title once a chat is named -- see references/pipeline.py's
+        `activity_of()`, which established this as `coding` against hand-filled ground truth."""
+        result = _classify(window_title="Logline Phase 4 context and standing rules - Claude", context_detail=None)
+
+        assert result.category == SessionCategory.coding
+
+    def test_unnamed_claude_chat_bare_title_classifies_as_coding(self):
+        """A brand-new claude.ai chat has no name yet -- the tab title is the bare word "Claude"."""
+        result = _classify(window_title="Claude", context_detail=None)
+
+        assert result.category == SessionCategory.coding
+
+    def test_em_dash_separator_variant_classifies_as_coding(self):
+        result = _classify(window_title="Prompt iteration — Claude", context_detail=None)
+
+        assert result.category == SessionCategory.coding
+
+    def test_a_title_merely_containing_claude_mid_string_is_not_treated_as_a_claude_chat(self):
+        """"Claude" must appear as the final title segment, not anywhere in the title -- otherwise an unrelated
+        title that happens to mention Claude (e.g. a person's name) would be misclassified."""
+        result = _classify(window_title="Claude's roadmap notes", context_detail=None)
+
+        assert result.category == SessionCategory.admin
+
+
 class TestAdminFallback:
     def test_missing_bundle_id_falls_to_admin_without_raising(self):
         result = _classify(bundle_id=None, window_title="Some Random Window", project_path=None)
