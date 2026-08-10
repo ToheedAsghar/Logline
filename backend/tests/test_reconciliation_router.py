@@ -77,8 +77,9 @@ def recon_user():
         if user is None:
             user = User(email=USER_EMAIL, hashed_password="not-a-real-hash")
             db.add(user)
-            db.commit()
-            db.refresh(user)
+        user.timezone = "UTC"
+        db.commit()
+        db.refresh(user)
         user_id = user.id
         _cleanup_sessions_and_entries(db, user_id)
 

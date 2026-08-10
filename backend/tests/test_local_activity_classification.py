@@ -283,6 +283,11 @@ class TestAdminFallback:
 
 
 class TestMalformedContextDetail:
+    def test_preparsed_context_detail_is_reused_for_classification(self):
+        result = _classify(context_detail={"url": "https://claude.ai/chat/abc123"})
+
+        assert result.category == SessionCategory.coding
+
     def test_malformed_json_does_not_raise_and_falls_through_to_a_later_rule(self):
         result = _classify(bundle_id=VSCODE_BUNDLE_ID, project_path="/Users/dev/logline", context_detail="{not json")
 

@@ -1,13 +1,14 @@
 """Form deterministic work-log entries from measured evidence blocks."""
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timezone, tzinfo
 
 from app.agent.reconciliation.constants import (
     FLOORED_TOPIC_KINDS, OVERLAP_REVIEW_REASON_TEMPLATE, TOPIC_ENTRY_MINUTES_FLOOR,
 )
 from app.agent.reconciliation.evidence import EvidenceBundle, block_minutes
 from app.agent.reconciliation.schemas import BlockAllocation, EntryTag
+from app.local_activity.aggregation import local_date
 from app.local_activity.classification import SessionCategory
 
 CATEGORY_TO_TAG: dict[SessionCategory, EntryTag] = {
@@ -62,7 +63,7 @@ def _overlap_review_reason(bundle: EvidenceBundle, block_ids: list[int]) -> str 
     return OVERLAP_REVIEW_REASON_TEMPLATE.format(ids=", ".join(str(block_id) for block_id in overlapping_ids))
 
 
-def form_entries(bundle: EvidenceBundle) -> list[FormedEntry]:
+def form_entries(bundle: EvidenceBundle, tz: tzinfo = timezone.utc) -> list[FormedEntry]:
     """Group bundle blocks into entries ordered by descending allocated minutes.
 
     Meetings remain separate. Other blocks group by date, project, category, and deterministic topic; short PR and
@@ -77,7 +78,7 @@ def form_entries(bundle: EvidenceBundle) -> list[FormedEntry]:
         if block.category == SessionCategory.meeting:
             meeting_entries.append(
                 FormedEntry(
-                    date=block.start_time.date(),
+                    date=local_date(block.start_time, tz),
                     project=None,
                     category=SessionCategory.meeting,
                     base_tag=CATEGORY_TO_TAG[SessionCategory.meeting],
@@ -87,7 +88,12 @@ def form_entries(bundle: EvidenceBundle) -> list[FormedEntry]:
                 )
             )
             continue
-        key = (block.start_time.date(), block.project, block.category, block.deterministic_topic)
+        key = (
+            local_date(block.start_time, tz),
+            block.project,
+            block.category,
+            block.deterministic_topic,
+        )
         candidate_groups.setdefault(key, []).append(block_id)
 
     grouped: dict[tuple[date, str | None, SessionCategory, tuple[str, str] | None], list[int]] = {}

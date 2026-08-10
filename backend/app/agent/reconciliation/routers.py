@@ -1,7 +1,8 @@
 """Expose read-only draft generation and verified human approval for reconciliation."""
 
 import logging
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, model_validator
@@ -19,7 +20,7 @@ from app.auth.models import User
 from app.db.session import get_db
 from app.entries.models import Entry, EntryFormat, EntryStatus, EntryVersion, EntryVersionSource
 from app.entries.schemas import EntryResponse, normalize_entry_content
-from app.local_activity.aggregation import RawSessionRow, aggregate_local_activity
+from app.local_activity.aggregation import RawSessionRow, aggregate_local_activity, split_blocks_at_local_midnight
 from app.local_activity.classification import SessionCategory, classify_session, parse_context_detail
 from app.matching.matcher import MatchResult, RemoteEventData, ResolvedLocalBlock, match_local_blocks_to_remote_events
 from app.matching.models import RemoteEvent
@@ -36,6 +37,32 @@ def _context_string(detail: dict, key: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _resolve_user_timezone(user: User) -> ZoneInfo:
+    """Return the user's IANA timezone, which decides which local day each block belongs to.
+
+    Rejects an unset or unrecognised value rather than falling back to UTC, because a silent UTC fallback is the
+    misattribution this resolution exists to prevent.
+    """
+    if not user.timezone:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "No timezone is set for this account, so day boundaries cannot be determined. "
+                "Set an IANA timezone name (for example 'Asia/Karachi') before reconciling."
+            ),
+        )
+    try:
+        return ZoneInfo(user.timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"The timezone set for this account ({user.timezone!r}) is not a recognised IANA timezone name. "
+                "Set a valid name (for example 'Asia/Karachi') before reconciling."
+            ),
+        )
+
+
 class ReconciliationDateRange(BaseModel):
     """Inclusive day range to reconcile, in the user's own terms."""
 
@@ -50,10 +77,11 @@ class ReconciliationDateRange(BaseModel):
             raise ValueError(f"date range cannot span more than {MAX_RANGE_DAYS} days")
         return self
 
-    def as_utc_bounds(self) -> tuple[datetime, datetime]:
+    def as_utc_bounds(self, tz: tzinfo) -> tuple[datetime, datetime]:
+        """Return the half-open UTC span `[start, end)` covering this local-day range in `tz`."""
         return (
-            datetime.combine(self.date_range_start, time.min, tzinfo=timezone.utc),
-            datetime.combine(self.date_range_end, time.max, tzinfo=timezone.utc),
+            datetime.combine(self.date_range_start, time.min, tzinfo=tz).astimezone(timezone.utc),
+            datetime.combine(self.date_range_end + timedelta(days=1), time.min, tzinfo=tz).astimezone(timezone.utc),
         )
 
 
@@ -63,8 +91,13 @@ class ReconciliationApproveRequest(ReconciliationDateRange):
     draft: WorkLogDraft
 
 
-def _gather_evidence(db: Session, user_id: int, start_dt: datetime, end_dt: datetime) -> MatchResult:
-    """Classify and aggregate sessions, exclude Idle blocks, and match the remainder to stored remote events."""
+def _gather_evidence(
+    db: Session, user_id: int, start_dt: datetime, end_dt: datetime, tz: tzinfo
+) -> MatchResult:
+    """Classify and aggregate sessions, exclude Idle blocks, split them on `tz` midnights, and match remote events.
+
+    `start_dt`/`end_dt` bound a half-open UTC span.
+    """
     remote_events = [
         RemoteEventData(
             external_id=row.external_id,
@@ -79,7 +112,7 @@ def _gather_evidence(db: Session, user_id: int, start_dt: datetime, end_dt: date
             .filter(
                 RemoteEvent.user_id == user_id,
                 RemoteEvent.occurred_at >= start_dt,
-                RemoteEvent.occurred_at <= end_dt,
+                RemoteEvent.occurred_at < end_dt,
             )
             .order_by(RemoteEvent.occurred_at.asc(), RemoteEvent.external_id.asc())
             .all()
@@ -105,7 +138,7 @@ def _gather_evidence(db: Session, user_id: int, start_dt: datetime, end_dt: date
             bundle_id=session.bundle_id,
             window_title=session.window_title,
             project_path=session.project_path,
-            context_detail=session.context_detail,
+            context_detail=context_detail,
         )
         raw_rows.append(
             RawSessionRow(
@@ -129,9 +162,10 @@ def _gather_evidence(db: Session, user_id: int, start_dt: datetime, end_dt: date
             )
         )
 
-    blocks = [
-        block for block in aggregate_local_activity(raw_rows) if block.category != SessionCategory.idle
-    ]
+    blocks = split_blocks_at_local_midnight(
+        [block for block in aggregate_local_activity(raw_rows, tz) if block.category != SessionCategory.idle],
+        tz,
+    )
 
     identity_cache: dict[str, dict[str, str | None]] = {}
     resolved = []
@@ -153,15 +187,16 @@ async def generate_reconciliation(
     db: Session = Depends(get_db),
 ) -> ReconciliationResult:
     """Generate and verify a draft from stored evidence without persisting it."""
-    start_dt, end_dt = payload.as_utc_bounds()
-    match_result = await run_in_threadpool(_gather_evidence, db, current_user.id, start_dt, end_dt)
+    tz = _resolve_user_timezone(current_user)
+    start_dt, end_dt = payload.as_utc_bounds(tz)
+    match_result = await run_in_threadpool(_gather_evidence, db, current_user.id, start_dt, end_dt, tz)
 
     return await reconcile_evidence(
         matched_groups=match_result.matched,
         unmatched_blocks=match_result.unmatched_blocks,
         unmatched_events=match_result.unmatched_events,
         llm_provider=get_llm_provider(),
-        tz=timezone.utc,
+        tz=tz,
     )
 
 
@@ -190,8 +225,9 @@ async def approve_reconciliation(
 
     Reminders and residual allocations are deliberately not persisted because they are not work-log entries.
     """
-    start_dt, end_dt = payload.as_utc_bounds()
-    match_result = await run_in_threadpool(_gather_evidence, db, current_user.id, start_dt, end_dt)
+    tz = _resolve_user_timezone(current_user)
+    start_dt, end_dt = payload.as_utc_bounds(tz)
+    match_result = await run_in_threadpool(_gather_evidence, db, current_user.id, start_dt, end_dt, tz)
 
     evidence = build_evidence(
         matched_groups=match_result.matched,

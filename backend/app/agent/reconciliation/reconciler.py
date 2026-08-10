@@ -105,13 +105,15 @@ def _meeting_entry_description(entry: FormedEntry, bundle: EvidenceBundle) -> tu
     return _local_meeting_description(entry, bundle), review_reason
 
 
-async def _resolve_entry(entry: FormedEntry, bundle: EvidenceBundle, llm_provider: LLMProvider) -> DraftEntry:
+async def _resolve_entry(
+    entry: FormedEntry, bundle: EvidenceBundle, llm_provider: LLMProvider, tz: tzinfo
+) -> DraftEntry:
     """Resolve one formed entry into a draft entry with its description and optional tag override."""
     if entry.category == SessionCategory.meeting:
         description, review_reason = _meeting_entry_description(entry, bundle)
         tag = entry.base_tag
     else:
-        description, tag_override = await describe_entry(entry, bundle, llm_provider)
+        description, tag_override = await describe_entry(entry, bundle, llm_provider, tz)
         review_reason = entry.review_reason
         tag = tag_override or entry.base_tag
 
@@ -138,12 +140,12 @@ async def reconcile_evidence(
     Raises `ValueError` for naive evidence datetimes or unsupported reminder sources.
     """
     bundle = build_evidence(matched_groups, unmatched_blocks, unmatched_events)
-    formed_entries = form_entries(bundle)
+    formed_entries = form_entries(bundle, tz)
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_DESCRIPTION_REQUESTS)
 
     async def resolve_with_limit(entry: FormedEntry) -> DraftEntry:
         async with semaphore:
-            return await _resolve_entry(entry, bundle, llm_provider)
+            return await _resolve_entry(entry, bundle, llm_provider, tz)
 
     draft_entries = await asyncio.gather(
         *(resolve_with_limit(entry) for entry in formed_entries)

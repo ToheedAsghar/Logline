@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from typing import Optional
 
 from app.local_activity.classification import SessionCategory
@@ -81,6 +81,17 @@ class _OpenBlock:
     apps: list[str]
     title_seconds: dict[str, float]
     context: dict[str, list[str]]
+
+
+def local_date(moment: datetime, tz: tzinfo) -> date:
+    """Return the calendar date `moment` falls on when read in `tz`.
+
+    A naive datetime is read as already being in `tz`; converting it instead would assume the host's timezone and
+    make the resulting day machine-dependent.
+    """
+    if moment.tzinfo is None:
+        return moment.date()
+    return moment.astimezone(tz).date()
 
 
 def _row_seconds(row: RawSessionRow) -> float:
@@ -211,11 +222,11 @@ def _merge_contiguous(rows: list[RawSessionRow]) -> list[LocalActivityBlock]:
     return blocks
 
 
-def _merge_unlimited_within_day(rows: list[RawSessionRow]) -> list[LocalActivityBlock]:
-    """Merge each named meeting into one block per row start-date, regardless of intervening activity."""
+def _merge_unlimited_within_day(rows: list[RawSessionRow], tz: tzinfo) -> list[LocalActivityBlock]:
+    """Merge each named meeting into one block per local row start-date, regardless of intervening activity."""
     rows_by_day: dict[date, list[RawSessionRow]] = {}
     for row in rows:
-        rows_by_day.setdefault(row.start_time.date(), []).append(row)
+        rows_by_day.setdefault(local_date(row.start_time, tz), []).append(row)
 
     blocks: list[LocalActivityBlock] = []
     for day_rows in rows_by_day.values():
@@ -226,14 +237,18 @@ def _merge_unlimited_within_day(rows: list[RawSessionRow]) -> list[LocalActivity
     return blocks
 
 
-def aggregate_local_activity(rows: list[RawSessionRow]) -> list[LocalActivityBlock]:
+def aggregate_local_activity(
+    rows: list[RawSessionRow], tz: tzinfo = timezone.utc
+) -> list[LocalActivityBlock]:
     """Aggregate classified rows into continuous activity blocks.
 
-    Named meetings merge by name within each start-date. Other positive-duration rows merge only when adjacent rows
-    share `(category, project, deterministic topic)` and their gap is below `MERGE_GAP_THRESHOLD`; a threshold-sized
-    gap splits. Zero-duration rows do not affect ordinary aggregation, but named meeting rows may anchor meeting spans.
+    Named meetings merge by name within each start-date, read in `tz`. Other positive-duration rows merge only when
+    adjacent rows share `(category, project, deterministic topic)` and their gap is below `MERGE_GAP_THRESHOLD`; a
+    threshold-sized gap splits. Zero-duration rows do not affect ordinary aggregation, but named meeting rows may
+    anchor meeting spans.
 
     Sorts rows by `(start_time, end_time)` and returns blocks by `start_time`. Pure transformation; does not classify.
+    Blocks may still span a `tz` midnight -- call `split_blocks_at_local_midnight` to cut them.
     """
     if not rows:
         return []
@@ -260,9 +275,69 @@ def aggregate_local_activity(rows: list[RawSessionRow]) -> list[LocalActivityBlo
 
     blocks: list[LocalActivityBlock] = []
     for meeting_rows in named_meeting_rows_by_name.values():
-        blocks.extend(_merge_unlimited_within_day(meeting_rows))
+        blocks.extend(_merge_unlimited_within_day(meeting_rows, tz))
 
     blocks.extend(_merge_contiguous([row for row in rows if row.end_time > row.start_time]))
 
     blocks.sort(key=lambda block: block.start_time)
     return blocks
+
+
+def _local_midnights_between(start: datetime, end: datetime, tz: tzinfo) -> list[datetime]:
+    """Return each `tz` midnight strictly inside `[start, end)`, ascending and matching the awareness of `start`."""
+    boundaries: list[datetime] = []
+    day = local_date(start, tz)
+    while True:
+        day += timedelta(days=1)
+        midnight = datetime.combine(day, time.min, tzinfo=tz)
+        boundary = midnight.replace(tzinfo=None) if start.tzinfo is None else midnight.astimezone(timezone.utc)
+        if boundary >= end:
+            return boundaries
+        boundaries.append(boundary)
+
+
+def _segment_block(
+    block: LocalActivityBlock, start: datetime, end: datetime, total_seconds: float
+) -> LocalActivityBlock:
+    """Build one piece of a split block, apportioning title seconds by the piece's share of the original span."""
+    ratio = (end - start).total_seconds() / total_seconds
+    return replace(
+        block,
+        start_time=start,
+        end_time=end,
+        duration=end - start,
+        apps=list(block.apps),
+        title_digest=[
+            TitleCluster(title=cluster.title, seconds=cluster.seconds * ratio)
+            for cluster in block.title_digest
+        ],
+        **{
+            block_attribute: list(getattr(block, block_attribute))
+            for _, block_attribute in CONTEXT_FIELDS
+        },
+    )
+
+
+def split_blocks_at_local_midnight(
+    blocks: list[LocalActivityBlock], tz: tzinfo = timezone.utc
+) -> list[LocalActivityBlock]:
+    """Cut every block spanning a `tz` midnight into one block per local day, returned ordered by `start_time`.
+
+    Attributing a midnight-spanning block wholly to its start date would misstate both days' totals, so the span is
+    divided rather than assigned. A block ending exactly at midnight occupies no time on the next day and is left whole.
+    """
+    split: list[LocalActivityBlock] = []
+    for block in blocks:
+        boundaries = _local_midnights_between(block.start_time, block.end_time, tz)
+        if not boundaries:
+            split.append(block)
+            continue
+        total_seconds = (block.end_time - block.start_time).total_seconds()
+        edges = [block.start_time, *boundaries, block.end_time]
+        split.extend(
+            _segment_block(block, start, end, total_seconds)
+            for start, end in zip(edges, edges[1:])
+        )
+
+    split.sort(key=lambda block: block.start_time)
+    return split

@@ -1,6 +1,7 @@
 """Generate and validate one fail-closed LLM description for each deterministic entry."""
 
 import re
+from datetime import timezone, tzinfo
 
 from app.agent.llm.base import LLMProvider, LLMStructuredOutputError, Message
 from app.agent.reconciliation.constants import (
@@ -149,10 +150,13 @@ async def _call_and_gate(
 
 
 async def describe_entry(
-    entry: FormedEntry, bundle: EvidenceBundle, llm_provider: LLMProvider
+    entry: FormedEntry, bundle: EvidenceBundle, llm_provider: LLMProvider, tz: tzinfo = timezone.utc
 ) -> tuple[str, EntryTag | None]:
-    """Return a gated LLM description and optional tag override, or a deterministic fallback."""
-    evidence_text = render_entry_evidence(entry.block_ids, bundle)
+    """Return a gated LLM description and optional tag override, or a deterministic fallback.
+
+    `tz` sets the clock times the model reads in the evidence text.
+    """
+    evidence_text = render_entry_evidence(entry.block_ids, bundle, tz)
     user_message = USER_MESSAGE_TEMPLATE.format(tag=entry.base_tag.value, evidence=evidence_text)
     messages = [
         Message(role="system", content=SYSTEM_PROMPT),

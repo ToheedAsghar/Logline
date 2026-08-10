@@ -77,10 +77,13 @@ COMMS_TITLE_RE = re.compile(r"\bslack\b|\bwhatsapp\b|\bdiscord\b|\bgmail\b|\bout
 AI_ASSISTANT_URL_RE = re.compile(r"claude\.ai", re.IGNORECASE)
 AI_ASSISTANT_TITLE_RE = re.compile(r"(?:^|[-–—])\s*claude\s*$", re.IGNORECASE)
 
-def parse_context_detail(raw: Optional[str]) -> dict:
-    """Parse tracker context JSON, returning an empty dict for malformed or non-object input."""
+
+def parse_context_detail(raw: str | dict | None) -> dict:
+    """Return parsed tracker context, accepting a previously parsed object to avoid duplicate JSON decoding."""
     if not raw:
         return {}
+    if isinstance(raw, dict):
+        return raw
     try:
         parsed = json.loads(raw)
     except (TypeError, ValueError):
@@ -188,7 +191,7 @@ def classify_session(
     bundle_id: Optional[str],
     window_title: Optional[str],
     project_path: Optional[str],
-    context_detail: Optional[str],
+    context_detail: str | dict | None,
 ) -> SessionClassification:
     """Classify one raw session by priority: Idle, Meeting, Code Review, Documentation, Comms, Coding, then Admin."""
     if _is_idle(bundle_id):
