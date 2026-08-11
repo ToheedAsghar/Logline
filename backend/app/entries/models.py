@@ -17,6 +17,7 @@ class EntryStatus(str, enum.Enum):
     draft = "draft"
     pending = "pending"
     approved = "approved"
+    discarded = "discarded"
 
 
 class EntryVersionSource(str, enum.Enum):
@@ -36,8 +37,13 @@ class Entry(Base):
     work_date = Column(Date, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     approved_at = Column(DateTime(timezone=True), nullable=True)
+    reconciliation_draft_id = Column(
+        Integer, ForeignKey("reconciliation_drafts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    draft_position = Column(Integer, nullable=True)
 
     user = relationship("User", back_populates="entries")
+    reconciliation_draft = relationship("ReconciliationDraft", back_populates="entries")
     versions = relationship(
         "EntryVersion", back_populates="entry", cascade="all, delete-orphan", order_by="EntryVersion.created_at"
     )

@@ -147,6 +147,7 @@ class TestTimezoneIsRequired:
             json={
                 "date_range_start": "2026-08-05",
                 "date_range_end": "2026-08-05",
+                "draft_id": 1,
                 "draft": {"entries": [], "reminders": [], "residual_unassigned_minutes": []},
             },
         )

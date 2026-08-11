@@ -1,6 +1,8 @@
 """Test reconciliation generation and approval endpoints against Postgres."""
 
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -9,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.agent.llm import get_llm_provider
 from app.agent.llm.base import LLMProvider
+from app.agent.reconciliation.models import ReconciliationDraft, ReconciliationDraftState
 from app.agent.reconciliation.schemas import EntryDescriptionProposal
 from app.auth.deps import get_current_user
 from app.auth.models import User
@@ -58,11 +61,39 @@ def _draft(minutes: int = BLOCK_MINUTES, *, description: str = "Worked on the re
     }
 
 
+def _generate(
+    client, *, start: str = WORK_DATE, end: str = WORK_DATE, replace_draft_id: int | None = None
+) -> dict:
+    import app.agent.reconciliation.routers as routers_module
+
+    original = routers_module.get_llm_provider
+    routers_module.get_llm_provider = lambda: _ScriptedProvider()
+    try:
+        payload = {"date_range_start": start, "date_range_end": end}
+        if replace_draft_id is not None:
+            payload["replace_draft_id"] = replace_draft_id
+        response = client.post("/reconciliation/generate", json=payload)
+    finally:
+        routers_module.get_llm_provider = original
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _approval_payload(generated: dict, *, draft: dict | None = None) -> dict:
+    return {
+        "date_range_start": generated["date_range_start"],
+        "date_range_end": generated["date_range_end"],
+        "draft_id": generated["draft_id"],
+        "draft": draft or generated["draft"],
+    }
+
+
 def _cleanup(db, user_id: int) -> None:
     entry_ids = [row.id for row in db.query(Entry.id).filter(Entry.user_id == user_id).all()]
     if entry_ids:
         db.query(EntryVersion).filter(EntryVersion.entry_id.in_(entry_ids)).delete(synchronize_session=False)
     db.query(Entry).filter(Entry.user_id == user_id).delete()
+    db.query(ReconciliationDraft).filter(ReconciliationDraft.user_id == user_id).delete()
     db.query(LocalSession).filter(LocalSession.user_id == user_id).delete()
     db.query(User).filter(User.id == user_id).delete()
     db.commit()
@@ -134,6 +165,7 @@ def _cleanup_sessions_and_entries(db, user_id: int) -> None:
     if entry_ids:
         db.query(EntryVersion).filter(EntryVersion.entry_id.in_(entry_ids)).delete(synchronize_session=False)
     db.query(Entry).filter(Entry.user_id == user_id).delete()
+    db.query(ReconciliationDraft).filter(ReconciliationDraft.user_id == user_id).delete()
     db.query(LocalSession).filter(LocalSession.user_id == user_id).delete()
     db.commit()
 
@@ -149,20 +181,59 @@ class TestEndpointsAreRegistered:
         paths = client.app.openapi()["paths"]
         assert "/reconciliation/generate" in paths
         assert "/reconciliation/approve" in paths
+        assert "/reconciliation/drafts/current" in paths
+
+
+class TestDraftOwnership:
+    def test_current_and_approve_hide_another_users_draft(self, client, recon_user):
+        generated = _generate(client)
+        db = SessionLocal()
+        outsider = User(email=f"reconciliation-outsider-{uuid4()}@example.com", hashed_password="not-a-real-hash")
+        outsider.timezone = "UTC"
+        db.add(outsider)
+        db.commit()
+        db.refresh(outsider)
+        outsider_id = outsider.id
+        try:
+            app.dependency_overrides[get_current_user] = lambda: outsider
+            current = client.get(
+                "/reconciliation/drafts/current",
+                params={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE},
+            )
+            approval = client.post("/reconciliation/approve", json=_approval_payload(generated))
+
+            assert current.status_code == 404
+            assert approval.status_code == 404
+        finally:
+            owner = db.get(User, recon_user)
+            app.dependency_overrides[get_current_user] = lambda: owner
+            db.query(User).filter(User.id == outsider_id).delete()
+            db.commit()
+            db.close()
 
 
 class TestDateRangeValidation:
     def test_reversed_range_is_rejected(self, client, recon_user):
         response = client.post(
             "/reconciliation/approve",
-            json={"date_range_start": "2026-07-31", "date_range_end": "2026-07-01", "draft": _draft()},
+            json={
+                "date_range_start": "2026-07-31",
+                "date_range_end": "2026-07-01",
+                "draft_id": 1,
+                "draft": _draft(),
+            },
         )
         assert response.status_code == 422
 
     def test_range_longer_than_31_days_is_rejected(self, client, recon_user):
         response = client.post(
             "/reconciliation/approve",
-            json={"date_range_start": "2026-01-01", "date_range_end": "2026-06-01", "draft": _draft()},
+            json={
+                "date_range_start": "2026-01-01",
+                "date_range_end": "2026-06-01",
+                "draft_id": 1,
+                "draft": _draft(),
+            },
         )
         assert response.status_code == 422
 
@@ -170,13 +241,12 @@ class TestDateRangeValidation:
 class TestApproveRunsVerificationServerSide:
     def test_draft_overcharging_a_block_is_rejected_with_issues(self, client, recon_user):
         """The block is worth 120 measured minutes; charging 480 must not be persisted on the caller's say-so."""
+        generated = _generate(client)
+        draft = generated["draft"]
+        draft["entries"][0]["allocations"][0]["minutes"] = 480
         response = client.post(
             "/reconciliation/approve",
-            json={
-                "date_range_start": WORK_DATE,
-                "date_range_end": WORK_DATE,
-                "draft": _draft(minutes=480),
-            },
+            json=_approval_payload(generated, draft=draft),
         )
 
         assert response.status_code == 422
@@ -186,29 +256,56 @@ class TestApproveRunsVerificationServerSide:
 
         db = SessionLocal()
         try:
-            assert db.query(Entry).filter(Entry.user_id == recon_user).count() == 0
+            approved_count = db.query(Entry).filter(
+                Entry.user_id == recon_user, Entry.status == EntryStatus.approved
+            ).count()
+            assert approved_count == 0
         finally:
             db.close()
 
     def test_draft_citing_an_unknown_block_is_rejected(self, client, recon_user):
-        draft = _draft()
+        generated = _generate(client)
+        draft = generated["draft"]
         draft["entries"][0]["allocations"] = [{"block_id": 99, "minutes": 30}]
 
         response = client.post(
             "/reconciliation/approve",
-            json={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE, "draft": draft},
+            json=_approval_payload(generated, draft=draft),
         )
 
         assert response.status_code == 422
         checks = {issue["check"] for issue in response.json()["detail"]["issues"]}
         assert "unknown_id" in checks
 
+    def test_measured_allocation_cannot_be_moved_to_another_day_in_a_range(self, client, recon_user):
+        generated = _generate(client, start="2026-07-29", end="2026-07-31")
+        generated["draft"]["entries"][0]["allocations"][0]["minutes"] = 90
+        generated["draft"]["entries"].append(
+            {
+                "origin": "manual",
+                "date": "2026-07-29",
+                "project": "unidentified",
+                "allocations": [{"block_id": 1, "minutes": 30, "date": WORK_DATE}],
+                "tag": "Coding",
+                "description": "Assigned measured activity on the wrong day",
+                "source_remote_event_ids": [],
+                "review_reason": None,
+            }
+        )
+
+        response = client.post("/reconciliation/approve", json=_approval_payload(generated))
+
+        assert response.status_code == 422
+        checks = {issue["check"] for issue in response.json()["detail"]["issues"]}
+        assert "allocation_date" in checks
+
 
 class TestApproveWritesThroughTheSharedApprovalPath:
     def test_approved_entry_gets_a_human_approved_version_snapshot(self, client, recon_user):
+        generated = _generate(client)
         response = client.post(
             "/reconciliation/approve",
-            json={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE, "draft": _draft()},
+            json=_approval_payload(generated),
         )
 
         assert response.status_code == 201, response.text
@@ -221,15 +318,19 @@ class TestApproveWritesThroughTheSharedApprovalPath:
         try:
             entry = db.query(Entry).filter(Entry.user_id == recon_user).one()
             versions = db.query(EntryVersion).filter(EntryVersion.entry_id == entry.id).all()
-            assert [v.source for v in versions] == [EntryVersionSource.human_approved]
-            assert versions[0].content["text"] == "Worked on the reconciliation endpoints."
+            assert [v.source for v in versions] == [
+                EntryVersionSource.ai_draft,
+                EntryVersionSource.human_approved,
+            ]
+            assert versions[-1].content["text"] == "Worked on the reconciliation endpoints."
         finally:
             db.close()
 
     def test_full_draft_provenance_is_persisted_not_just_the_description(self, client, recon_user):
+        generated = _generate(client)
         response = client.post(
             "/reconciliation/approve",
-            json={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE, "draft": _draft()},
+            json=_approval_payload(generated),
         )
 
         assert response.status_code == 201, response.text
@@ -239,8 +340,24 @@ class TestApproveWritesThroughTheSharedApprovalPath:
         assert content["tag"] == "Coding"
         assert content["allocations"] == [{"block_id": 1, "minutes": BLOCK_MINUTES}]
 
+    def test_approval_recomputes_server_derived_tracked_total(self, client, recon_user):
+        generated = _generate(client)
+        generated["draft"]["tracked_wall_clock_minutes"] = 999
+
+        response = client.post("/reconciliation/approve", json=_approval_payload(generated))
+
+        assert response.status_code == 201, response.text
+        db = SessionLocal()
+        try:
+            persisted = db.get(ReconciliationDraft, generated["draft_id"])
+            assert persisted.draft["tracked_wall_clock_minutes"] == BLOCK_MINUTES
+        finally:
+            db.close()
+
     def test_reminders_and_residual_minutes_are_not_persisted_as_entries(self, client, recon_user):
-        draft = _draft(minutes=60)
+        generated = _generate(client)
+        draft = generated["draft"]
+        draft["entries"][0]["allocations"][0]["minutes"] = 60
         draft["residual_unassigned_minutes"] = [{"block_id": 1, "minutes": 60}]
         draft["reminders"] = [
             {
@@ -253,7 +370,7 @@ class TestApproveWritesThroughTheSharedApprovalPath:
 
         response = client.post(
             "/reconciliation/approve",
-            json={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE, "draft": draft},
+            json=_approval_payload(generated, draft=draft),
         )
 
         assert response.status_code == 201, response.text
@@ -265,9 +382,95 @@ class TestApproveWritesThroughTheSharedApprovalPath:
         finally:
             db.close()
 
+    def test_manual_entry_is_created_only_at_approval_with_no_ai_snapshot(self, client, recon_user):
+        generated = _generate(client)
+        generated["draft"]["entries"].append(
+            {
+                "origin": "manual",
+                "date": WORK_DATE,
+                "project": "unidentified",
+                "allocations": [],
+                "manual_minutes": 45,
+                "tag": "Coding",
+                "description": "Recovered work the tracker missed",
+                "source_remote_event_ids": [],
+                "review_reason": None,
+            }
+        )
+
+        response = client.post("/reconciliation/approve", json=_approval_payload(generated))
+
+        assert response.status_code == 201, response.text
+        manual = next(entry for entry in response.json() if entry["content"].get("origin") == "manual")
+        assert manual["content"]["manual_minutes"] == 45
+        db = SessionLocal()
+        try:
+            versions = db.query(EntryVersion).filter(EntryVersion.entry_id == manual["id"]).all()
+            assert [version.source for version in versions] == [EntryVersionSource.human_approved]
+        finally:
+            db.close()
+
+    def test_human_added_entry_can_assign_residual_tracker_time_without_ai_snapshot(self, client, recon_user):
+        generated = _generate(client)
+        generated["draft"]["entries"][0]["allocations"][0]["minutes"] = 90
+        generated["draft"]["entries"].append(
+            {
+                "origin": "manual",
+                "date": WORK_DATE,
+                "project": "unidentified",
+                "allocations": [{"block_id": 1, "minutes": 30}],
+                "tag": "Coding",
+                "description": "Assigned residual measured activity",
+                "source_remote_event_ids": [],
+                "review_reason": None,
+            }
+        )
+
+        response = client.post("/reconciliation/approve", json=_approval_payload(generated))
+
+        assert response.status_code == 201, response.text
+        manual = next(entry for entry in response.json() if entry["content"].get("origin") == "manual")
+        assert manual["content"]["allocations"] == [{"block_id": 1, "minutes": 30}]
+        db = SessionLocal()
+        try:
+            versions = db.query(EntryVersion).filter(EntryVersion.entry_id == manual["id"]).all()
+            assert [version.source for version in versions] == [EntryVersionSource.human_approved]
+        finally:
+            db.close()
+
+    def test_omitted_generated_entry_is_discarded_and_repeat_approval_conflicts(self, client, recon_user):
+        generated = _generate(client)
+        generated_entry_id = generated["draft"]["entries"][0]["entry_id"]
+        generated["draft"]["entries"] = []
+        generated["draft"]["residual_unassigned_minutes"] = [{"block_id": 1, "minutes": BLOCK_MINUTES}]
+
+        first = client.post("/reconciliation/approve", json=_approval_payload(generated))
+        repeated = client.post("/reconciliation/approve", json=_approval_payload(generated))
+
+        assert first.status_code == 201, first.text
+        assert repeated.status_code == 409
+        db = SessionLocal()
+        try:
+            assert db.get(Entry, generated_entry_id).status == EntryStatus.discarded
+        finally:
+            db.close()
+
+    def test_approved_reconciliation_entry_allows_content_revision_but_not_lifecycle_changes(self, client, recon_user):
+        generated = _generate(client)
+        approved = client.post("/reconciliation/approve", json=_approval_payload(generated))
+        entry = approved.json()[0]
+        revised_content = {**entry["content"], "text": "Corrected after Save day"}
+
+        revision = client.patch(f"/entries/{entry['id']}", json={"content": revised_content})
+        lifecycle_change = client.patch(f"/entries/{entry['id']}", json={"status": "draft"})
+
+        assert revision.status_code == 200, revision.text
+        assert revision.json()["content"]["text"] == "Corrected after Save day"
+        assert lifecycle_change.status_code == 409
+
 
 class TestGenerate:
-    def test_generate_returns_draft_and_verification_without_writing(self, client, recon_user):
+    def test_generate_persists_draft_entry_and_ai_snapshot(self, client, recon_user):
         import app.agent.reconciliation.routers as routers_module
 
         original = routers_module.get_llm_provider
@@ -282,14 +485,151 @@ class TestGenerate:
 
         assert response.status_code == 200, response.text
         body = response.json()
-        assert "draft" in body and "verification" in body
+        assert body["state"] == ReconciliationDraftState.active.value
+        assert body["draft_id"] > 0
+        assert body["draft"]["entries"][0]["entry_id"] > 0
         assert body["verification"]["passed"] is True
 
         db = SessionLocal()
         try:
-            assert db.query(Entry).filter(Entry.user_id == recon_user).count() == 0
+            persisted = db.query(ReconciliationDraft).filter(ReconciliationDraft.user_id == recon_user).one()
+            assert persisted.state == ReconciliationDraftState.active
+            entry = db.query(Entry).filter(Entry.user_id == recon_user).one()
+            assert entry.status == EntryStatus.draft
+            assert entry.reconciliation_draft_id == persisted.id
+            versions = db.query(EntryVersion).filter(EntryVersion.entry_id == entry.id).all()
+            assert [version.source for version in versions] == [EntryVersionSource.ai_draft]
         finally:
             db.close()
+
+    def test_generic_entry_routes_cannot_bypass_active_reconciliation(self, client, recon_user):
+        generated = _generate(client)
+        entry_id = generated["draft"]["entries"][0]["entry_id"]
+
+        generic_approval = client.post(f"/entries/{entry_id}/approve")
+        generic_patch = client.patch(f"/entries/{entry_id}", json={"content": {"text": "bypass"}})
+
+        assert generic_approval.status_code == 409
+        assert generic_patch.status_code == 409
+
+    def test_approval_wins_cleanly_if_regeneration_is_still_computing(self, client, recon_user):
+        import app.agent.reconciliation.routers as routers_module
+
+        class _BlockingProvider(_ScriptedProvider):
+            def __init__(self):
+                super().__init__()
+                self.started = threading.Event()
+                self.release = threading.Event()
+
+            async def run_structured(self, messages, response_model):
+                self.started.set()
+                assert self.release.wait(timeout=5)
+                return await super().run_structured(messages, response_model)
+
+        generated = _generate(client)
+        provider = _BlockingProvider()
+        original = routers_module.get_llm_provider
+        routers_module.get_llm_provider = lambda: provider
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    client.post,
+                    "/reconciliation/generate",
+                    json={
+                        "date_range_start": WORK_DATE,
+                        "date_range_end": WORK_DATE,
+                        "replace_draft_id": generated["draft_id"],
+                    },
+                )
+                assert provider.started.wait(timeout=5)
+                approved = client.post("/reconciliation/approve", json=_approval_payload(generated))
+                provider.release.set()
+                regeneration = future.result(timeout=5)
+        finally:
+            provider.release.set()
+            routers_module.get_llm_provider = original
+
+        assert approved.status_code == 201, approved.text
+        assert regeneration.status_code == 409
+
+    def test_current_draft_can_be_fetched_after_generation(self, client, recon_user):
+        generated = _generate(client)
+
+        response = client.get(
+            "/reconciliation/drafts/current",
+            params={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == generated
+
+    def test_selecting_a_day_inside_a_range_fetches_the_covering_draft(self, client, recon_user):
+        generated = _generate(client, start="2026-07-29", end="2026-07-31")
+
+        response = client.get(
+            "/reconciliation/drafts/current",
+            params={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == generated
+
+    def test_regenerate_requires_the_active_draft_id_and_keeps_old_ai_history(self, client, recon_user):
+        first_body = _generate(client)
+
+        blind_replace = client.post(
+            "/reconciliation/generate",
+            json={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE},
+        )
+        assert blind_replace.status_code == 409
+
+        regenerated = _generate(client, replace_draft_id=first_body["draft_id"])
+
+        assert regenerated["draft_id"] != first_body["draft_id"]
+        db = SessionLocal()
+        try:
+            old_draft = db.get(ReconciliationDraft, first_body["draft_id"])
+            old_entry = db.get(Entry, first_body["draft"]["entries"][0]["entry_id"])
+            assert old_draft.state == ReconciliationDraftState.superseded
+            assert old_entry.status == EntryStatus.discarded
+            assert [version.source for version in old_entry.versions] == [EntryVersionSource.ai_draft]
+        finally:
+            db.close()
+
+    def test_day_and_range_scopes_cannot_overlap(self, client, recon_user):
+        _generate(client)
+
+        overlapping_range = client.post(
+            "/reconciliation/generate",
+            json={"date_range_start": "2026-07-29", "date_range_end": "2026-07-31"},
+        )
+
+        assert overlapping_range.status_code == 409
+        assert "overlaps" in overlapping_range.json()["detail"].lower()
+
+    def test_range_scope_also_blocks_a_day_inside_it(self, client, recon_user):
+        _generate(client, start="2026-07-29", end="2026-07-31")
+
+        overlapping_day = client.post(
+            "/reconciliation/generate",
+            json={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE},
+        )
+
+        assert overlapping_day.status_code == 409
+        assert "overlaps" in overlapping_day.json()["detail"].lower()
+
+    def test_approved_scope_also_blocks_overlapping_generation(self, client, recon_user):
+        generated = _generate(client)
+        approved = client.post("/reconciliation/approve", json=_approval_payload(generated))
+        assert approved.status_code == 201, approved.text
+
+        overlapping_range = client.post(
+            "/reconciliation/generate",
+            json={"date_range_start": "2026-07-29", "date_range_end": "2026-07-31"},
+        )
+
+        assert overlapping_range.status_code == 409
+        assert "overlaps" in overlapping_range.json()["detail"].lower()
 
     def test_context_detail_reaches_the_generated_entry_evidence(self, client, recon_user):
         class _CapturingProvider(_ScriptedProvider):
@@ -328,6 +668,97 @@ class TestGenerate:
         assert "bundle ids: com.microsoft.VSCode" in evidence
 
 
+class TestDiscardReconciliationDraft:
+    def test_discard_frees_the_scope_and_marks_entries_discarded(self, client, recon_user):
+        generated = _generate(client)
+        entry_id = generated["draft"]["entries"][0]["entry_id"]
+
+        response = client.post(f"/reconciliation/drafts/{generated['draft_id']}/discard")
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {"draft_id": generated["draft_id"], "state": "discarded"}
+        db = SessionLocal()
+        try:
+            draft = db.get(ReconciliationDraft, generated["draft_id"])
+            assert draft.state == ReconciliationDraftState.discarded
+            entry = db.get(Entry, entry_id)
+            assert entry.status == EntryStatus.discarded
+            assert [version.source for version in entry.versions] == [EntryVersionSource.ai_draft]
+        finally:
+            db.close()
+
+        gone = client.get(
+            "/reconciliation/drafts/current",
+            params={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE},
+        )
+        assert gone.status_code == 404
+
+        regenerated = _generate(client)
+        assert regenerated["draft_id"] != generated["draft_id"]
+
+    def test_discard_rejects_an_approved_draft(self, client, recon_user):
+        generated = _generate(client)
+        approved = client.post("/reconciliation/approve", json=_approval_payload(generated))
+        assert approved.status_code == 201, approved.text
+
+        response = client.post(f"/reconciliation/drafts/{generated['draft_id']}/discard")
+
+        assert response.status_code == 409
+        assert "approved" in response.json()["detail"].lower()
+
+    def test_discard_rejects_a_superseded_draft(self, client, recon_user):
+        first = _generate(client)
+        _generate(client, replace_draft_id=first["draft_id"])
+
+        response = client.post(f"/reconciliation/drafts/{first['draft_id']}/discard")
+
+        assert response.status_code == 409
+        assert "superseded" in response.json()["detail"].lower()
+
+    def test_discard_rejects_a_draft_already_discarded(self, client, recon_user):
+        generated = _generate(client)
+
+        first = client.post(f"/reconciliation/drafts/{generated['draft_id']}/discard")
+        second = client.post(f"/reconciliation/drafts/{generated['draft_id']}/discard")
+
+        assert first.status_code == 200
+        assert second.status_code == 409
+        assert "discarded" in second.json()["detail"].lower()
+
+    def test_discard_hides_the_draft_from_another_user(self, client, recon_user):
+        generated = _generate(client)
+        db = SessionLocal()
+        outsider = User(
+            email=f"reconciliation-outsider-discard-{uuid4()}@example.com", hashed_password="not-a-real-hash"
+        )
+        outsider.timezone = "UTC"
+        db.add(outsider)
+        db.commit()
+        db.refresh(outsider)
+        outsider_id = outsider.id
+        try:
+            app.dependency_overrides[get_current_user] = lambda: outsider
+            response = client.post(f"/reconciliation/drafts/{generated['draft_id']}/discard")
+
+            assert response.status_code == 404
+        finally:
+            owner = db.get(User, recon_user)
+            app.dependency_overrides[get_current_user] = lambda: owner
+            db.query(User).filter(User.id == outsider_id).delete()
+            db.commit()
+            db.close()
+
+    def test_approving_a_discarded_draft_conflicts(self, client, recon_user):
+        generated = _generate(client)
+        discarded = client.post(f"/reconciliation/drafts/{generated['draft_id']}/discard")
+        assert discarded.status_code == 200
+
+        response = client.post("/reconciliation/approve", json=_approval_payload(generated))
+
+        assert response.status_code == 409
+        assert "no longer active" in response.json()["detail"].lower()
+
+
 class TestAuthenticationRequired:
     def test_generate_requires_auth(self, client):
         app.dependency_overrides.pop(get_current_user, None)
@@ -341,6 +772,16 @@ class TestAuthenticationRequired:
         app.dependency_overrides.pop(get_current_user, None)
         response = client.post(
             "/reconciliation/approve",
-            json={"date_range_start": WORK_DATE, "date_range_end": WORK_DATE, "draft": _draft()},
+            json={
+                "date_range_start": WORK_DATE,
+                "date_range_end": WORK_DATE,
+                "draft_id": 1,
+                "draft": _draft(),
+            },
         )
+        assert response.status_code == 401
+
+    def test_discard_requires_auth(self, client):
+        app.dependency_overrides.pop(get_current_user, None)
+        response = client.post("/reconciliation/drafts/1/discard")
         assert response.status_code == 401

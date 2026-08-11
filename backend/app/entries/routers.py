@@ -24,6 +24,21 @@ def _get_owned_entry(entry_id: int, current_user: User, db: Session) -> Entry:
     return entry
 
 
+def _reject_reconciliation_lifecycle_entry(entry: Entry, *, allow_approved_revision: bool = False) -> None:
+    if entry.status == EntryStatus.discarded:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This entry was discarded with its reconciliation draft and can no longer be changed.",
+        )
+    if entry.reconciliation_draft_id is not None and not (
+        allow_approved_revision and entry.status == EntryStatus.approved
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This entry is controlled by its reconciliation draft. Use Save day to apply reviewed changes.",
+        )
+
+
 @router.get("", response_model=list[EntryResponse])
 def list_entries(
     status_filter: EntryStatus | None = Query(default=None, alias="status"),
@@ -51,6 +66,12 @@ def update_entry(
     db: Session = Depends(get_db),
 ):
     entry = _get_owned_entry(entry_id, current_user, db)
+    _reject_reconciliation_lifecycle_entry(entry, allow_approved_revision=True)
+    if entry.reconciliation_draft_id is not None and (payload.status is not None or payload.approved_at is not None):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Approved reconciliation lifecycle fields cannot be changed through the generic entry API.",
+        )
 
     try:
         payload = payload.validate_content_for(entry.format)
@@ -69,4 +90,5 @@ def approve_entry(
     db: Session = Depends(get_db),
 ):
     entry = _get_owned_entry(entry_id, current_user, db)
+    _reject_reconciliation_lifecycle_entry(entry)
     return crud.approve_entry(db, entry, datetime.now(timezone.utc))

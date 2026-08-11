@@ -9,6 +9,7 @@ export {
   type AgentTriggerButtonProps,
 } from "./AgentTriggerButton";
 export { ApprovalTransition, type ApprovalTransitionProps } from "./ApprovalTransition";
+export { ConfirmDialog, type ConfirmDialogProps } from "./ConfirmDialog";
 export { AccountSettingsModal, type AccountSettingsModalProps } from "./AccountSettingsModal";
 export { EntryDetailPanel, type EntryDetailPanelProps } from "./EntryDetailPanel";
 export { TrackerSyncNotice } from "./TrackerSyncNotice";

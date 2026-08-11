@@ -38,6 +38,7 @@ CHECK_CROSS_ENTRY_DUPLICATE = "cross_entry_duplicate"
 CHECK_DUPLICATE_REMINDER = "duplicate_reminder"
 CHECK_UNEXPLAINED_OVERLAP = "unexplained_overlap"
 CHECK_DESCRIPTION_DURATION_LANGUAGE = "description_duration_language"
+CHECK_ALLOCATION_DATE = "allocation_date"
 
 RESIDUAL_FIELD = "residual_unassigned_minutes"
 

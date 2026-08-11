@@ -7,7 +7,8 @@ from pydantic import ValidationError
 
 from app.agent.reconciliation.schemas import (
     DESCRIPTION_MAX_LENGTH, MINUTES_PER_DAY, REMINDER_NOTE_MAX_LENGTH, REVIEW_REASON_MAX_LENGTH, BlockAllocation,
-    DraftEntry, DraftReminder, EntryTag, WorkLogDraft, find_duration_language, truncate_description,
+    DraftEntry, DraftReminder, EntryTag, ReviewDraftEntry, ReviewWorkLogDraft, WorkLogDraft, find_duration_language,
+    truncate_description,
 )
 
 CANONICAL_TAGS = {
@@ -200,6 +201,69 @@ def test_empty_allocations_rejected():
 def test_single_allocation_accepted():
     entry = DraftEntry.model_validate(valid_entry(allocations=[{"block_id": 7, "minutes": 15}]))
     assert len(entry.allocations) == 1
+
+
+def test_manual_review_entry_accepts_explicit_manual_minutes_without_evidence_links():
+    entry = ReviewDraftEntry.model_validate(
+        {
+            **valid_entry(allocations=[], source_remote_event_ids=[]),
+            "origin": "manual",
+            "manual_minutes": 45,
+        }
+    )
+
+    assert entry.origin == "manual"
+    assert entry.manual_minutes == 45
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"manual_minutes": None},
+        {"manual_minutes": 0},
+        {"allocations": [{"block_id": 1, "minutes": 15}], "manual_minutes": 45},
+        {"source_remote_event_ids": ["gh:pr:41"]},
+    ],
+)
+def test_manual_review_entry_rejects_missing_duration_or_evidence_links(overrides):
+    with pytest.raises(ValidationError):
+        ReviewDraftEntry.model_validate(
+            {
+                **valid_entry(allocations=[], source_remote_event_ids=[]),
+                "origin": "manual",
+                "manual_minutes": 45,
+                **overrides,
+            }
+        )
+
+
+def test_manual_review_entry_can_assign_measured_residual_time():
+    entry = ReviewDraftEntry.model_validate(
+        {
+            **valid_entry(allocations=[{"block_id": 7, "minutes": 15}], source_remote_event_ids=[]),
+            "origin": "manual",
+        }
+    )
+
+    assert entry.manual_minutes is None
+    assert entry.allocations[0].block_id == 7
+
+
+def test_review_draft_accepts_generated_and_manual_entries_together():
+    draft = ReviewWorkLogDraft.model_validate(
+        {
+            "entries": [
+                {**valid_entry(), "entry_id": 7, "origin": "evidence"},
+                {
+                    **valid_entry(allocations=[], source_remote_event_ids=[]),
+                    "origin": "manual",
+                    "manual_minutes": 30,
+                },
+            ]
+        }
+    )
+
+    assert [entry.origin for entry in draft.entries] == ["evidence", "manual"]
 
 
 def test_zero_minute_allocation_rejected_inside_an_entry():

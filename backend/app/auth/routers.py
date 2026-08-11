@@ -284,7 +284,6 @@ def google_callback(
         claims = google_oauth.verify_google_id_token(id_token)
     except GoogleAuthError as exc:
         logger.error("Google login failed: %s", exc, exc_info=True)
-        print(f"GOOGLE LOGIN ERROR: {exc}", flush=True)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_GOOGLE_SIGN_IN_FAILED)
 
     google_user_id = claims["sub"]

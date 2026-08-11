@@ -3,5 +3,5 @@ export { useTimeline, useUpdateEvent, useDeleteEvent, TIMELINE_KEY } from "./use
 export { useIntegrations, useConnectIntegration, useDisconnectIntegration } from "./useIntegrations";
 export { useCreateSelfCapture } from "./useSelfCaptures";
 export { useRunAgent } from "./useAgent";
-export { useGenerateDraft, useApproveDraft, RECONCILIATION_KEY } from "./useReconciliation";
+export { useCurrentDraft, useGenerateDraft, useApproveDraft, useDiscardDraft, RECONCILIATION_KEY } from "./useReconciliation";
 export { useTrackerSyncStatus, useEnrollTrackerDevice, TRACKER_SYNC_KEY } from "./useTrackerSync";

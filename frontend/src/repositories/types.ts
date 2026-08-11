@@ -21,7 +21,7 @@ export interface EventUpdate {
 }
 
 export type EntryFormat = "project_log" | "standup";
-export type EntryStatus = "draft" | "pending" | "approved";
+export type EntryStatus = "draft" | "pending" | "approved" | "discarded";
 
 export interface StandupContent {
   yesterday: string;
@@ -31,6 +31,8 @@ export interface StandupContent {
 
 export interface ProjectLogContent {
   text: string;
+  origin?: "evidence" | "manual";
+  manual_minutes?: number;
 }
 
 export type EntryContent = StandupContent | ProjectLogContent;
@@ -126,17 +128,33 @@ export type EntryTag = (typeof ALL_ENTRY_TAGS)[number];
 export interface BlockAllocation {
   block_id: number;
   minutes: number;
+  date?: string;
 }
 
-export interface DraftEntry {
+interface DraftEntryBase {
+  entry_id?: number;
   date: string;
-  project: string;
-  allocations: BlockAllocation[];
+  project: string | null;
   tag: EntryTag;
   description: string;
   source_remote_event_ids?: string[];
   review_reason?: string | null;
 }
+
+export interface EvidenceDraftEntry extends DraftEntryBase {
+  entry_id: number;
+  origin: "evidence";
+  allocations: BlockAllocation[];
+  manual_minutes?: never;
+}
+
+export interface ManualDraftEntry extends DraftEntryBase {
+  origin: "manual";
+  allocations: BlockAllocation[];
+  manual_minutes?: number;
+}
+
+export type DraftEntry = EvidenceDraftEntry | ManualDraftEntry;
 
 export interface DraftReminder {
   note: string;
@@ -166,6 +184,11 @@ export interface VerificationResult {
 }
 
 export interface ReconciliationResult {
+  draft_id: number;
+  state: "active" | "approved";
+  date_range_start: string;
+  date_range_end: string;
+  generated_at: string;
   draft: WorkLogDraft;
   verification: VerificationResult;
 }
@@ -173,10 +196,17 @@ export interface ReconciliationResult {
 export interface ReconciliationGenerateParams {
   date_range_start: string;
   date_range_end: string;
+  replace_draft_id?: number;
 }
 
 export interface ReconciliationApproveParams extends ReconciliationGenerateParams {
+  draft_id: number;
   draft: WorkLogDraft;
+}
+
+export interface DiscardDraftResult {
+  draft_id: number;
+  state: "discarded";
 }
 
 export interface TrackerSyncStatus {

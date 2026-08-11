@@ -2,6 +2,7 @@
 tool inspects it -- regardless of which folder a model physically lives in. This is the single place that must be
 updated whenever a new domain gains a models.py.
 """
+from app.agent.reconciliation.models import ReconciliationDraft, ReconciliationDraftState
 from app.auth.models import EmailVerificationToken, PasswordResetToken, User
 from app.core.oauth_state import OAuthState
 from app.db.session import Base
@@ -31,6 +32,8 @@ __all__ = [
     "EntryStatus",
     "EntryVersion",
     "EntryVersionSource",
+    "ReconciliationDraft",
+    "ReconciliationDraftState",
     "SelfCapture",
     "RemoteEvent",
     "ProjectMapping",
