@@ -10,6 +10,12 @@ Credentials used here are the shared test tokens in `backend/.env` (see
 backend/CLAUDE.md) — not yet per-user OAuth. `Toolbelt` takes a `user_id` only
 to scope the custom tools' DB reads/writes; every user currently shares the
 same MCP connections.
+
+OLD agent architecture: exempted from the logging-convention bans
+(test_no_percent_s_logging.py, test_no_raw_print.py) pending a separate,
+propose-first decision on whether to remove this file entirely — Review has
+replaced Timeline, the runner's only known UI trigger, so genuinely dead code
+is suspected but not yet verified.
 """
 
 import json

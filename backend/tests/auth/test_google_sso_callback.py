@@ -494,7 +494,7 @@ class TestGoogleCallbackErrorMessageSanitization:
                 with pytest.raises(HTTPException):
                     google_callback(code="fake-code", state=state_token, db=db)
 
-            assert raw_detail in caplog.text
+            assert any(getattr(record, "error", None) == raw_detail for record in caplog.records)
         finally:
             if jti is not None:
                 _delete_state(db, jti)

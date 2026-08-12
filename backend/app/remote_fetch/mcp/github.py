@@ -181,7 +181,7 @@ class GitHubFetcher(SourceFetcher):
         for repo in repos:
             owner, _, name = repo.partition("/")
             if not owner or not name:
-                logger.warning("github: skipping malformed repo identifier %r (want 'owner/repo')", repo)
+                logger.warning("github_malformed_repo_identifier", extra={"repo": repo})
                 continue
             (commit_events, commit_override), (pr_events, pr_override) = await asyncio.gather(
                 self._fetch_repo_commits(session, owner, name, since),

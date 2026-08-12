@@ -129,11 +129,8 @@ class CalendarFetcher(SourceFetcher):
             if events:
                 override = events[-1].occurred_at
                 logger.warning(
-                    "calendar: list-events returned %d raw event(s) (this MCP tool exposes no "
-                    "maxResults/pageToken to fetch more) -- holding the high-water mark at the "
-                    "last event kept (%s) so the next run re-covers anything beyond it",
-                    len(raw_events),
-                    override.isoformat(),
+                    "calendar_list_events_possibly_truncated",
+                    extra={"raw_event_count": len(raw_events), "high_water_mark": override.isoformat()},
                 )
 
         return SourceFetchData(events=events, fetched_through_override=override)

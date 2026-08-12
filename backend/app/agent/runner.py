@@ -9,6 +9,12 @@ called, in what order, is entirely the model's decision (see
 app/agent/system_prompt.py for the guidance it reasons from). This file must
 never import `openai` or `anthropic` directly; it only talks to the
 LLMProvider interface and the toolbelt's dispatcher.
+
+OLD agent architecture: exempted from the logging-convention bans
+(test_no_percent_s_logging.py, test_no_raw_print.py) pending a separate,
+propose-first decision on whether to remove this file entirely — Review has
+replaced Timeline, this runner's only known UI trigger, so genuinely dead code
+is suspected but not yet verified.
 """
 
 import json

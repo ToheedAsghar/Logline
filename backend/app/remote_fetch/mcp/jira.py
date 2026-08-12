@@ -157,15 +157,13 @@ class JiraFetcher(SourceFetcher):
             if PROJECT_KEY_PATTERN.match(key):
                 valid_project_keys.append(key)
             else:
-                logger.warning(
-                    "jira: skipping malformed project key %r for user %s (want e.g. 'LOG')", key, user_id
-                )
+                logger.warning("jira_malformed_project_key", extra={"key": key, "user_id": user_id})
 
         if valid_project_keys:
             quoted = ", ".join(f'"{key}"' for key in valid_project_keys)
             clauses.append(f"project in ({quoted})")
         else:
-            logger.info("jira: no project_mappings for user %s; scoping by assignee = currentUser() only", user_id)
+            logger.info("jira_no_project_mappings_scoping_by_assignee", extra={"user_id": user_id})
 
         clauses.append("assignee = currentUser()")
 

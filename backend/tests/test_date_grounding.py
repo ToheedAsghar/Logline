@@ -23,8 +23,6 @@ import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from app.agent.llm.base import ToolCall
 from app.agent.system_prompt import SYSTEM_PROMPT
 from app.agent.toolbelt import Toolbelt, _contains_literal_date

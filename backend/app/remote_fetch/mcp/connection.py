@@ -161,7 +161,7 @@ async def connect_mcp_source(
         session = await exit_stack.enter_async_context(ClientSession(read, write))
         await session.initialize()
     except (RuntimeError, OSError) as exc:
-        logger.warning("could not connect '%s' MCP server: %s", source, exc)
+        logger.warning("mcp_server_connect_failed", extra={"source": source, "error": str(exc)})
         return None
 
     return session

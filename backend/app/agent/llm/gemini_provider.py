@@ -18,7 +18,7 @@ from app.agent.llm.constants import (
     ERROR_GEMINI_API_ERROR, ERROR_GEMINI_RUN_TURN_UNSUPPORTED, ERROR_GEMINI_TOOL_MESSAGE_UNSUPPORTED,
     ERROR_RUN_STRUCTURED_CONTENT_FILTERED, ERROR_RUN_STRUCTURED_EMPTY_TEXT, ERROR_RUN_STRUCTURED_NO_CANDIDATES,
     ERROR_RUN_STRUCTURED_PROMPT_BLOCKED, ERROR_RUN_STRUCTURED_TRUNCATED, ERROR_RUN_STRUCTURED_VALIDATION_FAILED,
-    GEMINI_USAGE_LOG_FORMAT,
+    LLM_USAGE_EVENT,
 )
 
 logger = logging.getLogger(__name__)
@@ -149,8 +149,14 @@ class GeminiProvider(LLMProvider):
         if usage is None:
             return
         logger.info(
-            GEMINI_USAGE_LOG_FORMAT, call_kind, getattr(usage, "prompt_token_count", None),
-            getattr(usage, "candidates_token_count", None), getattr(usage, "total_token_count", None),
+            LLM_USAGE_EVENT,
+            extra={
+                "provider": "gemini",
+                "call_kind": call_kind,
+                "prompt_tokens": getattr(usage, "prompt_token_count", None),
+                "candidates_tokens": getattr(usage, "candidates_token_count", None),
+                "total_tokens": getattr(usage, "total_token_count", None),
+            },
         )
 
     @staticmethod

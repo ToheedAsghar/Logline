@@ -1,3 +1,7 @@
+# --- Usage logging ---
+
+LLM_USAGE_EVENT = "llm_usage"
+
 # --- Shared structured-output error messages ---
 
 ERROR_RUN_STRUCTURED_TRUNCATED = (
@@ -51,9 +55,3 @@ ERROR_RUN_STRUCTURED_EMPTY_TEXT = (
 ERROR_GEMINI_API_ERROR = (
     "run_structured failed: the Gemini API request for {model_name} failed (see cause for detail)"
 )
-
-# --- Usage logging ---
-
-USAGE_LOG_FORMAT = "openai %s usage: prompt=%s completion=%s total=%s"
-
-GEMINI_USAGE_LOG_FORMAT = "gemini %s usage: prompt=%s candidates=%s total=%s"

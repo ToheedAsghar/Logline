@@ -101,11 +101,16 @@ async def integration_callback(
     try:
         user_id = await run_in_threadpool(consume_connect_state, db, token=state, expected_source=source)
     except OAuthStateError as exc:
-        logger.info("%s connect state validation failed: %s", source.value, exc.message)
+        logger.info(
+            "integration_connect_state_validation_failed",
+            extra={"source": source.value, "reason": exc.message},
+        )
         return RedirectResponse(url=_result_redirect(source, result_status="error", reason="invalid_state"))
 
     if error is not None:
-        logger.info("%s connect callback reported an error: %s", source.value, error)
+        logger.info(
+            "integration_connect_callback_error", extra={"source": source.value, "error": error}
+        )
         reason = "access_denied" if error == "access_denied" else "provider_error"
         return RedirectResponse(
             url=_result_redirect(source, result_status="error", reason=reason)
@@ -119,7 +124,7 @@ async def integration_callback(
     try:
         tokens = await provider.exchange_code(code)
     except TokenRefreshError as exc:
-        logger.info("%s OAuth exchange failed: %s", source.value, exc)
+        logger.info("integration_oauth_exchange_failed", extra={"source": source.value, "error": str(exc)})
         return RedirectResponse(url=_result_redirect(source, result_status="error", reason="exchange_failed"))
 
     integration = await run_in_threadpool(_get_or_create_integration, db, user_id, source)

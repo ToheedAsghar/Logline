@@ -19,7 +19,7 @@ from app.agent.llm.base import (
 from app.agent.llm.constants import (
     ERROR_RUN_STRUCTURED_CONTENT_FILTERED, ERROR_RUN_STRUCTURED_PARSED_NONE, ERROR_RUN_STRUCTURED_TRUNCATED,
     ERROR_RUN_STRUCTURED_VALIDATION_FAILED, ERROR_RUN_STRUCTURED_ZERO_CHOICES, ERROR_RUN_TURN_ZERO_CHOICES,
-    USAGE_LOG_FORMAT,
+    LLM_USAGE_EVENT,
 )
 
 logger = logging.getLogger(__name__)
@@ -111,10 +111,15 @@ class OpenAIProvider(LLMProvider):
         if usage is None:
             return
         logger.info(
-            USAGE_LOG_FORMAT, call_kind, getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None),
-            getattr(usage, "total_tokens", None),
+            LLM_USAGE_EVENT,
+            extra={
+                "provider": "openai",
+                "call_kind": call_kind,
+                "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                "completion_tokens": getattr(usage, "completion_tokens", None),
+                "total_tokens": getattr(usage, "total_tokens", None),
+            },
         )
-
 
     @staticmethod
     def _to_openai_tools(tools: list[ToolDefinition]) -> list[dict[str, Any]]:

@@ -214,9 +214,11 @@ async def approve_reconciliation(
     verification = verify_draft(payload.draft, evidence)
     if not verification.passed:
         logger.warning(
-            "Rejected reconciliation approval for user %s: %s error(s)",
-            current_user.id,
-            sum(1 for issue in verification.issues if issue.severity == "error"),
+            "reconciliation_approval_rejected",
+            extra={
+                "user_id": current_user.id,
+                "error_count": sum(1 for issue in verification.issues if issue.severity == "error"),
+            },
         )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

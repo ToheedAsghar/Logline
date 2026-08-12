@@ -180,18 +180,15 @@ async def _run_one_source(
         data = await asyncio.wait_for(fetcher.fetch(user_id, since), timeout=_timeout_for(source))
     except asyncio.TimeoutError:
         message = f"timed out after {_timeout_for(source)}s"
-        logger.warning("remote_fetch: %s %s", source, message)
+        logger.warning("remote_fetch_source_timeout", extra={"source": source, "timeout_message": message})
         return SourceResult(source=source, ok=False, error=message), []
     except SourceUnavailable as exc:
-        logger.warning("remote_fetch: %s unavailable: %s", source, exc)
+        logger.warning("remote_fetch_source_unavailable", extra={"source": source, "error": str(exc)})
         return SourceResult(source=source, ok=False, error=str(exc)), []
     except Exception as exc:  # noqa: BLE001 - one source's bug must not abort the other three
-        logger.exception("remote_fetch: %s raised", source)
+        logger.exception("remote_fetch_source_raised", extra={"source": source})
         return SourceResult(source=source, ok=False, error=f"{type(exc).__name__}: {exc}"), []
 
-    # A fetcher may hold the mark back below `now` when it knows its own
-    # coverage was incomplete (see slack.py); it may never push it forward
-    # past the moment the run started.
     fetched_through = now
     if data.fetched_through_override is not None:
         fetched_through = min(now, data.fetched_through_override)
@@ -245,7 +242,9 @@ async def fetch_all_sources(user_id: int, sources: Optional[list[str]] = None) -
             # Defensive: _run_one_source already converts its own failures,
             # so reaching here means something escaped it entirely.
             logger.error(
-                "remote_fetch: %s escaped its handler: %r", source, outcome, exc_info=outcome
+                "remote_fetch_source_escaped_handler",
+                extra={"source": source, "outcome": repr(outcome)},
+                exc_info=outcome,
             )
             results[source] = SourceResult(
                 source=source, ok=False, error=f"{type(outcome).__name__}: {outcome}"
@@ -296,7 +295,7 @@ def _persist_source(
             )
             db.commit()
     except Exception as exc:  # noqa: BLE001 - a write failure for one source is that source's failure
-        logger.exception("remote_fetch: persisting %s failed", source)
+        logger.exception("remote_fetch_persist_failed", extra={"source": source})
         result.ok = False
         result.written = 0
         result.fetched_through = None
@@ -318,4 +317,4 @@ def _persist_source(
                 )
                 recovery_db.commit()
         except Exception:  # noqa: BLE001 - the recovery write itself must not take other sources down
-            logger.exception("remote_fetch: recording %s's persist failure also failed", source)
+            logger.exception("remote_fetch_persist_failure_recording_failed", extra={"source": source})
