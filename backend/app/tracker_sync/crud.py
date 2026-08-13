@@ -1,12 +1,13 @@
-from datetime import date, datetime
-from uuid import UUID
+from datetime import date, datetime, timezone
+from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, literal_column, or_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.entries.models import Entry, EntryStatus
-from app.tracker_sync.models import LocalSession
+from app.tracker_sync.models import LocalSession, TrackerDevice, TrackerSyncState
+from app.tracker_sync.security import generate_device_token, hash_device_token
 
 UPSERT_FIELDS = (
     "bundle_id",
@@ -57,6 +58,74 @@ def upsert_sessions(db: Session, rows: list[dict]) -> tuple[set[UUID], set[UUID]
     for row in result:
         (inserted_ids if row.inserted else conflicted_ids).add(row.id)
     return inserted_ids, conflicted_ids
+
+
+def create_device(db: Session, user_id: int, name: str) -> tuple[TrackerDevice, str]:
+    """Enroll a new tracker device, returning it alongside the plaintext token.
+
+    Only the token's hash is stored, so this return value is the only chance anything has to see it.
+    """
+    token = generate_device_token()
+    device = TrackerDevice(
+        user_id=user_id,
+        device_id=uuid4(),
+        name=name,
+        token_hash=hash_device_token(token),
+    )
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+    return device, token
+
+
+def get_device_by_token(db: Session, token: str) -> TrackerDevice | None:
+    """Look a device up by the hash of its presented token. Returns None for an unknown token and for a device that
+    cannot authenticate (revoked, or predating the hashed-token scheme) -- callers must not distinguish the two."""
+    device = db.query(TrackerDevice).filter(TrackerDevice.token_hash == hash_device_token(token)).first()
+    if device is None or not device.is_active:
+        return None
+    return device
+
+
+def revoke_device(db: Session, user_id: int, device_id: UUID) -> TrackerDevice | None:
+    """Mark a device revoked, scoped to its owner so one user can never revoke another's device. Returns None if
+    no such device belongs to this user.
+
+    Idempotent: revoking an already-revoked device keeps the original timestamp. The row and its sync checkpoint
+    are kept, so a re-enrolled machine does not resync from scratch.
+    """
+    device = (
+        db.query(TrackerDevice)
+        .filter(TrackerDevice.user_id == user_id, TrackerDevice.device_id == device_id)
+        .first()
+    )
+    if device is None:
+        return None
+    if device.revoked_at is None:
+        device.revoked_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(device)
+    return device
+
+
+def get_sync_status(db: Session, user_id: int) -> tuple[datetime | None, int]:
+    """Returns (newest checkpoint across the user's active devices, count of those devices). Revoked devices are
+    excluded from both, so a retired machine's stale checkpoint cannot keep an account looking freshly synced."""
+    active_device_ids = db.query(TrackerDevice.device_id).filter(
+        TrackerDevice.user_id == user_id,
+        TrackerDevice.revoked_at.is_(None),
+        TrackerDevice.token_hash.isnot(None),
+    )
+    last_synced_at = (
+        db.query(func.max(TrackerSyncState.last_synced_at))
+        .filter(
+            TrackerSyncState.user_id == user_id,
+            TrackerSyncState.device_id.in_(active_device_ids),
+        )
+        .scalar()
+    )
+    device_count = active_device_ids.count()
+    return last_synced_at, device_count
 
 
 def get_sessions_synced_before(db: Session, cutoff: datetime) -> list[LocalSession]:

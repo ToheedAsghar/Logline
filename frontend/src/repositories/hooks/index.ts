@@ -4,3 +4,4 @@ export { useIntegrations, useConnectIntegration, useDisconnectIntegration } from
 export { useCreateSelfCapture } from "./useSelfCaptures";
 export { useRunAgent } from "./useAgent";
 export { useGenerateDraft, useApproveDraft, RECONCILIATION_KEY } from "./useReconciliation";
+export { useTrackerSyncStatus, useEnrollTrackerDevice, TRACKER_SYNC_KEY } from "./useTrackerSync";

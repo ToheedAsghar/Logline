@@ -171,3 +171,20 @@ export interface ReconciliationGenerateParams {
   date_range_start: string;
   date_range_end: string;
 }
+
+export interface TrackerSyncStatus {
+  /** Newest checkpoint across the user's active devices; null when nothing has ever synced. */
+  last_synced_at: string | null;
+  device_count: number;
+}
+
+export interface DeviceEnrollIn {
+  name?: string;
+}
+
+export interface DeviceEnrollOut {
+  device_id: string;
+  name: string;
+  token: string;
+  created_at: string;
+}

@@ -31,3 +31,8 @@ REASON_EXCEEDS_MAX_DURATION = f"duration is not under {MAX_SESSION_DURATION_HOUR
 REASON_DUPLICATE_IN_BATCH = "duplicate id within batch"
 REASON_SESSION_UPDATED = "session updated in database"
 DEVICE_MISMATCH_ERROR_MSG = "Device ID in payload does not match authenticated device"
+
+DEVICE_NAME_MAX_LENGTH = 100
+DEFAULT_DEVICE_NAME = "Tracker device"
+DEVICE_NOT_FOUND_ERROR_MSG = "Tracker device not found"
+INVALID_DEVICE_TOKEN_ERROR_MSG = "Invalid tracker device token"

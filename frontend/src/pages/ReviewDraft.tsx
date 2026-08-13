@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loading } from "@/atoms";
-import { formatMinutes, getTodayLocalDate, parseLocalDate, minutesToHHMM, parseTimeToMinutes } from "@/common/utils";
+import { formatMinutes, getTodayLocalDate, parseLocalDate } from "@/common/utils";
 import { ApiError } from "@/repositories/api";
 import { ALL_ENTRY_TAGS, type DraftEntry, type EntryTag, type ReconciliationResult, type VerificationIssue, type WorkLogDraft } from "@/repositories/types";
 import { useApproveDraft, useGenerateDraft } from "@/repositories/hooks";
