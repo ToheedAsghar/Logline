@@ -25,7 +25,6 @@ from app.config import settings
 from app.core.oauth_state import OAuthState, OAuthStateError
 from app.db.session import SessionLocal, engine
 from app.integrations.connect_state import CONNECT_STATE_SALT, consume_connect_state, create_connect_state
-from app.integrations.constants import JIRA_OAUTH_ACCESS_DENIED_MESSAGE
 from app.integrations.models import Integration, IntegrationSource, IntegrationStatus, OAuthToken
 from app.integrations.providers.base import OAuthTokens
 from app.integrations.providers.github import GitHubOAuthProvider
@@ -35,10 +34,6 @@ from app.integrations.token_refresh import ensure_token_fresh
 
 TEST_EMAIL = "jira-oauth-endpoint-test@example.com"
 
-#: jtis of every connect-state this module issues, so cleanup can purge the
-#: oauth_states rows they leave behind. OAuthState has no user_id column
-#: (deliberately -- see app/core/oauth_state.py), so those rows can't be
-#: deleted by user like integrations/tokens are; we track and delete by jti.
 _issued_state_jtis: list[str] = []
 
 
@@ -68,9 +63,6 @@ def _cleanup(user_id: int) -> None:
             ).delete(synchronize_session=False)
         db.query(Integration).filter(Integration.user_id == user_id).delete()
 
-        # oauth_states rows are user-agnostic, so purge them by the jtis this
-        # module issued rather than by user_id -- otherwise they accumulate
-        # indefinitely in the shared dev DB.
         if _issued_state_jtis:
             db.query(OAuthState).filter(
                 OAuthState.jti.in_(_issued_state_jtis)
@@ -304,8 +296,7 @@ class TestIntegrationCallback:
 
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["error"]
-            assert query["detail"] == [JIRA_OAUTH_ACCESS_DENIED_MESSAGE]
-            assert "access_denied" not in query["detail"][0]
+            assert query["reason"] == ["access_denied"]
         finally:
             db.close()
 
@@ -424,7 +415,7 @@ class TestIntegrationCallback:
 
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["error"]
-            assert "invalid_grant" in query["detail"][0]
+            assert query["reason"] == ["exchange_failed"]
 
             assert (
                 db.query(Integration)

@@ -1,11 +1,10 @@
-"""Tests for the entry_versions append-only history table (app/entries/models.py) and its three write
-points: write_draft_entry (ai_draft), approve_entry (human_approved), and update_entry on an
-already-approved entry (human_revision) -- against the real Postgres database.
+"""Tests for the entry_versions append-only history table (app/entries/models.py) and its write
+points: approve_entry (human_approved) and update_entry on an already-approved entry
+(human_revision) -- against the real Postgres database.
 """
 
 import pytest
 
-from app.agent.tools.write_draft_entry import write_draft_entry
 from app.auth.models import User
 from app.db.session import SessionLocal
 from app.entries import crud
@@ -52,25 +51,6 @@ def _make_draft_entry(db, user_id, text="original ai draft") -> Entry:
     db.commit()
     db.refresh(entry)
     return entry
-
-
-class TestWriteDraftEntryCreatesAiDraftVersion:
-    def test_write_draft_entry_appends_ai_draft_version(self, real_db_user):
-        result = write_draft_entry(
-            user_id=real_db_user,
-            format="project_log",
-            content={"text": "shipped the thing"},
-            work_date="2026-07-31",
-        )
-
-        db = SessionLocal()
-        try:
-            versions = db.query(EntryVersion).filter(EntryVersion.entry_id == result["entry_id"]).all()
-            assert len(versions) == 1
-            assert versions[0].source == EntryVersionSource.ai_draft
-            assert versions[0].content == {"text": "shipped the thing"}
-        finally:
-            db.close()
 
 
 class TestApproveEntryCreatesHumanApprovedVersion:

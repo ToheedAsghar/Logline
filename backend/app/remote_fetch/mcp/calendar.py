@@ -10,7 +10,7 @@ from typing import Any, Optional
 from mcp import ClientSession
 
 from app.remote_fetch.base import FetchedEvent, SourceFetchData, SourceFetcher
-from app.remote_fetch.constants import CALENDAR_LIST_EVENTS_PAGE_SIZE, MAX_EVENTS_PER_SOURCE
+from app.remote_fetch.constants import MAX_EVENTS_PER_SOURCE
 from app.remote_fetch.mcp.connection import mcp_result_to_json
 from app.remote_fetch.parsing import first_non_empty_string, parse_iso_datetime, to_naive_utc_isoformat
 
@@ -21,8 +21,8 @@ EVENT_TYPE_MEETING = "meeting"
 
 PRIMARY_CALENDAR_ID = "primary"
 WORKING_LOCATION_EVENT_TYPE = "workingLocation"
-
 DECLINED_RESPONSE_STATUS = "declined"
+CALENDAR_LIST_EVENTS_PAGE_SIZE = 250
 
 
 def _event_time(value: Any) -> Optional[datetime]:

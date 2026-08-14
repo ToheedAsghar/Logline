@@ -15,13 +15,31 @@ from app.agent.llm.base import (
     AgentResponse, LLMProvider, LLMResponseError, LLMStructuredOutputError, Message, T, ToolDefinition,
 )
 from app.agent.llm.constants import (
-    ERROR_GEMINI_API_ERROR, ERROR_GEMINI_RUN_TURN_UNSUPPORTED, ERROR_GEMINI_TOOL_MESSAGE_UNSUPPORTED,
-    ERROR_RUN_STRUCTURED_CONTENT_FILTERED, ERROR_RUN_STRUCTURED_EMPTY_TEXT, ERROR_RUN_STRUCTURED_NO_CANDIDATES,
-    ERROR_RUN_STRUCTURED_PROMPT_BLOCKED, ERROR_RUN_STRUCTURED_TRUNCATED, ERROR_RUN_STRUCTURED_VALIDATION_FAILED,
-    GEMINI_USAGE_LOG_FORMAT,
+    ERROR_RUN_STRUCTURED_CONTENT_FILTERED, ERROR_RUN_STRUCTURED_TRUNCATED, ERROR_RUN_STRUCTURED_VALIDATION_FAILED,
 )
 
 logger = logging.getLogger(__name__)
+
+ERROR_GEMINI_RUN_TURN_UNSUPPORTED = (
+    "GeminiProvider does not implement run_turn. Gemini is wired for structured output only "
+    "(run_structured), which is all the reconciliation pipeline uses."
+)
+ERROR_GEMINI_TOOL_MESSAGE_UNSUPPORTED = (
+    "run_structured failed: GeminiProvider received a role='tool' message, but it does not support "
+    "tool calling. Structured-output calls should only carry system/user/assistant messages."
+)
+ERROR_RUN_STRUCTURED_PROMPT_BLOCKED = (
+    "run_structured failed: the prompt was blocked before generation could start (reason: {reason})"
+)
+ERROR_RUN_STRUCTURED_NO_CANDIDATES = "run_structured failed: the model returned no candidates"
+ERROR_RUN_STRUCTURED_EMPTY_TEXT = (
+    "run_structured failed: the model returned an empty response body, so there was nothing to "
+    "parse into {model_name}"
+)
+ERROR_GEMINI_API_ERROR = (
+    "run_structured failed: the Gemini API request for {model_name} failed (see cause for detail)"
+)
+GEMINI_USAGE_LOG_FORMAT = "gemini %s usage: prompt=%s candidates=%s total=%s"
 
 REQUEST_TIMEOUT_MS = 60_000
 

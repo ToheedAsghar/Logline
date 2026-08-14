@@ -15,9 +15,8 @@ import httpx
 import pytest
 
 from app.config import settings
-from app.integrations.constants import JIRA_OAUTH_SCOPES, JIRA_OAUTH_TOKEN_URL
 from app.integrations.errors import TokenRefreshError
-from app.integrations.providers.jira import JiraOAuthError, JiraOAuthProvider
+from app.integrations.providers.jira import JIRA_OAUTH_SCOPES, JIRA_OAUTH_TOKEN_URL, JiraOAuthError, JiraOAuthProvider
 
 provider = JiraOAuthProvider()
 

@@ -2,8 +2,7 @@
 Regression test for the self-capture -> Event fix (app/self_captures/routers.py).
 
 Previously POST /self_captures only wrote to the self_captures table. Nothing
-marked that time range as "covered" in a way gap-detection (flag_gap, which
-only ever reads the `events` table) could see, so a gap filled via
+marked that time range as "covered" in the `events` table, so a gap filled via
 self-capture would reappear after a refetch. `create_self_capture` now also
 writes a corresponding Event row (source="self_capture", confidence="proven")
 using the self-capture's own timestamp and text.

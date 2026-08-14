@@ -4,9 +4,7 @@ import {
   ApprovalTransition,
   EditableTimeField,
   GapPrompt,
-  GenerateStandupTrigger,
   IntegrationCard,
-  RefreshTimelineTrigger,
   TimelineBlock,
 } from "@/molecules";
 import { CONFIDENCE_TIERS, type ConfidenceTier as Tier, type ThemeName } from "@/constants/tokens";
@@ -335,13 +333,6 @@ export default function StyleGuide() {
             {MOCK_INTEGRATIONS.map((integration) => (
               <IntegrationCard key={integration.id} integration={integration} />
             ))}
-          </div>
-        </Section>
-
-        <Section title="AgentTriggerButton">
-          <div className="flex flex-wrap items-center gap-4">
-            <GenerateStandupTrigger />
-            <RefreshTimelineTrigger />
           </div>
         </Section>
 

@@ -2,11 +2,9 @@
 Tests for `LLMProvider.run_structured`'s base-class default (app/agent/llm/base.py).
 
 `run_structured` is a concrete method (not `@abstractmethod`) with a default
-body that raises `NotImplementedError`. It's deliberately not abstract so the
-existing fake providers used by test_agent_runner_created_entry_id.py,
-test_calendar_location_exclusion.py, and test_slack_channel_fallback.py --
-which only implement `run_turn` -- keep working unchanged. Providers that do
-support structured output (e.g. OpenAIProvider) override it.
+body that raises `NotImplementedError`. It's deliberately not abstract so
+fake test providers that only implement `run_turn` keep working unchanged.
+Providers that do support structured output (e.g. OpenAIProvider) override it.
 
 These tests confirm both halves of that contract: a provider that overrides
 `run_structured` never falls through to the base default, and a provider

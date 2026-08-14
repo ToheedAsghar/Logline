@@ -10,10 +10,13 @@ from typing import Any, Callable, Optional
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from app.remote_fetch.constants import (
-    ENV_GITHUB_TEST_PAT, ENV_GOOGLE_OAUTH_CREDENTIALS, ENV_JIRA_API_TOKEN, ENV_JIRA_EMAIL, ENV_JIRA_SITE_URL,
-    ENV_SLACK_BOT_TOKEN, ENV_SLACK_TEAM_ID,
-)
+ENV_GITHUB_TEST_PAT = "GITHUB_TEST_PAT"
+ENV_SLACK_BOT_TOKEN = "SLACK_BOT_TOKEN"
+ENV_SLACK_TEAM_ID = "SLACK_TEAM_ID"
+ENV_GOOGLE_OAUTH_CREDENTIALS = "GOOGLE_OAUTH_CREDENTIALS"
+ENV_JIRA_API_TOKEN = "JIRA_API_TOKEN"
+ENV_JIRA_EMAIL = "JIRA_EMAIL"
+ENV_JIRA_SITE_URL = "JIRA_SITE_URL"
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent.parent
 

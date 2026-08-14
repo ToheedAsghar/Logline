@@ -23,8 +23,10 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.integrations.constants import CONNECT_LINK_TOKEN_SALT, CONNECT_LINK_TOKEN_TTL_SECONDS
 from app.integrations.models import ConnectLinkToken, IntegrationSource
+
+CONNECT_LINK_TOKEN_SALT = "integration-connect-link"
+CONNECT_LINK_TOKEN_TTL_SECONDS = 60
 
 
 class ConnectLinkTokenError(Exception):

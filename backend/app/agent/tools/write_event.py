@@ -1,9 +1,8 @@
 """Plain, directly-callable function that writes a single row to the `events` table.
 
-This is a *tool* the agent will eventually be able to invoke, but this module makes
-no assumption about which LLM API (Anthropic, OpenAI, or otherwise) drives that agent,
-and does not call any LLM. It is a standalone DB-write function that can be imported
-and called directly, e.g. `write_event(user_id=1, source="calendar", ...)`.
+Used by `app/self_captures/routers.py` to record a self-capture as an Event. It is a standalone
+DB-write function with no LLM/agent involvement, imported and called directly, e.g.
+`write_event(user_id=1, source="calendar", ...)`.
 """
 
 import re

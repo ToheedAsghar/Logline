@@ -12,14 +12,18 @@ from app.timeline.schemas import EventResponse, EventUpdate
 
 router = APIRouter(prefix="/timeline", tags=["timeline"])
 
+EVENT_NOT_FOUND_ERROR = "Event not found"
+
 
 def _get_owned_event(event_id: int, current_user: User, db: Session) -> Event:
-    # Scoped by user_id in the query itself, same convention as
-    # `_get_owned_entry` in `app/entries/routers.py` -- an event owned by
-    # someone else 404s exactly like one that doesn't exist.
+    """Fetch an event scoped to `current_user`, or raise 404.
+
+    Ownership is filtered in the query itself, same convention as `_get_owned_entry` in
+    app/entries/routers.py -- an event owned by someone else 404s exactly like one that doesn't exist.
+    """
     event = crud.get_owned_event(db, event_id, current_user.id)
     if event is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=EVENT_NOT_FOUND_ERROR)
     return event
 
 
