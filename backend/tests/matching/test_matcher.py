@@ -211,7 +211,9 @@ class TestTimezoneAwareDatetimes:
             apps=["vscode"],
         )
 
-    def _aware_event(self, minute_offset: int, external_id: str, remote_project_id: str = GITHUB_REPO) -> RemoteEventData:
+    def _aware_event(
+        self, minute_offset: int, external_id: str, remote_project_id: str = GITHUB_REPO
+    ) -> RemoteEventData:
         return RemoteEventData(
             external_id=external_id,
             source="github",

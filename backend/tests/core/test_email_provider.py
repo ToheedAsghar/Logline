@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 
 from app.core.email import EmailProvider, SMTPProvider
 
-APP_ROOT = Path(__file__).resolve().parent.parent / "app"
+APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 EMAIL_MODULE = APP_ROOT / "core" / "email.py"
 AIOSMTPLIB_IMPORT_RE = re.compile(r"^\s*(import aiosmtplib|from aiosmtplib\b)", re.MULTILINE)
 
