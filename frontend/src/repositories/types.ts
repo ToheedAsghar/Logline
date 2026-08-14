@@ -66,12 +66,6 @@ export interface DateRange {
   end: string;
 }
 
-export interface AgentRunResult {
-  response: string;
-  events: Event[];
-  created_entry_id: number | null;
-}
-
 export interface UserResponse {
   id: number;
   email: string;

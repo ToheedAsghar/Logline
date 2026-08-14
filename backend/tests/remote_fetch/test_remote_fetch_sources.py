@@ -7,13 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.remote_fetch.constants import (
-    CALENDAR_LIST_EVENTS_PAGE_SIZE, GITHUB_MAX_PAGES, GITHUB_PER_PAGE, SLACK_HISTORY_PAGE_LIMIT,
-)
-from app.remote_fetch.mcp.calendar import CalendarFetcher
-from app.remote_fetch.mcp.github import GitHubFetcher
+from app.remote_fetch.mcp.calendar import CALENDAR_LIST_EVENTS_PAGE_SIZE, CalendarFetcher
+from app.remote_fetch.mcp.github import GITHUB_MAX_PAGES, GITHUB_PER_PAGE, GitHubFetcher
 from app.remote_fetch.mcp.jira import JiraFetcher
-from app.remote_fetch.mcp.slack import SlackFetcher, resolve_connected_slack_user_id
+from app.remote_fetch.mcp.slack import SLACK_HISTORY_PAGE_LIMIT, SlackFetcher, resolve_connected_slack_user_id
 
 SINCE = datetime(2026, 7, 1, tzinfo=timezone.utc)
 

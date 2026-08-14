@@ -23,7 +23,6 @@ from app.config import settings
 from app.core.oauth_state import OAuthState, OAuthStateError
 from app.db.session import SessionLocal, engine
 from app.integrations.connect_state import CONNECT_STATE_SALT, consume_connect_state, create_connect_state
-from app.integrations.constants import GITHUB_OAUTH_ACCESS_DENIED_MESSAGE
 from app.integrations.models import Integration, IntegrationSource, IntegrationStatus, OAuthToken
 from app.integrations.providers.base import OAuthTokens
 from app.integrations.providers.github import GitHubOAuthError, GitHubOAuthProvider
@@ -272,8 +271,7 @@ class TestIntegrationCallback:
 
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["error"]
-            assert query["detail"] == [GITHUB_OAUTH_ACCESS_DENIED_MESSAGE]
-            assert "access_denied" not in query["detail"][0]
+            assert query["reason"] == ["access_denied"]
         finally:
             db.close()
 
@@ -360,7 +358,7 @@ class TestIntegrationCallback:
 
             query = parse_qs(urlparse(response.headers["location"]).query)
             assert query["status"] == ["error"]
-            assert "bad_verification_code" in query["detail"][0]
+            assert query["reason"] == ["exchange_failed"]
 
             assert (
                 db.query(Integration)

@@ -13,9 +13,10 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from app.config import settings
-from app.integrations.constants import SLACK_OAUTH_ACCESS_URL, SLACK_OAUTH_USER_SCOPES
 from app.integrations.errors import TokenRefreshError
-from app.integrations.providers.slack import SlackOAuthError, SlackOAuthProvider
+from app.integrations.providers.slack import (
+    SLACK_OAUTH_ACCESS_URL, SLACK_OAUTH_USER_SCOPES, SlackOAuthError, SlackOAuthProvider,
+)
 
 provider = SlackOAuthProvider()
 

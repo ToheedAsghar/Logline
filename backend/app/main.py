@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.agent import routers as agent
 from app.agent.reconciliation import routers as reconciliation
 from app.auth import routers as auth
 from app.config import settings
@@ -27,6 +26,5 @@ app.include_router(integrations.router)
 app.include_router(entries.router)
 app.include_router(timeline.router)
 app.include_router(self_captures.router)
-app.include_router(agent.router)
 app.include_router(reconciliation.router)
 app.include_router(tracker_sync.router)

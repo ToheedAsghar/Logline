@@ -13,7 +13,7 @@ from mcp import ClientSession
 
 from app.integrations.config import get_user_github_repos
 from app.remote_fetch.base import FetchedEvent, SourceFetchData, SourceFetcher
-from app.remote_fetch.constants import GITHUB_MAX_PAGES, GITHUB_PER_PAGE, MAX_EVENTS_PER_SOURCE
+from app.remote_fetch.constants import MAX_EVENTS_PER_SOURCE
 from app.remote_fetch.mcp.connection import mcp_result_to_json
 from app.remote_fetch.parsing import first_non_empty_string, parse_iso_datetime, split_commit_message
 
@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 SOURCE = "github"
 EVENT_TYPE_COMMIT = "commit"
 EVENT_TYPE_PULL_REQUEST = "pull_request"
+
+GITHUB_PER_PAGE = 100
+GITHUB_MAX_PAGES = 5
 
 
 def _as_list(payload: Any, *keys: str) -> list[dict[str, Any]]:

@@ -12,9 +12,8 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from app.config import settings
-from app.integrations.constants import GITHUB_OAUTH_ACCESS_TOKEN_URL
 from app.integrations.errors import TokenRefreshError
-from app.integrations.providers.github import GitHubOAuthError, GitHubOAuthProvider
+from app.integrations.providers.github import GITHUB_OAUTH_ACCESS_TOKEN_URL, GitHubOAuthError, GitHubOAuthProvider
 
 provider = GitHubOAuthProvider()
 

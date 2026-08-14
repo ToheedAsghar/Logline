@@ -44,6 +44,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/reconciliation", tags=["reconciliation"])
 
 MAX_RANGE_DAYS = 31
+ERROR_DATE_RANGE_ORDER = "date_range_start must be on or before date_range_end"
+ERROR_DATE_RANGE_MAX_SPAN = "date range cannot span more than {max_days} days"
+RECONCILIATION_VERIFICATION_FAILED_MESSAGE = "Draft failed verification against its evidence and was not saved."
 
 
 class ReconciliationDateRange(BaseModel):
@@ -55,9 +58,9 @@ class ReconciliationDateRange(BaseModel):
     @model_validator(mode="after")
     def _validate_range(self) -> "ReconciliationDateRange":
         if self.date_range_start > self.date_range_end:
-            raise ValueError("date_range_start must be on or before date_range_end")
+            raise ValueError(ERROR_DATE_RANGE_ORDER)
         if (self.date_range_end - self.date_range_start).days > MAX_RANGE_DAYS:
-            raise ValueError(f"date range cannot span more than {MAX_RANGE_DAYS} days")
+            raise ValueError(ERROR_DATE_RANGE_MAX_SPAN.format(max_days=MAX_RANGE_DAYS))
         return self
 
     def as_utc_bounds(self) -> tuple[datetime, datetime]:
@@ -221,7 +224,7 @@ async def approve_reconciliation(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
-                "message": "Draft failed verification against its evidence and was not saved.",
+                "message": RECONCILIATION_VERIFICATION_FAILED_MESSAGE,
                 "issues": [issue.model_dump() for issue in verification.issues],
             },
         )

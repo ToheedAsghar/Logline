@@ -1,10 +1,8 @@
 """Provider-agnostic types for the agent's LLM boundary.
 
-Everything in this file is neutral with respect to which LLM API is actually
-driving the agent. This module (and app/agent/runner.py, app/agent/toolbelt.py)
-must never import `openai` or `anthropic` directly — provider-specific
-conversion logic belongs in the individual provider modules
-(e.g. app/agent/llm/openai_provider.py).
+Everything in this file is neutral with respect to which LLM API is actually driving the agent. This module must
+never import `openai` or `anthropic` directly — provider-specific conversion logic belongs in the individual
+provider modules (e.g. app/agent/llm/openai_provider.py).
 """
 
 from abc import ABC, abstractmethod
@@ -79,7 +77,7 @@ class LLMStructuredOutputError(LLMResponseError):
 
 
 class LLMProvider(ABC):
-    """Abstract boundary the runner talks to — never a concrete SDK."""
+    """Abstract boundary callers talk to — never a concrete SDK."""
 
     @abstractmethod
     async def run_turn(

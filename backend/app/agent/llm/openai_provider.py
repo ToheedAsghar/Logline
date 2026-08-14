@@ -17,12 +17,18 @@ from app.agent.llm.base import (
     AgentResponse, LLMProvider, LLMResponseError, LLMStructuredOutputError, Message, T, ToolCall, ToolDefinition,
 )
 from app.agent.llm.constants import (
-    ERROR_RUN_STRUCTURED_CONTENT_FILTERED, ERROR_RUN_STRUCTURED_PARSED_NONE, ERROR_RUN_STRUCTURED_TRUNCATED,
-    ERROR_RUN_STRUCTURED_VALIDATION_FAILED, ERROR_RUN_STRUCTURED_ZERO_CHOICES, ERROR_RUN_TURN_ZERO_CHOICES,
-    USAGE_LOG_FORMAT,
+    ERROR_RUN_STRUCTURED_CONTENT_FILTERED, ERROR_RUN_STRUCTURED_TRUNCATED, ERROR_RUN_STRUCTURED_VALIDATION_FAILED,
 )
 
 logger = logging.getLogger(__name__)
+
+ERROR_RUN_TURN_ZERO_CHOICES = "run_turn failed: the model returned zero choices"
+ERROR_RUN_STRUCTURED_ZERO_CHOICES = "run_structured failed: the model returned zero choices"
+ERROR_RUN_STRUCTURED_PARSED_NONE = (
+    "run_structured failed: the model's response could not be parsed into {model_name} "
+    "(no exception was raised, but .parsed was None)"
+)
+USAGE_LOG_FORMAT = "openai %s usage: prompt=%s completion=%s total=%s"
 
 
 class OpenAIProvider(LLMProvider):
@@ -111,10 +117,12 @@ class OpenAIProvider(LLMProvider):
         if usage is None:
             return
         logger.info(
-            USAGE_LOG_FORMAT, call_kind, getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None),
+            USAGE_LOG_FORMAT,
+            call_kind,
+            getattr(usage, "prompt_tokens", None),
+            getattr(usage, "completion_tokens", None),
             getattr(usage, "total_tokens", None),
         )
-
 
     @staticmethod
     def _to_openai_tools(tools: list[ToolDefinition]) -> list[dict[str, Any]]:

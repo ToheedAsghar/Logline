@@ -24,10 +24,9 @@ from app.config import settings
 from app.core.oauth_state import OAuthState, OAuthStateError
 from app.db.session import SessionLocal, engine
 from app.integrations.connect_state import CONNECT_STATE_SALT, consume_connect_state, create_connect_state
-from app.integrations.constants import SLACK_OAUTH_USER_SCOPES
 from app.integrations.models import Integration, IntegrationSource, IntegrationStatus, OAuthToken
 from app.integrations.providers.base import OAuthTokens
-from app.integrations.providers.slack import SlackOAuthError, SlackOAuthProvider
+from app.integrations.providers.slack import SLACK_OAUTH_USER_SCOPES, SlackOAuthError, SlackOAuthProvider
 from app.integrations.routers import connect_integration, integration_callback
 
 TEST_EMAIL = "slack-oauth-endpoint-test@example.com"

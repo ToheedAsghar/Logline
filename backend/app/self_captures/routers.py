@@ -12,6 +12,8 @@ from app.timeline.models import ConfidenceLevel
 
 router = APIRouter(prefix="/self_captures", tags=["self_captures"])
 
+LINKED_GAP_NOT_FOUND_ERROR = "linked_gap_id does not reference an existing event"
+
 
 @router.post("", response_model=SelfCaptureResponse, status_code=status.HTTP_201_CREATED)
 def create_self_capture(
@@ -19,6 +21,9 @@ def create_self_capture(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Record a self-capture and also write an Event row so the covered time range doesn't look empty to
+    anything else reading the `events` table.
+    """
     try:
         self_capture = crud.create_self_capture(
             db,
@@ -29,15 +34,8 @@ def create_self_capture(
         )
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="linked_gap_id does not reference an existing event"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=LINKED_GAP_NOT_FOUND_ERROR)
 
-    # A self-capture fills a gap, but gap-detection (flag_gap) only looks at
-    # the `events` table -- without this, the same gap would reappear after a
-    # refetch since nothing marks the time range as covered. source="self_capture"
-    # keeps it traceable back to *what* covered the gap, confidence="proven"
-    # because the user directly reported it themselves.
     write_event(
         user_id=current_user.id,
         source="self_capture",

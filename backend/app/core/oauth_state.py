@@ -27,11 +27,20 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 
 from app.config import settings
-from app.core.constants import (
-    OAUTH_EXCHANGE_PURPOSE, OAUTH_EXCHANGE_TTL_SECONDS, OAUTH_STATE_ALREADY_USED_MESSAGE, OAUTH_STATE_EXPIRED_MESSAGE,
-    OAUTH_STATE_INVALID_MESSAGE, OAUTH_STATE_PURPOSE_MISMATCH_MESSAGE, OAUTH_STATE_TTL_SECONDS,
-)
+from app.core.constants import OAUTH_STATE_EXPIRED_MESSAGE, OAUTH_STATE_INVALID_MESSAGE, OAUTH_STATE_TTL_SECONDS
 from app.db.session import Base
+
+OAUTH_EXCHANGE_TTL_SECONDS = 60
+OAUTH_EXCHANGE_PURPOSE = "oauth_exchange"
+
+OAUTH_STATE_ALREADY_USED_MESSAGE = (
+    "This OAuth state parameter has already been used. Each state is single-use; "
+    "restart the sign-in flow to get a new one."
+)
+OAUTH_STATE_PURPOSE_MISMATCH_MESSAGE = (
+    "This OAuth state parameter was issued for a different purpose than the one "
+    "being completed. Restart the sign-in flow."
+)
 
 
 class OAuthState(Base):

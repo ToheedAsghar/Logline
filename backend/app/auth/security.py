@@ -8,12 +8,12 @@ import jwt
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.orm import Session
 
-from app.auth.constants import (
-    EMAIL_VERIFICATION_SALT, EMAIL_VERIFICATION_TOKEN_MAX_AGE_SECONDS, PASSWORD_RESET_SALT,
-    PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS,
-)
+from app.auth.constants import EMAIL_VERIFICATION_TOKEN_MAX_AGE_SECONDS, PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS
 from app.auth.models import EmailVerificationToken, PasswordResetToken
 from app.config import settings
+
+EMAIL_VERIFICATION_SALT = "email-verification"
+PASSWORD_RESET_SALT = "password-reset"
 
 
 def _bcrypt_input(password: str) -> bytes:
@@ -39,10 +39,9 @@ def create_access_token(user_id: int) -> str:
 def decode_access_token(token: str) -> int:
     """Return the user_id encoded in `token`.
 
-    Raises jwt.PyJWTError (or a subclass) if the token is expired, malformed,
-    has an invalid signature, or carries a missing/non-numeric `sub` claim --
-    callers (e.g. get_current_user) only need to catch jwt.PyJWTError to
-    treat every one of those cases as an unauthenticated request.
+    Raises jwt.PyJWTError (or a subclass) if the token is expired, malformed, has an invalid signature, or carries a
+    missing/non-numeric `sub` claim -- callers (e.g. get_current_user) only need to catch jwt.PyJWTError to treat
+    every one of those cases as an unauthenticated request.
     """
     payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
     sub = payload.get("sub")
@@ -102,11 +101,11 @@ def _verify_signed_token(
 
     Returns the `model` row (its `.user_id` is the verified user) on success. Raises `error_class`
     with a specific `.reason` otherwise -- the signature guarantees the decoded payload wasn't
-    forged, so a valid signature is trusted without re-deriving user_id from the row.
+    forged, so a valid signature is trusted without re-deriving user_id from the row. `SignatureExpired`
+    subclasses `BadSignature`, so it must stay the first except branch to keep its own "expired" reason.
     """
     try:
         data = _serializer(salt).loads(token, max_age=max_age_seconds)
-    # SignatureExpired subclasses BadSignature, so it must stay the first branch to keep its own reason.
     except SignatureExpired:
         raise error_class("expired") from None
     except BadSignature:
