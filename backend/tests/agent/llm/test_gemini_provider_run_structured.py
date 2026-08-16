@@ -27,7 +27,7 @@ import pytest
 from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.agent.llm.base import LLMResponseError, LLMStructuredOutputError, Message
+from app.agent.llm.base import LLMStructuredOutputError, Message
 from app.agent.llm.gemini_provider import GeminiProvider
 
 
@@ -298,23 +298,3 @@ class TestGeminiProviderRunStructured:
 
         with pytest.raises(LLMStructuredOutputError):
             _run(provider)
-
-    def test_tool_role_message_is_rejected(self):
-        provider = _make_provider()
-        provider._client.aio.models.generate_content = AsyncMock(return_value=_make_response())
-
-        with pytest.raises(LLMResponseError, match="does not support tool calling"):
-            asyncio.run(
-                provider.run_structured(
-                    [Message(role="tool", content="{}", tool_call_id="call_1")], _Animal
-                )
-            )
-
-
-class TestGeminiProviderRunTurn:
-    def test_run_turn_is_not_supported(self):
-        """Verifies that `run_turn` raises `NotImplementedError` because Gemini is structured-output only."""
-        provider = _make_provider()
-
-        with pytest.raises(NotImplementedError, match="does not implement run_turn"):
-            asyncio.run(provider.run_turn([Message(role="user", content="hi")], []))

@@ -1,11 +1,9 @@
 """LLMProvider implementation backed by the `openai` SDK.
 
-All OpenAI-specific shapes (function-calling schema, chat message format,
-`finish_reason`/`tool_calls` parsing) are converted to and from our neutral
+All OpenAI-specific shapes (chat message format, structured-output parsing) are converted to and from our neutral
 types here. Nothing outside this module should need to know these details.
 """
 
-import json
 import logging
 from typing import Any
 
@@ -13,16 +11,13 @@ import openai
 import pydantic
 from openai import AsyncOpenAI
 
-from app.agent.llm.base import (
-    AgentResponse, LLMProvider, LLMResponseError, LLMStructuredOutputError, Message, T, ToolCall, ToolDefinition,
-)
+from app.agent.llm.base import LLMProvider, LLMStructuredOutputError, Message, T
 from app.agent.llm.constants import (
     ERROR_RUN_STRUCTURED_CONTENT_FILTERED, ERROR_RUN_STRUCTURED_TRUNCATED, ERROR_RUN_STRUCTURED_VALIDATION_FAILED,
 )
 
 logger = logging.getLogger(__name__)
 
-ERROR_RUN_TURN_ZERO_CHOICES = "run_turn failed: the model returned zero choices"
 ERROR_RUN_STRUCTURED_ZERO_CHOICES = "run_structured failed: the model returned zero choices"
 ERROR_RUN_STRUCTURED_PARSED_NONE = (
     "run_structured failed: the model's response could not be parsed into {model_name} "
@@ -35,37 +30,6 @@ class OpenAIProvider(LLMProvider):
     def __init__(self, model: str, api_key: str) -> None:
         self.model = model
         self._client = AsyncOpenAI(api_key=api_key)
-
-    async def run_turn(
-        self, messages: list[Message], tools: list[ToolDefinition]
-    ) -> AgentResponse:
-        response = await self._client.chat.completions.create(
-            model=self.model,
-            messages=self._to_openai_messages(messages),
-            tools=self._to_openai_tools(tools) if tools else None,
-        )
-
-        if not response.choices:
-            raise LLMResponseError(ERROR_RUN_TURN_ZERO_CHOICES)
-
-        self._log_usage("run_turn", response)
-
-        choice = response.choices[0]
-        raw_tool_calls = choice.message.tool_calls or []
-        tool_calls = [
-            ToolCall(
-                id=call.id,
-                name=call.function.name,
-                arguments=json.loads(call.function.arguments or "{}"),
-            )
-            for call in raw_tool_calls
-        ]
-
-        return AgentResponse(
-            text=choice.message.content,
-            tool_calls=tool_calls,
-            is_final=len(tool_calls) == 0,
-        )
 
     async def run_structured(self, messages: list[Message], response_model: type[T]) -> T:
         try:
@@ -125,47 +89,11 @@ class OpenAIProvider(LLMProvider):
         )
 
     @staticmethod
-    def _to_openai_tools(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.input_schema,
-                },
-            }
-            for tool in tools
-        ]
-
-    @staticmethod
     def _to_openai_messages(messages: list[Message]) -> list[dict[str, Any]]:
         openai_messages: list[dict[str, Any]] = []
         for message in messages:
-            if message.role == "tool":
-                openai_messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": message.tool_call_id,
-                        "content": message.content or "",
-                    }
-                )
-                continue
-
             entry: dict[str, Any] = {"role": message.role}
             if message.content is not None:
                 entry["content"] = message.content
-            if message.tool_calls:
-                entry["tool_calls"] = [
-                    {
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.name,
-                            "arguments": json.dumps(call.arguments),
-                        },
-                    }
-                    for call in message.tool_calls
-                ]
             openai_messages.append(entry)
         return openai_messages

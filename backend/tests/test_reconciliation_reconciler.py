@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from app.agent.llm.base import AgentResponse, LLMProvider, Message
+from app.agent.llm.base import LLMProvider, Message
 from app.agent.reconciliation.prompt import SYSTEM_PROMPT
 from app.agent.reconciliation.reconciler import (
     NOTE_LAST_RESORT, prebuilt_reminder_to_draft_reminder, reconcile_evidence,
@@ -76,9 +76,6 @@ class ScriptedProvider(LLMProvider):
         self.draft = draft
         self.calls: list[tuple[list[Message], type]] = []
 
-    async def run_turn(self, messages, tools) -> AgentResponse:
-        raise AssertionError("reconcile_evidence must use run_structured, never run_turn")
-
     async def run_structured(self, messages, response_model):
         self.calls.append((messages, response_model))
         return self.draft
@@ -87,9 +84,6 @@ class ScriptedProvider(LLMProvider):
 class ExplodingProvider(LLMProvider):
     def __init__(self, error: Exception):
         self.error = error
-
-    async def run_turn(self, messages, tools) -> AgentResponse:
-        raise AssertionError("not exercised")
 
     async def run_structured(self, messages, response_model):
         raise self.error

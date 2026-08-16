@@ -37,9 +37,6 @@ class _ScriptedProvider(LLMProvider):
     def __init__(self, draft: WorkLogDraft):
         self._draft = draft
 
-    async def run_turn(self, messages, tools):  # pragma: no cover
-        raise NotImplementedError
-
     async def run_structured(self, messages, response_model):
         return self._draft
 
