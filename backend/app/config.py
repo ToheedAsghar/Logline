@@ -26,7 +26,7 @@ class Settings:
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     jwt_secret_key: str = _require_env("JWT_SECRET_KEY")
-    jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
+    jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", str(60 * 24)))
 
     itsdangerous_secret_key: str = _require_env("ITSDANGEROUS_SECRET_KEY")
@@ -39,21 +39,17 @@ class Settings:
 
     github_client_id: str = os.getenv("GITHUB_CLIENT_ID", "")
     github_client_secret: str = os.getenv("GITHUB_CLIENT_SECRET", "")
-    github_redirect_uri: str = os.getenv("GITHUB_REDIRECT_URI", "")
 
     slack_client_id: str = os.getenv("SLACK_CLIENT_ID", "")
     slack_client_secret: str = os.getenv("SLACK_CLIENT_SECRET", "")
     slack_signing_secret: str = os.getenv("SLACK_SIGNING_SECRET", "")
-    slack_redirect_uri: str = os.getenv("SLACK_REDIRECT_URI", "")
     slack_bot_token: str = os.getenv("SLACK_BOT_TOKEN", "")
 
     google_client_id: str = _require_env("GOOGLE_CLIENT_ID")
     google_client_secret: str = _require_env("GOOGLE_CLIENT_SECRET")
-    google_redirect_uri: str = _require_env("GOOGLE_REDIRECT_URI")
 
     jira_client_id: str = os.getenv("JIRA_CLIENT_ID", "")
     jira_client_secret: str = os.getenv("JIRA_CLIENT_SECRET", "")
-    jira_redirect_uri: str = os.getenv("JIRA_REDIRECT_URI", "")
 
     frontend_base_url: str = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
     backend_base_url: str = os.getenv("BACKEND_BASE_URL", "http://localhost:8000")
@@ -64,6 +60,28 @@ class Settings:
         for origin in os.getenv("CORS_ORIGINS", "").split(",")
         if origin.strip()
     ]
+
+    def _redirect_uri(self, env_name: str, callback_path: str) -> str:
+        """Return the env override for `env_name` if set, otherwise derive it from `backend_base_url` +
+        `callback_path`.
+        """
+        return os.getenv(env_name) or f"{self.backend_base_url}{callback_path}"
+
+    @property
+    def github_redirect_uri(self) -> str:
+        return self._redirect_uri("GITHUB_REDIRECT_URI", "/auth/github/callback")
+
+    @property
+    def slack_redirect_uri(self) -> str:
+        return self._redirect_uri("SLACK_REDIRECT_URI", "/auth/slack/callback")
+
+    @property
+    def jira_redirect_uri(self) -> str:
+        return self._redirect_uri("JIRA_REDIRECT_URI", "/auth/jira/callback")
+
+    @property
+    def google_redirect_uri(self) -> str:
+        return self._redirect_uri("GOOGLE_REDIRECT_URI", "/auth/google/callback")
 
 
 settings = Settings()
