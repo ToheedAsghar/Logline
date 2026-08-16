@@ -23,7 +23,6 @@ BASELINE_ENV = {
     "SMTP_FROM_ADDRESS": "test@example.com",
     "GOOGLE_CLIENT_ID": "test-google-client-id",
     "GOOGLE_CLIENT_SECRET": "test-google-client-secret",
-    "GOOGLE_REDIRECT_URI": "http://localhost:8000/auth/callback/google",
 }
 REQUIRED_VARS = list(BASELINE_ENV)
 
