@@ -69,15 +69,15 @@ class Settings:
 
     @property
     def github_redirect_uri(self) -> str:
-        return self._redirect_uri("GITHUB_REDIRECT_URI", "/auth/github/callback")
+        return self._redirect_uri("GITHUB_REDIRECT_URI", "/integrations/github/callback")
 
     @property
     def slack_redirect_uri(self) -> str:
-        return self._redirect_uri("SLACK_REDIRECT_URI", "/auth/slack/callback")
+        return self._redirect_uri("SLACK_REDIRECT_URI", "/integrations/slack/callback")
 
     @property
     def jira_redirect_uri(self) -> str:
-        return self._redirect_uri("JIRA_REDIRECT_URI", "/auth/jira/callback")
+        return self._redirect_uri("JIRA_REDIRECT_URI", "/integrations/jira/callback")
 
     @property
     def google_redirect_uri(self) -> str:
