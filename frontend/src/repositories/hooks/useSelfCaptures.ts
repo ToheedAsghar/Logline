@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createSelfCapture, type SelfCaptureInput } from "../api/selfCaptures";
-import { TIMELINE_KEY } from "./useTimeline";
+
+const TIMELINE_KEY = "timeline";
 
 /**
  * A self-capture now writes a real Event row server-side (source=
