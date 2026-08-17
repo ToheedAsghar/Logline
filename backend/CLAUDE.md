@@ -200,8 +200,7 @@ only, no LLM/agent involved:
   `manual_test_jira_mcp.py`.
 
 These four scripts are the only surviving use of the shared/global test credentials in `.env` — nothing else in the
-codebase connects to these MCP servers. `manual_test_write_event.py` covers the one custom tool that survived the
-agentic-runner removal directly against Postgres, no MCP server involved.
+codebase connects to these MCP servers.
 
 ## REST API (`app/api/` equivalents — one router per domain, see below)
 
@@ -217,8 +216,6 @@ Ordinary FastAPI CRUD routes for the frontend, wired into `app/main.py` under th
 - `/entries` (`app/entries/routers.py`) — `GET ""`, `GET /{entry_id}`, `PATCH /{entry_id}`, `POST
   /{entry_id}/approve`. There's intentionally no `POST /entries` — entries are created by
   `POST /reconciliation/approve`, not directly by the user through this router.
-- `/timeline` (`app/timeline/routers.py`) — `GET ""`, `PATCH /{event_id}`, `DELETE /{event_id}`.
-- `/self_captures` (`app/self_captures/routers.py`) — `POST ""`.
 - `/tracker` (`app/tracker_sync/routers.py`) — `GET /sync/checkpoint`, `POST /sync`. Receives batches of local
   activity sessions from the separate `tracker/` desktop app (a sibling top-level project, not part of this
   backend), authenticated per-device via `TrackerDevice`'s encrypted long-lived token rather than user JWT. This is
@@ -230,7 +227,7 @@ for missing/invalid auth. Do not use 403 to distinguish "not yours" from "doesn'
 sharing/collaboration model, every resource is single-owner, so confirming existence to a non-owner via a different
 status code is a pure information leak with no legitimate use. Scope ownership checks in the query itself
 (`.filter(Entry.id == id, Entry.user_id == current_user.id)`), not as a separate check after fetching — see
-`_get_owned_entry` in `app/entries/routers.py` and `_get_owned_event` in `app/timeline/routers.py`.
+`_get_owned_entry` in `app/entries/routers.py`.
 
 ## Local dev
 

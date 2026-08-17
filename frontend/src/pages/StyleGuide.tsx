@@ -1,50 +1,10 @@
 import { useEffect, useState } from "react";
 import { Button, Checkbox, ConfidenceTier, Input, Loading, Textarea, Tooltip } from "@/atoms";
-import {
-  ApprovalTransition,
-  EditableTimeField,
-  GapPrompt,
-  IntegrationCard,
-  TimelineBlock,
-} from "@/molecules";
+import { ApprovalTransition, EditableTimeField, IntegrationCard } from "@/molecules";
 import { CONFIDENCE_TIERS, type ConfidenceTier as Tier, type ThemeName } from "@/constants/tokens";
-import type { Entry, Event, Integration } from "@/repositories/types";
+import type { Entry, Integration } from "@/repositories/types";
 
 const TIERS: Tier[] = ["proven", "estimated", "gap", "personal"];
-
-const MOCK_EVENTS: Event[] = [
-  {
-    id: 1,
-    source: "github",
-    type: "pull_request_merged",
-    timestamp: "2026-07-08T14:00:00.000Z",
-    event_metadata: {
-      title: "Merge PR #482: Add molecules layer",
-      summary: "Composed TimelineBlock, GapPrompt, and four more molecules from Phase 1's atoms.",
-      end_timestamp: "2026-07-08T15:30:00.000Z",
-    },
-    confidence: "proven",
-    created_at: "2026-07-08T15:30:05.000Z",
-  },
-  {
-    id: 2,
-    source: "calendar",
-    type: "focus_block",
-    timestamp: "2026-07-08T09:00:00.000Z",
-    event_metadata: { end_timestamp: "2026-07-08T10:30:00.000Z" },
-    confidence: "estimated",
-    created_at: "2026-07-08T10:30:05.000Z",
-  },
-  {
-    id: 3,
-    source: "personal",
-    type: "lunch",
-    timestamp: "2026-07-08T12:00:00.000Z",
-    event_metadata: { title: "Lunch", end_timestamp: "2026-07-08T13:00:00.000Z" },
-    confidence: "proven",
-    created_at: "2026-07-08T13:00:05.000Z",
-  },
-];
 
 const MOCK_INTEGRATIONS: Integration[] = [
   { id: 1, source: "github", status: "connected", last_synced_at: "2026-07-08T14:31:00.000Z", created_at: "2026-01-01T00:00:00.000Z" },
@@ -299,18 +259,6 @@ export default function StyleGuide() {
           <h2 className="text-xl font-semibold tracking-tight">Phase 3 — Molecules</h2>
           <p className="max-w-prose text-sm text-muted">Composed from the Phase 1 atoms above, wired to the Phase 2 hooks.</p>
         </div>
-
-        <Section title="TimelineBlock">
-          <div className="flex flex-col gap-2.5">
-            {MOCK_EVENTS.map((event) => (
-              <TimelineBlock key={event.id} event={event} onSelect={(e) => console.log("open entry detail (stub)", e.id)} />
-            ))}
-          </div>
-        </Section>
-
-        <Section title="GapPrompt">
-          <GapPrompt start="2026-07-08T10:30:00.000Z" end="2026-07-08T12:00:00.000Z" />
-        </Section>
 
         <Section title="EditableTimeField">
           <div className="flex flex-col gap-3">

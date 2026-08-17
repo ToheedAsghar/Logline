@@ -1,5 +1,3 @@
-export { TimelineBlock, type TimelineBlockProps, TimelineClusterRow, type TimelineClusterRowProps } from "./TimelineBlock";
-export { GapPrompt, type GapPromptProps } from "./GapPrompt";
 export { EditableTimeField, type EditableTimeFieldProps } from "./EditableTimeField";
 export { IntegrationCard, type IntegrationCardProps } from "./IntegrationCard";
 export { ApprovalTransition, type ApprovalTransitionProps } from "./ApprovalTransition";
