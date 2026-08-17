@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 from app.auth import crud, google_oauth
 from app.auth.constants import (
     EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, GOOGLE_LOGIN_STATE_PURPOSE, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
-    TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE, TEXT_GOOGLE_SIGN_IN_FAILED, TEXT_INACTIVE_USER_ACCOUNT,
+    REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_COOKIE_PATH, TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE,
+    TEXT_GOOGLE_SIGN_IN_FAILED, TEXT_INACTIVE_USER_ACCOUNT, TEXT_LOGGED_OUT, TEXT_LOGGED_OUT_ALL,
     TEXT_LOGIN_EMAIL_NOT_VERIFIED, TEXT_LOGIN_INVALID_CREDENTIALS, TEXT_PASSWORD_RESET_SUCCESSFULL,
-    TEXT_PASSWORD_TOKEN_ERROR, TEXT_SIGNUP_GENERIC_MESSAGE,
+    TEXT_PASSWORD_TOKEN_ERROR, TEXT_REFRESH_TOKEN_CONCURRENT, TEXT_REFRESH_TOKEN_INVALID, TEXT_SIGNUP_GENERIC_MESSAGE,
 )
 from app.auth.deps import get_current_user
 from app.auth.google_oauth import GoogleAuthError
@@ -27,7 +28,7 @@ from app.auth.security import (
     create_password_reset_token, hash_password, verify_email_verification_token, verify_password,
     verify_password_reset_token,
 )
-from app.config import settings
+from app.config import ALLOW_INSECURE, settings
 from app.core.email import EmailDeliveryError, get_email_provider
 from app.core.oauth_state import (
     OAuthStateError, consume_oauth_exchange_code, consume_oauth_state, create_oauth_exchange_code, create_oauth_state,
@@ -113,6 +114,46 @@ def _under_cooldown(last_token, cooldown_seconds: int) -> bool:
         return False
     elapsed_seconds = (datetime.now(timezone.utc) - last_token.created_at).total_seconds()
     return elapsed_seconds < cooldown_seconds
+
+
+def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    """Attach the refresh token as an httpOnly cookie, scoped to `/auth` so it is never sent on ordinary API
+    requests. `secure` mirrors the same insecure-opt-out `config.py` already uses for the app's base URLs -- every
+    real (non-loopback) deployment is HTTPS-only, so `Secure` is safe to set unconditionally there."""
+    response.set_cookie(
+        key=REFRESH_TOKEN_COOKIE_NAME,
+        value=refresh_token,
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+        path=REFRESH_TOKEN_COOKIE_PATH,
+        httponly=True,
+        secure=not ALLOW_INSECURE,
+        samesite="lax",
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(key=REFRESH_TOKEN_COOKIE_NAME, path=REFRESH_TOKEN_COOKIE_PATH)
+
+
+def _refresh_cookie_deletion_headers() -> dict[str, str]:
+    """Generates the Set-Cookie deletion header dictionary for HTTPException(headers=...).
+
+    Raising an HTTPException in FastAPI ignores any changes made to the injected Response object. To delete a cookie
+    on an error response, the deletion header must be passed directly into the exception. This uses a temporary
+    Response object to generate the exact header without duplicating cookie configuration.
+    """
+    carrier = Response()
+    _clear_refresh_cookie(carrier)
+    return {"set-cookie": carrier.headers["set-cookie"]}
+
+
+def _issue_login_response(db: Session, response: Response, user: User) -> Token:
+    """Create a fresh refresh-token session for `user`, attach it as a cookie on `response`, and return the access
+    token to be sent in the JSON body. Login and Google exchange both funnel through this single path so every
+    signed-in session -- password or SSO -- is represented the same way."""
+    _, refresh_token = crud.create_session(db, user_id=user.id)
+    _set_refresh_cookie(response, refresh_token)
+    return Token(access_token=create_access_token(user.id))
 
 
 @router.get("/me", response_model=UserResponse)
@@ -238,7 +279,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
 
 
 @router.post("/login", response_model=Token)
-def login(payload: UserLogin, db: Session = Depends(get_db)):
+def login(payload: UserLogin, response: Response, db: Session = Depends(get_db)):
     user = crud.get_user_by_email(db, payload.email)
     if user is None or user.hashed_password is None or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=TEXT_LOGIN_INVALID_CREDENTIALS)
@@ -249,7 +290,7 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
             detail=TEXT_LOGIN_EMAIL_NOT_VERIFIED,
         )
 
-    return Token(access_token=create_access_token(user.id))
+    return _issue_login_response(db, response, user)
 
 
 @router.get("/google/login")
@@ -260,10 +301,7 @@ def google_login(db: Session = Depends(get_db)):
 
 @router.get("/google/callback")
 def google_callback(
-    state: str | None = None,
-    code: str | None = None,
-    error: str | None = None,
-    db: Session = Depends(get_db),
+    state: str | None = None, code: str | None = None, error: str | None = None, db: Session = Depends(get_db),
 ):
     if error or not code or not state:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_GOOGLE_SIGN_IN_FAILED)
@@ -302,7 +340,7 @@ def google_callback(
 
 
 @router.post("/google/exchange", response_model=Token)
-def google_exchange(payload: OAuthExchangeRequest, db: Session = Depends(get_db)):
+def google_exchange(payload: OAuthExchangeRequest, response: Response, db: Session = Depends(get_db)):
     try:
         user_id = consume_oauth_exchange_code(db, code=payload.code)
     except OAuthStateError as exc:
@@ -312,4 +350,63 @@ def google_exchange(payload: OAuthExchangeRequest, db: Session = Depends(get_db)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=TEXT_INACTIVE_USER_ACCOUNT)
 
-    return Token(access_token=create_access_token(user.id))
+    return _issue_login_response(db, response, user)
+
+
+@router.post("/refresh", response_model=Token)
+def refresh(
+    response: Response,
+    refresh_token: str | None = Cookie(default=None, alias=REFRESH_TOKEN_COOKIE_NAME),
+    db: Session = Depends(get_db),
+):
+    """Exchanges the refresh-token cookie for a new access token and rotates the refresh token.
+
+    Does not require an Authorization header because its purpose is to get a new access token after the old one has
+    expired. A dead token (missing, unknown, expired, or replayed outside the reuse grace window) returns 401 and
+    clears the cookie. A token replayed inside the grace window -- almost certainly a second tab racing the same
+    rotation, not theft -- returns 409 and leaves the cookie alone, telling the caller to retry rather than log out.
+    On success, the response sets a new refresh cookie.
+    """
+    if refresh_token is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=TEXT_REFRESH_TOKEN_INVALID)
+
+    result = crud.rotate_session(db, refresh_token=refresh_token)
+    if result.outcome is crud.RotationOutcome.CONCURRENT_ROTATION:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=TEXT_REFRESH_TOKEN_CONCURRENT)
+
+    if result.outcome is not crud.RotationOutcome.ROTATED:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=TEXT_REFRESH_TOKEN_INVALID,
+            headers=_refresh_cookie_deletion_headers() if result.clear_refresh_cookie else None,
+        )
+
+    _set_refresh_cookie(response, result.token)
+    return Token(access_token=create_access_token(result.session.user_id))
+
+
+@router.post("/logout", response_model=MessageResponse)
+def logout(
+    response: Response,
+    refresh_token: str | None = Cookie(default=None, alias=REFRESH_TOKEN_COOKIE_NAME),
+    db: Session = Depends(get_db),
+):
+    """Revoke the caller's own refresh-token session, if the cookie names a live one, and clear the cookie either
+    way. No `Authorization` bearer required -- a client logging out with an already-expired access token must still
+    be able to revoke its refresh token."""
+    if refresh_token is not None:
+        crud.revoke_session_by_token(db, refresh_token=refresh_token)
+    _clear_refresh_cookie(response)
+    return MessageResponse(message=TEXT_LOGGED_OUT)
+
+
+@router.post("/logout-all", response_model=MessageResponse)
+def logout_all(
+    response: Response, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """Revoke every refresh-token session for the current user ("log out of all devices"), including the caller's
+    own -- the caller's access token keeps working until it naturally expires (at most `jwt_expire_minutes`
+    minutes), same bound as a single-session logout."""
+    crud.revoke_all_sessions(db, user_id=current_user.id)
+    _clear_refresh_cookie(response)
+    return MessageResponse(message=TEXT_LOGGED_OUT_ALL)

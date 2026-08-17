@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { login as loginRequest, signup as signupRequest } from "@/repositories/api/auth";
-import { setAuthToken, setUnauthorizedHandler } from "@/repositories/api/client";
-
-const TOKEN_STORAGE_KEY = "logline_token";
+import { AUTH_STRINGS, TOKEN_STORAGE_KEY } from "@/constants/authMessages";
+import { login as loginRequest, logoutAllRequest, logoutRequest, signup as signupRequest } from "@/repositories/api/auth";
+import {
+  ApiError, endAuthSession, setAccessTokenRefreshedHandler, setAuthToken, setUnauthorizedHandler,
+} from "@/repositories/api/client";
 
 interface SessionUser {
   id: number;
@@ -16,6 +17,7 @@ interface SessionContextValue {
   loginWithToken: (token: string) => void;
   signup: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => void;
+  logoutAll: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
@@ -44,11 +46,35 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(TOKEN_STORAGE_KEY, next);
     } else {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
+      endAuthSession();
     }
     setAuthToken(next);
   }, []);
 
   const logout = useCallback(() => {
+    // Best-effort: revokes the refresh-token session server-side and clears its cookie. Not awaited -- the local
+    // session must clear immediately regardless of whether the network call succeeds.
+    logoutRequest().catch(() => {});
+    applyToken(null);
+  }, [applyToken]);
+
+  const logoutAll = useCallback(async () => {
+    // Unlike `logout`, this is awaited -- the caller (a confirmation dialog) needs to know whether the server-side
+    // revocation actually happened before treating the action as done, since it affects every one of the user's
+    // devices, not just this one.
+    try {
+      await logoutAllRequest();
+    } catch (err) {
+      // A 401 here means the caller is already unauthenticated -- by the time it surfaces, `client.ts`'s own
+      // 401-retry handling may have already cleared the session via `logout()`. Either way the desired end state
+      // (no local session) is already true, so this is a no-op success, not a failure -- without this, the caller
+      // sees an error and shows "try again" even though the user is, in fact, already logged out.
+      if (err instanceof ApiError && err.status === 401) {
+        applyToken(null);
+        return;
+      }
+      throw err;
+    }
     applyToken(null);
   }, [applyToken]);
 
@@ -76,6 +102,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // entirely rather than just narrowing it.
   setAuthToken(token);
   setUnauthorizedHandler(logout);
+  setAccessTokenRefreshedHandler(applyToken);
 
   // Also register/cleanup through a real effect (not just the synchronous
   // calls above). Reason: React 18 StrictMode's dev-only mount -> cleanup ->
@@ -90,6 +117,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUnauthorizedHandler(logout);
     return () => setUnauthorizedHandler(null);
   }, [logout]);
+
+  useEffect(() => {
+    setAccessTokenRefreshedHandler(applyToken);
+    return () => setAccessTokenRefreshedHandler(null);
+  }, [applyToken]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -110,8 +142,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const user = useMemo(() => (token ? decodeUserFromToken(token) : null), [token]);
 
   const value = useMemo<SessionContextValue>(
-    () => ({ token, user, isAuthenticated: token !== null, login, loginWithToken, signup, logout }),
-    [token, user, login, loginWithToken, signup, logout],
+    () => ({ token, user, isAuthenticated: token !== null, login, loginWithToken, signup, logout, logoutAll }),
+    [token, user, login, loginWithToken, signup, logout, logoutAll],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
@@ -120,7 +152,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 export function useSession(): SessionContextValue {
   const context = useContext(SessionContext);
   if (context === undefined) {
-    throw new Error("useSession must be used within a SessionProvider");
+    throw new Error(AUTH_STRINGS.USE_SESSION_OUTSIDE_PROVIDER);
   }
   return context;
 }

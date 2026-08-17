@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import TypeVar
 
@@ -14,6 +15,8 @@ from app.config import settings
 
 EMAIL_VERIFICATION_SALT = "email-verification"
 PASSWORD_RESET_SALT = "password-reset"
+
+REFRESH_TOKEN_BYTES = 32
 
 
 def _bcrypt_input(password: str) -> bytes:
@@ -34,6 +37,20 @@ def create_access_token(user_id: int) -> str:
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
     payload = {"sub": str(user_id), "exp": expires_at}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def generate_refresh_token() -> str:
+    """Returns a fresh URL-safe refresh token. The caller must hand this to the client exactly once (as an httpOnly
+    cookie) -- only its hash is persisted, so it can never be recovered afterwards."""
+    return secrets.token_urlsafe(REFRESH_TOKEN_BYTES)
+
+
+def hash_refresh_token(token: str) -> str:
+    """Hex SHA-256 of the presented refresh token, matching what `UserSession.refresh_token_hash` stores. Unsalted
+    for the same reason as `TrackerDevice.token_hash`: the token itself is 32 bytes of `secrets` entropy, so it
+    needs no work factor, and a deterministic hash is what lets `/auth/refresh` find the session by one indexed
+    lookup."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def decode_access_token(token: str) -> int:

@@ -10,10 +10,10 @@ Hits the real test Postgres database (docker-compose, see backend/CLAUDE.md).
 """
 
 import pytest
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, Response
 
 from app.auth.constants import PASSWORD_MAX_LENGTH
-from app.auth.models import EmailVerificationToken, PasswordResetToken, User
+from app.auth.models import EmailVerificationToken, PasswordResetToken, User, UserSession
 from app.auth.routers import login, reset_password, signup
 from app.auth.schemas import ResetPasswordRequest, UserLogin, UserSignup
 from app.auth.security import create_password_reset_token, hash_password, verify_password
@@ -41,6 +41,7 @@ def clean_test_user():
         if user is not None:
             db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).delete()
             db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user.id).delete()
+            db.query(UserSession).filter(UserSession.user_id == user.id).delete()
             db.query(User).filter(User.id == user.id).delete()
             db.commit()
     finally:
@@ -54,6 +55,7 @@ def clean_test_user():
         if user is not None:
             db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).delete()
             db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user.id).delete()
+            db.query(UserSession).filter(UserSession.user_id == user.id).delete()
             db.query(User).filter(User.id == user.id).delete()
             db.commit()
     finally:
@@ -81,7 +83,7 @@ class TestMaximumLengthPasswordEndToEnd:
             db.add(user)
             db.commit()
 
-            token = login(UserLogin(email=TEST_EMAIL, password=MAX_LENGTH_PASSWORD), db=db)
+            token = login(UserLogin(email=TEST_EMAIL, password=MAX_LENGTH_PASSWORD), response=Response(), db=db)
 
             assert token.access_token
         finally:

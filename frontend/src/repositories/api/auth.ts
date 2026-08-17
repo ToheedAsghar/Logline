@@ -40,6 +40,18 @@ export function login(credentials: Credentials): Promise<TokenResponse> {
   return apiRequest<TokenResponse>("/auth/login", { method: "POST", body: credentials, skipAuth: true });
 }
 
+/** Revokes the current refresh-token session server-side and clears its cookie. Safe to call even if the access
+ * token has already expired -- no bearer is required. */
+export function logoutRequest(): Promise<MessageResponse> {
+  return apiRequest<MessageResponse>("/auth/logout", { method: "POST", skipAuth: true });
+}
+
+/** Revokes every refresh-token session for the current user ("log out of all devices"), including this one.
+ * Requires a valid access token -- unlike `logoutRequest`, this proves who is asking before it acts. */
+export function logoutAllRequest(): Promise<MessageResponse> {
+  return apiRequest<MessageResponse>("/auth/logout-all", { method: "POST" });
+}
+
 export function me(): Promise<UserResponse> {
   return apiRequest<UserResponse>("/auth/me");
 }

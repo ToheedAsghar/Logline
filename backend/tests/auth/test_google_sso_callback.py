@@ -21,12 +21,12 @@ from urllib.parse import parse_qs, urlparse
 
 import jwt as pyjwt
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 
 from app.auth import crud
 from app.auth.constants import GOOGLE_LOGIN_STATE_PURPOSE, TEXT_GOOGLE_SIGN_IN_FAILED, TEXT_LOGIN_INVALID_CREDENTIALS
 from app.auth.google_oauth import GoogleAuthError
-from app.auth.models import User
+from app.auth.models import User, UserSession
 from app.auth.routers import google_callback, google_exchange, google_login, login
 from app.auth.schemas import OAuthExchangeRequest, UserLogin
 from app.auth.security import hash_password
@@ -93,6 +93,9 @@ def mock_google(monkeypatch):
 def clean_test_users():
     db = SessionLocal()
     try:
+        db.query(UserSession).filter(
+            UserSession.user_id.in_(db.query(User.id).filter(User.email.in_(ALL_TEST_EMAILS)))
+        ).delete(synchronize_session=False)
         db.query(User).filter(User.email.in_(ALL_TEST_EMAILS)).delete(synchronize_session=False)
         db.commit()
     finally:
@@ -102,6 +105,9 @@ def clean_test_users():
 
     db = SessionLocal()
     try:
+        db.query(UserSession).filter(
+            UserSession.user_id.in_(db.query(User.id).filter(User.email.in_(ALL_TEST_EMAILS)))
+        ).delete(synchronize_session=False)
         db.query(User).filter(User.email.in_(ALL_TEST_EMAILS)).delete(synchronize_session=False)
         db.commit()
     finally:
@@ -307,7 +313,7 @@ class TestGoogleCallbackLinksExistingPasswordAccount:
             assert preregistered.hashed_password is None
 
             with pytest.raises(HTTPException) as exc_info:
-                login(UserLogin(email=LINK_UNVERIFIED_EMAIL, password=attacker_password), db=db)
+                login(UserLogin(email=LINK_UNVERIFIED_EMAIL, password=attacker_password), response=Response(), db=db)
             assert exc_info.value.status_code == 401
             assert exc_info.value.detail == TEXT_LOGIN_INVALID_CREDENTIALS
         finally:
@@ -552,7 +558,7 @@ class TestGoogleExchangeCodeEndpoint:
             parsed_url = urlparse(response.headers["location"])
             exchange_code = parsed_url.fragment.removeprefix("code=")
 
-            token_res = google_exchange(payload=OAuthExchangeRequest(code=exchange_code), db=db)
+            token_res = google_exchange(payload=OAuthExchangeRequest(code=exchange_code), response=Response(), db=db)
             assert token_res.access_token is not None
             assert token_res.token_type == "bearer"
         finally:

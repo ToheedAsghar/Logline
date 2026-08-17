@@ -18,7 +18,7 @@ Hits the real test Postgres database (docker-compose, see backend/CLAUDE.md).
 import importlib
 
 import pytest
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import BackgroundTasks, HTTPException, Response
 from sqlalchemy import text
 
 from app.auth.crud import get_user_by_email
@@ -56,15 +56,20 @@ def _insert_pre_migration_row(db, email, password_hash):
     db.commit()
 
 
+_DELETE_SESSIONS_FOR_EMAIL_SQL = text(
+    "DELETE FROM user_sessions WHERE user_id IN (SELECT id FROM users WHERE lower(email) = lower(:email))"
+)
+_DELETE_USER_BY_EMAIL_SQL = text("DELETE FROM users WHERE lower(email) = lower(:email)")
+
+
 @pytest.fixture
 def pre_existing_users():
     db = SessionLocal()
     try:
-        db.execute(text("DELETE FROM users WHERE lower(email) = lower(:email)"), {"email": PRE_EXISTING_EMAIL})
-        db.execute(
-            text("DELETE FROM users WHERE lower(email) = lower(:email)"),
-            {"email": PRE_EXISTING_MIXED_CASE_EMAIL},
-        )
+        db.execute(_DELETE_SESSIONS_FOR_EMAIL_SQL, {"email": PRE_EXISTING_EMAIL})
+        db.execute(_DELETE_USER_BY_EMAIL_SQL, {"email": PRE_EXISTING_EMAIL})
+        db.execute(_DELETE_SESSIONS_FOR_EMAIL_SQL, {"email": PRE_EXISTING_MIXED_CASE_EMAIL})
+        db.execute(_DELETE_USER_BY_EMAIL_SQL, {"email": PRE_EXISTING_MIXED_CASE_EMAIL})
         db.commit()
 
         _insert_pre_migration_row(db, PRE_EXISTING_EMAIL, hash_password(PRE_EXISTING_PASSWORD))
@@ -76,11 +81,10 @@ def pre_existing_users():
 
     db = SessionLocal()
     try:
-        db.execute(text("DELETE FROM users WHERE lower(email) = lower(:email)"), {"email": PRE_EXISTING_EMAIL})
-        db.execute(
-            text("DELETE FROM users WHERE lower(email) = lower(:email)"),
-            {"email": PRE_EXISTING_MIXED_CASE_EMAIL},
-        )
+        db.execute(_DELETE_SESSIONS_FOR_EMAIL_SQL, {"email": PRE_EXISTING_EMAIL})
+        db.execute(_DELETE_USER_BY_EMAIL_SQL, {"email": PRE_EXISTING_EMAIL})
+        db.execute(_DELETE_SESSIONS_FOR_EMAIL_SQL, {"email": PRE_EXISTING_MIXED_CASE_EMAIL})
+        db.execute(_DELETE_USER_BY_EMAIL_SQL, {"email": PRE_EXISTING_MIXED_CASE_EMAIL})
         db.commit()
     finally:
         db.close()
@@ -92,7 +96,9 @@ class TestMigrationBackfillsExistingUsers:
 
         db = SessionLocal()
         try:
-            response = login(UserLogin(email=PRE_EXISTING_EMAIL, password=PRE_EXISTING_PASSWORD), db=db)
+            response = login(
+                UserLogin(email=PRE_EXISTING_EMAIL, password=PRE_EXISTING_PASSWORD), response=Response(), db=db
+            )
             assert response.access_token
         finally:
             db.close()
@@ -130,7 +136,7 @@ class TestNewSignupsStillRequireVerification:
             assert created.is_active is False
 
             with pytest.raises(HTTPException) as exc_info:
-                login(UserLogin(email=NEW_SIGNUP_EMAIL, password=NEW_SIGNUP_PASSWORD), db=db)
+                login(UserLogin(email=NEW_SIGNUP_EMAIL, password=NEW_SIGNUP_PASSWORD), response=Response(), db=db)
             assert exc_info.value.status_code == 403
         finally:
             created = db.query(User).filter(User.email == NEW_SIGNUP_EMAIL).first()

@@ -27,7 +27,8 @@ class Settings:
 
     jwt_secret_key: str = _require_env("JWT_SECRET_KEY")
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", str(60 * 24)))
+    jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", "15"))
+    refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
     itsdangerous_secret_key: str = _require_env("ITSDANGEROUS_SECRET_KEY")
 

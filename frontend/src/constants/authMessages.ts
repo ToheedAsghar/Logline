@@ -10,6 +10,10 @@ export const AUTH_STRINGS = {
   NEW_PASSWORD_LABEL: "New password",
   CONFIRM_PASSWORD_LABEL: "Confirm new password",
   NAME_LABEL: "Name",
+  DISPLAY_NAME_LABEL: "Display name",
+  HANDLE_LABEL: "Handle",
+  ROLE_LABEL: "Role",
+  DEFAULT_STANDUP_CHANNEL_LABEL: "Default standup channel",
 
   // Headers & Subtitles
   SIGN_IN_TITLE: "Sign in to Logline",
@@ -24,10 +28,19 @@ export const AUTH_STRINGS = {
   VERIFY_EMAIL_SUBTITLE: "Verifying your email address with Logline...",
   OAUTH_CALLBACK_TITLE: "Signing you in...",
   OAUTH_CALLBACK_SUBTITLE: "Authenticating with Google OAuth...",
+  ACCOUNT_SETTINGS_TITLE: "Account & settings",
+  ACCOUNT_SECTION_TITLE: "Account",
 
   // Buttons
   SIGN_IN_BTN: "Sign in",
   SIGN_IN_WORKING: "Logging in…",
+  SIGN_OUT_BTN: "Sign out",
+  SIGN_OUT_ALL_BTN: "Sign out of all devices",
+  SIGN_OUT_ALL_WORKING: "Signing out everywhere…",
+  SIGN_OUT_ALL_CONFIRM: "Are you sure? Click to confirm",
+  SAVE_CHANGES_BTN: "Save changes",
+  CANCEL_BTN: "Cancel",
+  CLOSE_LABEL: "Close",
   CREATE_ACCOUNT_BTN: "Create account",
   CREATE_ACCOUNT_WORKING: "Creating account…",
   SEND_RESET_LINK_BTN: "Send reset link",
@@ -38,10 +51,13 @@ export const AUTH_STRINGS = {
   RESEND_VERIFICATION_BTN: "Resend verification email",
   RESEND_VERIFICATION_WORKING: "Resending email…",
 
-  // Placeholders
+  // Placeholders & Fallbacks
   EMAIL_PLACEHOLDER: "you@company.dev",
   PASSWORD_PLACEHOLDER: "••••••••",
   NAME_PLACEHOLDER: "Jane Doe",
+  HANDLE_PLACEHOLDER: "@handle",
+  CHANNEL_PLACEHOLDER: "#channel",
+  UNNAMED_USER: "Unnamed",
 
   // Messages & Notifications
   FORGOT_PASSWORD_GENERIC_SUCCESS:
@@ -65,4 +81,8 @@ export const AUTH_STRINGS = {
   PASSWORD_LENGTH_ERROR: "Password must be between 8 and 128 characters long.",
   DEFAULT_LOGIN_ERROR: "Couldn't log in — please check your credentials and try again.",
   DEFAULT_SIGNUP_ERROR: "Couldn't create an account — try again.",
+  LOGOUT_ALL_ERROR: "Couldn't sign out all devices. Please try again.",
+  USE_SESSION_OUTSIDE_PROVIDER: "useSession must be used within a SessionProvider",
 } as const;
+
+export const TOKEN_STORAGE_KEY = "logline_token";

@@ -8,7 +8,7 @@ which accounts are Google-only.
 Hits the real test Postgres database (docker-compose, see backend/CLAUDE.md).
 """
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 
 from app.auth.constants import TEXT_LOGIN_INVALID_CREDENTIALS
 from app.auth.models import User
@@ -40,7 +40,7 @@ class TestLoginNullPasswordIsNotADistinguishableOracle:
 
             payload = UserLogin(email=NULL_PASSWORD_EMAIL, password="anything-at-all")
             with pytest.raises(HTTPException) as exc_info:
-                login(payload, db=db)
+                login(payload, response=Response(), db=db)
 
             assert exc_info.value.status_code == 401
             assert exc_info.value.detail == TEXT_LOGIN_INVALID_CREDENTIALS
@@ -65,7 +65,7 @@ class TestLoginNullPasswordIsNotADistinguishableOracle:
 
             payload = UserLogin(email=WRONG_PASSWORD_EMAIL, password="totally-wrong-password")
             with pytest.raises(HTTPException) as exc_info:
-                login(payload, db=db)
+                login(payload, response=Response(), db=db)
 
             assert exc_info.value.status_code == 401
             assert exc_info.value.detail == TEXT_LOGIN_INVALID_CREDENTIALS

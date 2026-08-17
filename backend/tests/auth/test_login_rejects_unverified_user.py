@@ -11,9 +11,9 @@ Hits the real test Postgres database (docker-compose, see backend/CLAUDE.md).
 """
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 
-from app.auth.models import User
+from app.auth.models import User, UserSession
 from app.auth.routers import login
 from app.auth.schemas import UserLogin
 from app.auth.security import hash_password
@@ -23,6 +23,14 @@ TEST_EMAIL = "login-unverified-test@example.com"
 TEST_PASSWORD = "correct-horse-battery"
 
 
+def _delete_user_and_sessions(db, email: str) -> None:
+    existing = db.query(User).filter(User.email == email).first()
+    if existing is not None:
+        db.query(UserSession).filter(UserSession.user_id == existing.id).delete()
+        db.query(User).filter(User.id == existing.id).delete()
+        db.commit()
+
+
 @pytest.fixture
 def user_factory():
     created_emails = []
@@ -30,8 +38,7 @@ def user_factory():
     def _create(*, is_active: bool) -> None:
         db = SessionLocal()
         try:
-            db.query(User).filter(User.email == TEST_EMAIL).delete()
-            db.commit()
+            _delete_user_and_sessions(db, TEST_EMAIL)
             user = User(
                 email=TEST_EMAIL,
                 hashed_password=hash_password(TEST_PASSWORD),
@@ -47,8 +54,7 @@ def user_factory():
 
     db = SessionLocal()
     try:
-        db.query(User).filter(User.email == TEST_EMAIL).delete()
-        db.commit()
+        _delete_user_and_sessions(db, TEST_EMAIL)
     finally:
         db.close()
 
@@ -61,7 +67,7 @@ class TestLoginRejectsUnverifiedUser:
             payload = UserLogin(email=TEST_EMAIL, password=TEST_PASSWORD)
 
             with pytest.raises(HTTPException) as exc_info:
-                login(payload, db=db)
+                login(payload, response=Response(), db=db)
 
             assert exc_info.value.status_code == 403
             assert "verif" in exc_info.value.detail.lower()
@@ -75,7 +81,7 @@ class TestLoginRejectsUnverifiedUser:
             payload = UserLogin(email=TEST_EMAIL, password="totally-wrong-password")
 
             with pytest.raises(HTTPException) as exc_info:
-                login(payload, db=db)
+                login(payload, response=Response(), db=db)
 
             # Wrong password is checked before is_active, so this must stay
             # 401 with the generic message -- not 403, which would leak that
@@ -91,7 +97,7 @@ class TestLoginRejectsUnverifiedUser:
         try:
             payload = UserLogin(email=TEST_EMAIL, password=TEST_PASSWORD)
 
-            token = login(payload, db=db)
+            token = login(payload, response=Response(), db=db)
 
             assert token.access_token
         finally:
@@ -104,7 +110,7 @@ class TestLoginRejectsUnverifiedUser:
             payload = UserLogin(email=TEST_EMAIL, password="totally-wrong-password")
 
             with pytest.raises(HTTPException) as exc_info:
-                login(payload, db=db)
+                login(payload, response=Response(), db=db)
 
             assert exc_info.value.status_code == 401
         finally:
