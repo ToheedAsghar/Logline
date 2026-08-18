@@ -4,11 +4,13 @@ points: approve_entry (human_approved) and update_entry on an already-approved e
 """
 
 import pytest
+from pydantic import ValidationError
 
 from app.auth.models import User
 from app.db.session import SessionLocal
 from app.entries import crud
 from app.entries.models import Entry, EntryFormat, EntryStatus, EntryVersion, EntryVersionSource
+from app.entries.schemas import EntryUpdate
 
 TEST_EMAIL = "entry-versions-test@example.com"
 
@@ -54,6 +56,24 @@ def _make_draft_entry(db, user_id, text="original ai draft") -> Entry:
 
 
 class TestApproveEntryCreatesHumanApprovedVersion:
+    def test_public_entry_update_cannot_set_internal_discarded_status(self):
+        with pytest.raises(ValidationError, match="internal reconciliation lifecycle"):
+            EntryUpdate(status=EntryStatus.discarded)
+
+    def test_discarded_entry_cannot_be_approved(self, real_db_user):
+        db = SessionLocal()
+        try:
+            entry = _make_draft_entry(db, real_db_user)
+            entry.status = EntryStatus.discarded
+            db.commit()
+
+            with pytest.raises(ValueError, match="Discarded entries cannot be approved"):
+                crud.approve_entry(db, entry, approved_at=entry.created_at)
+
+            assert db.query(EntryVersion).filter(EntryVersion.entry_id == entry.id).count() == 0
+        finally:
+            db.close()
+
     def test_approve_appends_human_approved_version_with_current_content(self, real_db_user):
         db = SessionLocal()
         try:

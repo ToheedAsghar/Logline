@@ -29,6 +29,14 @@ def update_entry(
     the prior approved content is recoverable from the append-only history. Edits to draft or pending entries do not
     create a version row — only generation (ai_draft) and post-approval moments are tracked.
     """
+    if entry.status == EntryStatus.discarded:
+        raise ValueError("Discarded entries cannot be changed")
+    if entry.reconciliation_draft_id is not None:
+        if entry.status != EntryStatus.approved:
+            raise ValueError("Unapproved reconciliation entries can only be changed through Save day")
+        if status is not None or approved_at is not None:
+            raise ValueError("Approved reconciliation lifecycle fields cannot be changed")
+
     is_post_approval_edit = content is not None and entry.status == EntryStatus.approved
 
     if content is not None:
@@ -49,6 +57,11 @@ def approve_entry(db: Session, entry: Entry, approved_at: datetime) -> Entry:
 
     Always appends a ``human_approved`` EntryVersion snapshot holding the entry's current content at approval time.
     """
+    if entry.status == EntryStatus.discarded:
+        raise ValueError("Discarded entries cannot be approved")
+    if entry.reconciliation_draft_id is not None:
+        raise ValueError("Reconciliation entries can only be approved through Save day")
+
     entry.status = EntryStatus.approved
     entry.approved_at = approved_at
     db.add(EntryVersion(entry_id=entry.id, source=EntryVersionSource.human_approved, content=entry.content))

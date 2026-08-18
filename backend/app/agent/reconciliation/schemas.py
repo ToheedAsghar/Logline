@@ -12,6 +12,8 @@ from app.agent.reconciliation.constants import (
     REVIEW_REASON_MAX_LENGTH, TAG_SUGGESTION_REASON_MAX_LENGTH,
 )
 
+DateType = date
+
 
 class EntryTag(str, enum.Enum):
     """Define canonical work-log tags in expected prompt-frequency order."""
@@ -163,6 +165,12 @@ class BlockAllocation(BaseModel):
     minutes: int = Field(gt=0, le=MINUTES_PER_DAY)
 
 
+class ReviewBlockAllocation(BlockAllocation):
+    """Expose the local day for a residual block so range review can assign it correctly."""
+
+    date: DateType | None = None
+
+
 class DraftEntry(BaseModel):
     """Proposed work-log entry with time allocations linked to measured blocks."""
 
@@ -180,6 +188,29 @@ class DraftEntry(BaseModel):
     def _reject_repeated_blocks(self) -> "DraftEntry":
         """Reject entries charging the same block more than once, which would double-count measured time."""
         _reject_duplicate_block_ids(self.allocations, "allocations")
+        return self
+
+
+class ReviewDraftEntry(DraftEntry):
+    """Editable review entry, including persisted identity or explicitly asserted manual time."""
+
+    entry_id: int | None = Field(default=None, gt=0)
+    origin: Literal["evidence", "manual"] = "evidence"
+    allocations: list[ReviewBlockAllocation] = Field(default_factory=list)
+    manual_minutes: int | None = Field(default=None, gt=0, le=MINUTES_PER_DAY)
+
+    @model_validator(mode="after")
+    def _validate_origin(self) -> "ReviewDraftEntry":
+        if self.origin == "evidence":
+            if not self.allocations:
+                raise ValueError("evidence entries require at least one measured block allocation")
+            if self.manual_minutes is not None:
+                raise ValueError("evidence entries cannot carry manual_minutes")
+        else:
+            if bool(self.allocations) == (self.manual_minutes is not None):
+                raise ValueError("manual entries require either measured allocations or manual_minutes, not both")
+            if self.source_remote_event_ids:
+                raise ValueError("manual entries cannot cite remote events")
         return self
 
 
@@ -243,3 +274,10 @@ class WorkLogDraft(BaseModel):
         """Reject residual lists charging the same block more than once."""
         _reject_duplicate_block_ids(self.residual_unassigned_minutes, "residual_unassigned_minutes")
         return self
+
+
+class ReviewWorkLogDraft(WorkLogDraft):
+    """Review-time draft whose entries carry persisted IDs or manual-time assertions."""
+
+    entries: list[ReviewDraftEntry] = Field(default_factory=list)
+    residual_unassigned_minutes: list[ReviewBlockAllocation] = Field(default_factory=list)

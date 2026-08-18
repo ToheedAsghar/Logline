@@ -6,6 +6,7 @@ import { useEntries } from "@/repositories/hooks";
 function getEntryMinutes(content: unknown): number {
   if (typeof content === "object" && content !== null) {
     const c = content as Record<string, unknown>;
+    if (typeof c.manual_minutes === "number" && c.manual_minutes > 0) return c.manual_minutes;
     if (typeof c.duration_minutes === "number" && c.duration_minutes > 0) return c.duration_minutes;
     if (typeof c.minutes === "number" && c.minutes > 0) return c.minutes;
     if (Array.isArray(c.allocations) && c.allocations.length > 0) {
@@ -248,4 +249,3 @@ export default function History() {
     </div>
   );
 }
-

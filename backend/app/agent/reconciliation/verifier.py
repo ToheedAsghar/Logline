@@ -1,16 +1,19 @@
 """Verify a reconciliation draft's allocations and citations against its evidence without modifying it."""
 
 from dataclasses import dataclass
+from datetime import timezone, tzinfo
 from typing import Literal
 
 from pydantic import BaseModel
 
 from app.agent.reconciliation.constants import (
-    CHECK_COMPLETENESS, CHECK_CONSERVATION, CHECK_CROSS_ENTRY_DUPLICATE, CHECK_DESCRIPTION_DURATION_LANGUAGE,
-    CHECK_DUPLICATE_REMINDER, CHECK_UNEXPLAINED_OVERLAP, CHECK_UNKNOWN_ID, RESIDUAL_FIELD,
+    CHECK_ALLOCATION_DATE, CHECK_COMPLETENESS, CHECK_CONSERVATION, CHECK_CROSS_ENTRY_DUPLICATE,
+    CHECK_DESCRIPTION_DURATION_LANGUAGE, CHECK_DUPLICATE_REMINDER, CHECK_UNEXPLAINED_OVERLAP, CHECK_UNKNOWN_ID,
+    RESIDUAL_FIELD,
 )
 from app.agent.reconciliation.evidence import EvidenceBundle, block_minutes, compute_overlaps
 from app.agent.reconciliation.schemas import WorkLogDraft, find_duration_language
+from app.local_activity.aggregation import local_date
 from app.local_activity.classification import SessionCategory
 
 
@@ -293,7 +296,30 @@ def _check_description_duration_language(draft: WorkLogDraft, issues: list[Verif
             )
 
 
-def verify_draft(draft: WorkLogDraft, evidence: EvidenceBundle) -> VerificationResult:
+def _check_allocation_dates(
+    draft: WorkLogDraft, evidence: EvidenceBundle, issues: list[VerificationIssue], tz: tzinfo
+) -> None:
+    """Reject measured allocations placed on a different local day from their source block."""
+    for index, entry in enumerate(draft.entries):
+        for allocation in entry.allocations:
+            block = evidence.blocks_by_id.get(allocation.block_id)
+            if block is None or local_date(block.start_time, tz) == entry.date:
+                continue
+            issues.append(
+                VerificationIssue(
+                    severity="error",
+                    check=CHECK_ALLOCATION_DATE,
+                    detail=(
+                        f"entry {index} is dated {entry.date}, but block {allocation.block_id} belongs to "
+                        f"{local_date(block.start_time, tz)} in the user's timezone"
+                    ),
+                    block_id=allocation.block_id,
+                    entry_index=index,
+                )
+            )
+
+
+def verify_draft(draft: WorkLogDraft, evidence: EvidenceBundle, tz: tzinfo = timezone.utc) -> VerificationResult:
     """Verify a Stage 5 draft against evidence and return all structural and factual issues."""
     charges = _collect_charges(draft)
     issues: list[VerificationIssue] = []
@@ -305,6 +331,7 @@ def verify_draft(draft: WorkLogDraft, evidence: EvidenceBundle) -> VerificationR
     _check_duplicate_reminders(draft, issues)
     _check_unexplained_overlap(evidence, issues)
     _check_description_duration_language(draft, issues)
+    _check_allocation_dates(draft, evidence, issues, tz)
 
     passed = not any(issue.severity == "error" for issue in issues)
     return VerificationResult(passed=passed, issues=issues)

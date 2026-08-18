@@ -167,4 +167,4 @@ async def reconcile_evidence(
         ),
     )
 
-    return ReconciliationResult(draft=merged_draft, verification=verify_draft(merged_draft, bundle))
+    return ReconciliationResult(draft=merged_draft, verification=verify_draft(merged_draft, bundle, tz))
