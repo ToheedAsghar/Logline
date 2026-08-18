@@ -13,16 +13,45 @@ public enum KeychainManager {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: account
+        ]
+        
+        let attributesToUpdate: [String: Any] = [
             kSecValueData as String: data
         ]
 
-        // Delete any existing item first
-        SecItemDelete(query as CFDictionary)
+        var status = SecItemUpdate(query as CFDictionary, attributesToUpdate as CFDictionary)
+        
+        if status == errSecItemNotFound {
+            var addQuery = query
+            addQuery[kSecValueData as String] = data
+            status = SecItemAdd(addQuery as CFDictionary, nil)
+        }
 
-        let status = SecItemAdd(query as CFDictionary, nil)
         guard status == errSecSuccess else {
             throw KeychainError.unhandledError(status: status)
+        }
+    }
+
+    public static func migrateLegacyToken() {
+        // Find legacy file
+        let fileManager = FileManager.default
+        guard let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+        let loglineURL = appSupportURL.appendingPathComponent("Logline")
+        let legacyTokenURL = loglineURL.appendingPathComponent("device_token")
+        
+        guard fileManager.fileExists(atPath: legacyTokenURL.path) else { return }
+        
+        do {
+            let tokenString = try String(contentsOf: legacyTokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !tokenString.isEmpty {
+                try storeToken(tokenString)
+                print("Migrated legacy device_token to Keychain.")
+            }
+            try fileManager.removeItem(at: legacyTokenURL)
+            print("Deleted legacy device_token file.")
+        } catch {
+            print("Failed to migrate legacy device_token: \(error)")
         }
     }
 

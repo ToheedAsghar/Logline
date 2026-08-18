@@ -45,11 +45,11 @@ piece-by-piece effort (see "Future: full Swift migration" below) — not part of
   design tokens from the web frontend, applied to native views).
 - **Python tracker**: unchanged existing codebase, packaged as a **standalone executable with
   its own bundled interpreter** (e.g. via `PyInstaller`) — required because macOS cannot be
-  assumed to have a usable system Python available. This bundled-interpreter cost is real but
-  now scoped to only the tracker process, not the whole app.
-- **Token Storage**: macOS Keychain, written by the Swift app. Python reads the token from
-  Keychain too (exact read mechanism — see Open Questions; this is a real, non-trivial change
-  to how the Python side currently gets its token and needs its own small design pass).
+  assumed to have a usable system Python- **Native Menu Bar App**: Standard `AppKit`, `NSStatusItem`. Needs `LSUIElement` to hide from Dock.
+- **Background Sync**: Same Python `tracker` executable, managed entirely by the Swift app (start/stop/lifecycle).
+- **Token Storage**: macOS Keychain via Swift (`LoglineTracker`/`SyncToken`), passed to Python child process securely via `stdin` pipe on every launch to avoid Python requiring Keychain ACLs.
+- **Unsigned Distribution Trade-off**: The app will be distributed unsigned (no Apple Developer ID). This means the `cdhash` changes on every rebuild/update. Consequently, the user will see a one-time macOS Keychain access prompt ("SpikeApp wants to access key 'LoglineTracker'...") when launching the Swift app immediately after installing an update. This is an accepted and understood trade-off for a team tool, rather than paying for a Developer ID or degrading to file-based storage.
+- **Python Packaging**: Bundled via `PyInstaller` (one-file mode) during the build phase.
 - **Packaging**: Xcode build for the Swift `.app`; `PyInstaller` for the Python executable,
   bundled inside the `.app`'s Resources; DMG wrapping the whole thing after.
 - **Login item**: Swift app registers via `SMAppService.mainApp.register()` (or

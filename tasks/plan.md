@@ -113,12 +113,14 @@ Python capture logic as-is rather than risking a rewrite.
   visible in both events view and backend → Stop halts capture → Quit leaves no orphan
   process.
 
-### Phase 6: Packaging
-- [ ] **Task 7: Packaging — both binaries.** PyInstaller spec for the Python executable;
-  Xcode build embedding it inside the Swift `.app`'s bundle; login-item registration call
-  included. Both the Swift app and the bundled Python executable will ship unsigned —
-  no Apple Developer ID is planned. Users will approve the app once via Gatekeeper
-  on first launch (right-click -> Open).
+### Task 7: Packaging & DMG (Phase 4)
+- **Goal**: Ship a `.dmg` with the Swift app wrapping the PyInstaller-bundled tracker.
+- **Steps**:
+  - Add `pyinstaller` to a new `Makefile` target. Build the Python app into a single executable.
+  - Update Swift `ProcessManager` to point to the bundled executable (`Bundle.main.url(forResource:...)`) in production, retaining the `.venv` path for dev.
+  - Create `Release` build scheme for Swift.
+  - Generate an unsigned `.dmg` (e.g., using `create-dmg`). 
+  - **Note:** Task 7 will ship unsigned — no Developer ID planned; users approve the app once via Gatekeeper on first launch, and will grant Keychain access once per app update (accepted trade-off). (right-click -> Open).
   - Acceptance: double-click launches with no Dock icon, menu-bar icon present, Start/Stop/
     Quit and all prior-phase behavior intact in the fully packaged build.
 

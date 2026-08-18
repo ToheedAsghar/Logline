@@ -5,23 +5,19 @@ been synced. Within a run the cursor advances locally rather than re-reading the
 server's checkpoint only moves for accepted or duplicate rows and a wholesale-rejected batch would otherwise be
 re-read forever instead of paged past.
 
-Run manually with: tracker/.venv/bin/python -m tracker.sync.agent
+Run manually with: tracker/.venv/bin/python -m tracker.sync.agent < path/to/token.txt
 """
 
 import logging
 import sqlite3
-import stat
 import sys
-from pathlib import Path
-from typing import Optional
 
 from tracker.constants import (
-    DEVICE_TOKEN_PATH, EXIT_ALREADY_RUNNING, SYNC_ALREADY_RUNNING_MSG, SYNC_BATCH_MSG, SYNC_COMPLETE_MSG,
-    SYNC_FAILED_MSG, SYNC_LOCK_PATH, SYNC_NOT_ENROLLED_MSG, SYNC_TOKEN_PERMISSIONS_MSG,
+    EXIT_ALREADY_RUNNING, SYNC_ALREADY_RUNNING_MSG, SYNC_BATCH_MSG, SYNC_COMPLETE_MSG,
+    SYNC_FAILED_MSG, SYNC_LOCK_PATH, SYNC_NOT_ENROLLED_MSG,
 )
 from tracker.logging_config import configure_logging
 from tracker.singleton import AlreadyRunning, SingleInstanceLock
-from tracker.storage.secure_storage import get_token as read_device_token
 from tracker.sync import reader
 from tracker.sync.client import SyncClient, SyncError
 from tracker.sync.config import SyncConfigError, load_config
@@ -68,13 +64,16 @@ def main() -> int:
         return EXIT_ALREADY_RUNNING
 
     try:
-        token = read_device_token()
-        if token is None:
-            logger.info(SYNC_NOT_ENROLLED_MSG, "Keychain (LoglineTracker/SyncToken)")
+        device_token = ""
+        if not sys.stdin.isatty():
+            device_token = sys.stdin.read().strip()
+        
+        if not device_token:
+            print("Device not enrolled. Exiting quietly.", file=sys.stderr)
             return 0
 
         config = load_config()
-        client = SyncClient(config.base_url, token, config.timeout_seconds)
+        client = SyncClient(config.base_url, device_token, config.timeout_seconds)
         conn = reader.open_read_only()
         try:
             run_sync(client, conn, config.batch_size)
