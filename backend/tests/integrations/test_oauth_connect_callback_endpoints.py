@@ -25,9 +25,11 @@ from app.core.oauth_state import OAuthState, OAuthStateError
 from app.db.session import SessionLocal, engine
 from app.integrations.connect_state import CONNECT_STATE_SALT, consume_connect_state, create_connect_state
 from app.integrations.models import Integration, IntegrationSource, IntegrationStatus, OAuthToken
+from app.integrations.providers import PROVIDERS
 from app.integrations.providers.base import OAuthTokens
 from app.integrations.providers.slack import SLACK_OAUTH_USER_SCOPES, SlackOAuthError, SlackOAuthProvider
 from app.integrations.routers import connect_integration, integration_callback
+from app.integrations.schemas import IntegrationResponse
 
 TEST_EMAIL = "slack-oauth-endpoint-test@example.com"
 
@@ -130,7 +132,7 @@ class TestConnectIntegration:
 
             query = parse_qs(parsed.query)
             assert query["user_scope"] == [",".join(SLACK_OAUTH_USER_SCOPES)]
-            assert "im:history" not in query["user_scope"][0].split(",")
+            assert "im:history" in query["user_scope"][0].split(",")
 
             user_id = consume_connect_state(
                 db, token=query["state"][0], expected_source=IntegrationSource.slack
@@ -140,15 +142,29 @@ class TestConnectIntegration:
             db.close()
 
 
+def _calendar_unregistered():
+    """Drop calendar from the live provider registry for the duration of a `with` block.
+
+    Patches the dict in place rather than rebinding the name, because `is_source_registered`/`get_oauth_provider`
+    read the module-level PROVIDERS at call time.
+    """
+    remaining = {source: provider for source, provider in PROVIDERS.items() if source is not IntegrationSource.calendar}
+    return patch.dict(PROVIDERS, remaining, clear=True)
+
+
 class TestUnregisteredSource:
-    """A valid IntegrationSource with no registered provider (calendar today now that slack/github/jira are all
-    registered) must be rejected cleanly with a 404, never a 500 or a partially-run flow.
+    """A valid IntegrationSource with no registered provider must be rejected cleanly with a 404, never a 500 or a
+    partially-run flow.
+
+    Every IntegrationSource now has a provider, so there is no naturally unregistered source left to test with --
+    calendar is unregistered here by patching the registry. Deleting these tests instead would drop the 404 guard
+    that protects whatever source gets added next.
     """
 
     def test_connect_unregistered_source_404s(self, test_user_id):
         db = SessionLocal()
         try:
-            with pytest.raises(HTTPException) as exc_info:
+            with _calendar_unregistered(), pytest.raises(HTTPException) as exc_info:
                 connect_integration(
                     source=IntegrationSource.calendar, current_user=MagicMock(id=test_user_id), db=db
                 )
@@ -159,7 +175,7 @@ class TestUnregisteredSource:
     def test_callback_unregistered_source_404s(self):
         db = SessionLocal()
         try:
-            with pytest.raises(HTTPException) as exc_info:
+            with _calendar_unregistered(), pytest.raises(HTTPException) as exc_info:
                 asyncio.run(
                     integration_callback(source=IntegrationSource.calendar, code="x", state="y", db=db)
                 )
@@ -405,3 +421,85 @@ class TestIntegrationCallback:
             )
         finally:
             db.close()
+
+
+class TestAuthedUserIdPersistence:
+    """`authed_user_id` was parsed from Slack's response but dropped before it reached the database, which is what
+    left Slack fetches unable to tell the connected user's own messages apart from everyone else's.
+    """
+
+    def _token_row_for(self, db, user_id: int) -> OAuthToken:
+        integration = (
+            db.query(Integration)
+            .filter(Integration.user_id == user_id, Integration.source == IntegrationSource.slack)
+            .first()
+        )
+        assert integration is not None
+        return db.query(OAuthToken).filter(OAuthToken.integration_id == integration.id).first()
+
+    def test_authed_user_id_is_persisted_from_the_exchange(self, test_user_id):
+        state = _issue_state(test_user_id)
+        db = SessionLocal()
+        try:
+            with _patch_exchange(
+                return_value=OAuthTokens(access_token="xoxp-token", authed_user_id="U0SLACKUSER")
+            ):
+                asyncio.run(
+                    integration_callback(source=IntegrationSource.slack, code="good-code", state=state, db=db)
+                )
+
+            assert self._token_row_for(db, test_user_id).authed_user_id == "U0SLACKUSER"
+        finally:
+            db.close()
+
+    def test_provider_without_an_authed_user_id_stores_null(self, test_user_id):
+        """GitHub, Jira, and Calendar never supply one. The column stays NULL for them rather than an empty string,
+        so a later "is this connection identity-resolved?" check can rely on NULL alone.
+        """
+        state = _issue_state(test_user_id)
+        db = SessionLocal()
+        try:
+            with _patch_exchange(return_value=OAuthTokens(access_token="xoxp-token")):
+                asyncio.run(
+                    integration_callback(source=IntegrationSource.slack, code="good-code", state=state, db=db)
+                )
+
+            assert self._token_row_for(db, test_user_id).authed_user_id is None
+        finally:
+            db.close()
+
+    def test_reconnect_without_an_authed_user_id_keeps_the_stored_one(self, test_user_id):
+        """A reconnect whose response omits the field must not blank an identity captured earlier -- that would
+        silently break identity filtering for an already-working connection.
+        """
+        state_one = _issue_state(test_user_id)
+        db = SessionLocal()
+        try:
+            with _patch_exchange(
+                return_value=OAuthTokens(access_token="first-token", authed_user_id="U0SLACKUSER")
+            ):
+                asyncio.run(
+                    integration_callback(source=IntegrationSource.slack, code="code-1", state=state_one, db=db)
+                )
+        finally:
+            db.close()
+
+        state_two = _issue_state(test_user_id)
+        db = SessionLocal()
+        try:
+            with _patch_exchange(return_value=OAuthTokens(access_token="second-token")):
+                asyncio.run(
+                    integration_callback(source=IntegrationSource.slack, code="code-2", state=state_two, db=db)
+                )
+
+            token_row = self._token_row_for(db, test_user_id)
+            assert token_row.access_token == "second-token"
+            assert token_row.authed_user_id == "U0SLACKUSER"
+        finally:
+            db.close()
+
+    def test_authed_user_id_is_not_exposed_by_the_integrations_list_response(self, test_user_id):
+        """IntegrationResponse is an explicit allowlist over Integration, not OAuthToken. Pin that here so a later
+        switch to from_attributes over a joined row can't start leaking the connected account's provider identity.
+        """
+        assert "authed_user_id" not in IntegrationResponse.model_fields

@@ -13,6 +13,7 @@ import pytest
 
 from app.integrations.constants import OAUTH_TOKEN_REFRESH_MARGIN_SECONDS
 from app.integrations.models import IntegrationSource
+from app.integrations.providers import PROVIDERS
 from app.integrations.providers.base import OAuthTokens
 from app.integrations.providers.slack import SlackOAuthError, SlackOAuthProvider
 from app.integrations.token_refresh import ensure_token_fresh
@@ -34,9 +35,15 @@ def _token(*, expires_at, refresh_token="xoxe-refresh", access_token="xoxp-old")
 
 class TestEnsureTokenFreshUnimplementedSource:
     def test_source_with_no_registered_refresher_raises_not_implemented(self):
+        """Every IntegrationSource now has a provider, so calendar is unregistered here by patching the registry in
+        place -- `get_oauth_provider` reads the module-level PROVIDERS at call time.
+        """
         db = MagicMock()
+        remaining = {
+            source: provider for source, provider in PROVIDERS.items() if source is not IntegrationSource.calendar
+        }
 
-        with pytest.raises(NotImplementedError) as exc_info:
+        with patch.dict(PROVIDERS, remaining, clear=True), pytest.raises(NotImplementedError) as exc_info:
             asyncio.run(ensure_token_fresh(db, IntegrationSource.calendar, integration_id=1))
 
         assert "calendar" in str(exc_info.value)

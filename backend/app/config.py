@@ -83,6 +83,16 @@ class Settings:
     def google_redirect_uri(self) -> str:
         return self._redirect_uri("GOOGLE_REDIRECT_URI", "/auth/google/callback")
 
+    @property
+    def calendar_redirect_uri(self) -> str:
+        """Where Google sends the Calendar *integration* callback.
+
+        Deliberately distinct from `google_redirect_uri`, which serves sign-in. Both run through the same Google
+        OAuth client, so this exact URI has to be registered alongside the sign-in one in the Google Cloud Console
+        or Google rejects the connect flow with redirect_uri_mismatch.
+        """
+        return self._redirect_uri("CALENDAR_REDIRECT_URI", "/integrations/calendar/callback")
+
 
 settings = Settings()
 
@@ -121,6 +131,21 @@ def _require_secure_url(name: str, url: str) -> None:
     )
 
 
+GOOGLE_REDIRECT_URI_CONFLICT_MESSAGE = "CALENDAR_REDIRECT_URI must differ from GOOGLE_REDIRECT_URI"
+
+
+def _require_distinct_google_redirect_uris(calendar_redirect_uri: str, google_redirect_uri: str) -> None:
+    """Fail at boot if the Calendar integration and Google sign-in share a redirect URI.
+
+    Both flows run through the same Google OAuth client, so the URIs are the only thing separating a Calendar
+    connect callback from the sign-in callback. If an operator ever configured them equal, Google's redirect_uri
+    binding would no longer distinguish the two flows.
+    """
+    if calendar_redirect_uri == google_redirect_uri:
+        raise RuntimeError(GOOGLE_REDIRECT_URI_CONFLICT_MESSAGE)
+
+
 _require_secure_url("BACKEND_BASE_URL", settings.backend_base_url)
 _require_secure_url("FRONTEND_BASE_URL", settings.frontend_base_url)
 _require_supported_llm_provider(settings.llm_provider)
+_require_distinct_google_redirect_uris(settings.calendar_redirect_uri, settings.google_redirect_uri)

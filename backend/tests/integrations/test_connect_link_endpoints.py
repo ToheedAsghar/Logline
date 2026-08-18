@@ -14,6 +14,7 @@ The tests use a real Postgres database (not mocks) because the purpose is to ver
 single-use guarantee across connections.
 """
 
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -28,6 +29,7 @@ from app.integrations.connect_link_token import create_connect_link_token
 from app.integrations.connect_state import consume_connect_state, create_connect_state
 from app.integrations.deps import get_connect_endpoint_user
 from app.integrations.models import ConnectLinkToken, Integration, IntegrationSource, OAuthToken
+from app.integrations.providers import PROVIDERS
 from app.integrations.routers import create_connect_link
 
 TEST_EMAIL = "connect-link-endpoint-test@example.com"
@@ -88,9 +90,15 @@ class TestCreateConnectLink:
             db.close()
 
     def test_unregistered_source_404s(self, test_user_id):
+        """Every IntegrationSource now has a provider, so calendar is unregistered here by patching the registry in
+        place -- `is_source_registered` reads the module-level PROVIDERS at call time.
+        """
         db = SessionLocal()
+        remaining = {
+            source: provider for source, provider in PROVIDERS.items() if source is not IntegrationSource.calendar
+        }
         try:
-            with pytest.raises(HTTPException) as exc_info:
+            with patch.dict(PROVIDERS, remaining, clear=True), pytest.raises(HTTPException) as exc_info:
                 create_connect_link(
                     source=IntegrationSource.calendar, current_user=_MockCurrentUser(test_user_id), db=db
                 )

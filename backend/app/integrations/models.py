@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -42,6 +42,14 @@ class Integration(Base):
 
 
 class OAuthToken(Base):
+    """The stored OAuth credentials for one integration.
+
+    `authed_user_id` is the connected account's own user ID at the provider, as the provider reports it. Only Slack
+    supplies one today, so the column is NULL for every other source -- it is deliberately nullable rather than
+    Slack-specific, and a mostly-NULL column here is expected, not dead weight. It is a plain identifier, not a
+    credential, so unlike the token columns it is stored unencrypted.
+    """
+
     __tablename__ = "oauth_tokens"
 
     id = Column(Integer, primary_key=True)
@@ -49,6 +57,7 @@ class OAuthToken(Base):
     access_token = Column(EncryptedString, nullable=False)
     refresh_token = Column(EncryptedString, nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
+    authed_user_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     integration = relationship("Integration", back_populates="oauth_tokens")

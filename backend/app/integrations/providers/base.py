@@ -4,10 +4,6 @@ Everything in this file is neutral with respect to which external service is act
 connect/callback routes and the token-refresh flow talk to providers only through the `OAuthProvider` interface here
 -- they never branch on `source`. Provider-specific HTTP/parse logic (and the exact user-facing message wording) lives
 in the concrete subclass, e.g. `app/integrations/providers/slack.py::SlackOAuthProvider`.
-
-This mirrors the LLM boundary in `app/agent/llm/base.py`: a neutral ABC here, one concrete implementation per
-provider, and a single factory (`app/integrations/providers/__init__.py::get_oauth_provider`) that dispatches by
-source -- the same shape as `get_llm_provider()`.
 """
 
 from abc import ABC, abstractmethod
@@ -23,7 +19,8 @@ class OAuthTokens(BaseModel):
     """Neutral token shape returned by every provider's exchange/refresh.
 
     `scope` and `authed_user_id` are populated when the provider surfaces them (both are optional, generic account-level
-    metadata); only `access_token`, `refresh_token`, and `expires_at` are persisted to `oauth_tokens`.
+    metadata). Everything except `scope` is persisted to `oauth_tokens`; `scope` is informational only, used to build
+    provider error messages rather than stored.
     """
 
     access_token: str
