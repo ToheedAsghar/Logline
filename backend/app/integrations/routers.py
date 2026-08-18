@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
+INTEGRATION_NOT_FOUND_ERROR = "Integration not found"
+OAUTH_FLOW_NOT_AVAILABLE_MESSAGE = "OAuth connect flow for '{source}' is not available"
+
 
 @router.get("", response_model=list[IntegrationResponse])
 def list_integrations(
@@ -40,7 +43,7 @@ def _require_provider(source: IntegrationSource) -> OAuthProvider:
     if not is_source_registered(source):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"OAuth connect flow for '{source.value}' is not available",
+            detail=OAUTH_FLOW_NOT_AVAILABLE_MESSAGE.format(source=source.value),
         )
     return get_oauth_provider(source)
 
@@ -137,7 +140,7 @@ def disconnect_integration(
 ):
     integration = crud.get_integration_by_source(db, current_user.id, source)
     if integration is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Integration not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=INTEGRATION_NOT_FOUND_ERROR)
 
     crud.delete_integration(db, integration)
 

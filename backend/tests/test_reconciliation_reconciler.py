@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from app.agent.llm.base import AgentResponse, LLMProvider, LLMStructuredOutputError, Message
+from app.agent.llm.base import LLMProvider, LLMStructuredOutputError, Message
 from app.agent.reconciliation.reconciler import (
     MAX_CONCURRENT_DESCRIPTION_REQUESTS, NOTE_LAST_RESORT, prebuilt_reminder_to_draft_reminder, reconcile_evidence,
 )
@@ -49,9 +49,6 @@ class ScriptedProvider(LLMProvider):
         self.proposal = proposal or EntryDescriptionProposal(description="Worked on this entry.")
         self.calls: list[list[Message]] = []
 
-    async def run_turn(self, messages, tools) -> AgentResponse:
-        raise AssertionError("reconcile_evidence must use run_structured, never run_turn")
-
     async def run_structured(self, messages, response_model):
         self.calls.append(messages)
         return self.proposal
@@ -60,9 +57,6 @@ class ScriptedProvider(LLMProvider):
 class ExplodingProvider(LLMProvider):
     def __init__(self, error: Exception):
         self.error = error
-
-    async def run_turn(self, messages, tools) -> AgentResponse:
-        raise AssertionError("not exercised")
 
     async def run_structured(self, messages, response_model):
         raise self.error
@@ -74,9 +68,6 @@ class ConcurrencyTrackingProvider(LLMProvider):
     def __init__(self):
         self.in_flight = 0
         self.max_in_flight = 0
-
-    async def run_turn(self, messages, tools) -> AgentResponse:
-        raise AssertionError("not exercised")
 
     async def run_structured(self, messages, response_model):
         self.in_flight += 1

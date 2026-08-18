@@ -6,7 +6,6 @@ import {
   History,
   Login,
   OAuthCallback,
-  OutputComposer,
   ResetPassword,
   ReviewDraft,
   Settings,
@@ -34,7 +33,6 @@ export default function App() {
         }
       >
         <Route path="/" element={<ReviewDraft />} />
-        <Route path="/compose" element={<OutputComposer />} />
         <Route path="/history" element={<History />} />
         <Route path="/settings" element={<Settings />} />
       </Route>

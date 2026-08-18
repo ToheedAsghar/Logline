@@ -8,8 +8,8 @@ import type { Size } from "@/common/types";
  * `.ll-wordmark` cursor and the `l|` logo glyph). Deliberately NOT a
  * spinner: the brief calls for something distinct per the product's
  * identity, and this is the one motif the handoff reuses everywhere the
- * agent is "live" — the compose screen's "Checking your tools…" header, the
- * timeline's "Refresh" working pill, and the FAB/auth logo.
+ * app is "loading" — the review page's draft generation, history/settings
+ * fetches, and the FAB/auth logo.
  */
 const CURSOR_SIZES: Record<Size, string> = {
   sm: "w-[4px] h-[11px]",

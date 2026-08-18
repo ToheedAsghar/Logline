@@ -33,9 +33,6 @@ class _ScriptedProvider(LLMProvider):
     def __init__(self, description: str = "Worked on the reconciliation endpoints."):
         self._description = description
 
-    async def run_turn(self, messages, tools):
-        raise NotImplementedError
-
     async def run_structured(self, messages, response_model):
         return EntryDescriptionProposal(description=self._description)
 

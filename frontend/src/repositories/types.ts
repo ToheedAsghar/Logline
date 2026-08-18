@@ -1,25 +1,5 @@
 import type { IntegrationId } from "@/constants";
 
-export type ConfidenceLevel = "proven" | "estimated" | "gap";
-
-export interface Event {
-  id: number;
-  source: string;
-  type: string;
-  timestamp: string;
-  event_metadata: Record<string, unknown> | null;
-  confidence: ConfidenceLevel;
-  created_at: string;
-}
-
-export interface EventUpdate {
-  timestamp?: string;
-  end_timestamp?: string;
-  title?: string;
-  summary?: string;
-  confidence?: ConfidenceLevel;
-}
-
 export type EntryFormat = "project_log" | "standup";
 export type EntryStatus = "draft" | "pending" | "approved";
 
@@ -65,12 +45,6 @@ export interface Integration {
 export interface DateRange {
   start: string;
   end: string;
-}
-
-export interface AgentRunResult {
-  response: string;
-  events: Event[];
-  created_entry_id: number | null;
 }
 
 export interface UserResponse {

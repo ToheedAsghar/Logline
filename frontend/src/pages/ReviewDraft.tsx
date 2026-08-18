@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Loading } from "@/atoms";
 import { formatMinutes, getTodayLocalDate, parseLocalDate } from "@/common/utils";
 import { REVIEW_DRAFT_TEXTS } from "@/constants";
@@ -202,7 +201,6 @@ export function TagSelect({
 }
 
 export function ReviewDraft() {
-  const navigate = useNavigate();
   const todayStr = useMemo(() => getTodayLocalDate(), []);
   const [startDate, setStartDate] = useState(getTodayLocalDate);
   const [endDate, setEndDate] = useState(getTodayLocalDate);
@@ -617,13 +615,6 @@ export function ReviewDraft() {
       {approveSuccess && (
         <div className="flex items-center justify-between rounded-lg border border-[#BFD9C2] bg-[#DCEBDD] p-4 text-sm font-semibold text-[#14603C]">
           <span>✓ Draft entries successfully approved and saved!</span>
-          <button
-            type="button"
-            onClick={() => navigate("/compose")}
-            className="rounded bg-[#14603C] px-3 py-1 text-xs font-semibold text-[#FFFDF7] hover:bg-[#0F4E31]"
-          >
-            Compose standup →
-          </button>
         </div>
       )}
 

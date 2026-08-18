@@ -5,7 +5,6 @@ import { AccountSettingsModal } from "@/molecules";
 
 const NAV_ITEMS = [
   { to: "/", label: "Review", end: true },
-  { to: "/compose", label: "Compose" },
   { to: "/history", label: "History" },
   { to: "/settings", label: "Settings" },
 ];
