@@ -21,28 +21,13 @@ from tracker.constants import (
 )
 from tracker.logging_config import configure_logging
 from tracker.singleton import AlreadyRunning, SingleInstanceLock
+from tracker.storage.secure_storage import get_token as read_device_token
 from tracker.sync import reader
 from tracker.sync.client import SyncClient, SyncError
 from tracker.sync.config import SyncConfigError, load_config
 
 logger = logging.getLogger(__name__)
 
-
-def read_device_token(path: Optional[Path] = None) -> Optional[str]:
-    """Reads the enrollment token, or returns None when this machine has not been enrolled. Loose permissions warn
-    rather than fail, so a fixable file mode does not stop syncing outright."""
-    path = path if path is not None else DEVICE_TOKEN_PATH
-    try:
-        token = path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    if not token:
-        return None
-
-    mode = stat.S_IMODE(path.stat().st_mode)
-    if mode & (stat.S_IRWXG | stat.S_IRWXO):
-        logger.warning(SYNC_TOKEN_PERMISSIONS_MSG, path, mode, path)
-    return token
 
 
 def run_sync(client: SyncClient, conn, batch_size: int) -> int:
@@ -85,7 +70,7 @@ def main() -> int:
     try:
         token = read_device_token()
         if token is None:
-            logger.info(SYNC_NOT_ENROLLED_MSG, DEVICE_TOKEN_PATH)
+            logger.info(SYNC_NOT_ENROLLED_MSG, "Keychain (LoglineTracker/SyncToken)")
             return 0
 
         config = load_config()
