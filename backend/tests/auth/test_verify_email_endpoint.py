@@ -89,7 +89,7 @@ class TestVerifyEmailInvalidToken:
         db = SessionLocal()
         try:
             token = create_email_verification_token(db, inactive_user)
-            tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
+            tampered = ("a" if token[0] != "a" else "b") + token[1:]
 
             with pytest.raises(HTTPException) as exc_info:
                 verify_email(tampered, db=db)

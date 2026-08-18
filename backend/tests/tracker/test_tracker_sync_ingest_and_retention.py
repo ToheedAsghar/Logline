@@ -540,7 +540,7 @@ class TestIngestSessionsValidation:
             assert result.accepted == 1
             assert result.invalid == 0
             assert _by_id(result, unknown_reason.id).status is IngestStatus.accepted
-            assert any("reboot" in record.message for record in caplog.records)
+            assert any(getattr(record, "end_reason", None) == "reboot" for record in caplog.records)
 
             row = db.query(LocalSession).filter(LocalSession.id == unknown_reason.id).one()
             assert row.end_reason == "reboot"
@@ -662,7 +662,7 @@ class TestIngestResponseContract:
                 result = service.ingest_sessions(db, user_a, [session], schema_version="tracker-1.2.0")
 
             assert result.accepted == 1
-            assert any("tracker-1.2.0" in record.message for record in caplog.records)
+            assert any(getattr(record, "schema_version", None) == "tracker-1.2.0" for record in caplog.records)
         finally:
             db.close()
 

@@ -137,7 +137,7 @@ class TestResetPasswordInvalidToken:
         db = SessionLocal()
         try:
             token = create_password_reset_token(db, user_with_password)
-            tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
+            tampered = ("a" if token[0] != "a" else "b") + token[1:]
 
             with pytest.raises(HTTPException) as exc_info:
                 reset_password(ResetPasswordRequest(token=tampered, new_password=NEW_PASSWORD), db=db)

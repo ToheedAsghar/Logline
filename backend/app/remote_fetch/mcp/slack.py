@@ -137,19 +137,19 @@ class SlackFetcher(SourceFetcher):
     async def fetch_with_session(
         self, session: ClientSession, user_id: int, since: Optional[datetime]
     ) -> SourceFetchData:
+        """Fetches this user's Slack messages since the given time.
+
+        Skips fetching entirely if no connected Slack identity is found, rather than recording every
+        message in a shared channel as this user's own.
+        """
         connected_user_id = resolve_connected_slack_user_id()
         if connected_user_id is None:
-            logger.warning(
-                "slack: connected user identity is not available, so messages in a shared channel cannot be "
-                "scoped to the connected user; skipping the slack source for user %s entirely rather "
-                "than recording everyone's messages as theirs",
-                user_id,
-            )
+            logger.warning("slack_connected_user_identity_unavailable", extra={"user_id": user_id})
             return SourceFetchData(events=[])
 
         channels = await self._resolve_channels(session, user_id)
         if not channels:
-            logger.info("slack: no readable channels for user %s; nothing to fetch", user_id)
+            logger.info("slack_no_readable_channels", extra={"user_id": user_id})
             return SourceFetchData(events=[])
 
         events: list[FetchedEvent] = []
@@ -179,7 +179,7 @@ class SlackFetcher(SourceFetcher):
         if mapped:
             return [(channel_id, None) for channel_id in mapped]
 
-        logger.info("slack: no project_mappings for user %s, falling back to member channels", user_id)
+        logger.info("slack_no_project_mappings_falling_back_to_member_channels", extra={"user_id": user_id})
         return [(channel["id"], channel.get("name")) for channel in await list_member_slack_channels(session)]
 
     async def _fetch_channel(
@@ -192,8 +192,9 @@ class SlackFetcher(SourceFetcher):
     ) -> tuple[list[FetchedEvent], Optional[datetime]]:
         """Fetch and filter recent messages for a single Slack channel.
 
-        Returns matching events and an optional high-water mark override if the page
-        was truncated.
+        Returns matching events and an optional high-water mark override if the page was truncated. Slack's
+        history call has no cursor for paging further back, so on truncation the high-water mark is held at
+        the oldest message seen instead of advancing, so the next run re-covers this range.
         """
 
         result = await session.call_tool(
@@ -204,7 +205,8 @@ class SlackFetcher(SourceFetcher):
 
         if isinstance(payload, dict) and payload.get("ok") is False:
             logger.warning(
-                "slack: could not read history for %s: %s", channel_id, payload.get("error")
+                "slack_channel_history_read_failed",
+                extra={"channel_id": channel_id, "error": payload.get("error")},
             )
             return [], None
 
@@ -232,13 +234,12 @@ class SlackFetcher(SourceFetcher):
         truncated = len(messages) >= SLACK_HISTORY_PAGE_LIMIT
         if truncated and oldest_in_page is not None:
             logger.warning(
-                "slack: channel %s returned a full page of %d messages (oldest seen %s) -- "
-                "older messages in this window cannot be paged to, "
-                "since slack_get_channel_history exposes no cursor. Holding the high-water mark "
-                "at the oldest message seen so the next run re-covers this range.",
-                channel_id,
-                len(messages),
-                oldest_in_page.isoformat(),
+                "slack_channel_history_page_truncated",
+                extra={
+                    "channel_id": channel_id,
+                    "message_count": len(messages),
+                    "oldest_seen": oldest_in_page.isoformat(),
+                },
             )
             return events, oldest_in_page
 

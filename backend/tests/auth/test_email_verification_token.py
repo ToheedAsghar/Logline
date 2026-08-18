@@ -88,7 +88,7 @@ class TestVerifyEmailVerificationToken:
         db = SessionLocal()
         try:
             token = create_email_verification_token(db, real_db_user)
-            tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
+            tampered = ("a" if token[0] != "a" else "b") + token[1:]
 
             with pytest.raises(EmailVerificationTokenError) as exc_info:
                 verify_email_verification_token(db, tampered)

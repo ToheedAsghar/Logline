@@ -146,8 +146,8 @@ def ingest_sessions(
     """
     if schema_version is not None:
         logger.info(
-            "tracker_sync.ingest_sessions: schema_version=%r for user_id=%s (%d sessions)",
-            schema_version, user_id, len(sessions),
+            "tracker_sync_ingest_sessions",
+            extra={"schema_version": schema_version, "user_id": user_id, "session_count": len(sessions)},
         )
 
     now = datetime.now(timezone.utc)
@@ -166,8 +166,8 @@ def ingest_sessions(
 
         if session.end_reason not in KNOWN_END_REASONS:
             logger.warning(
-                "tracker_sync.ingest_sessions: unknown end_reason %r for id=%s user_id=%s -- storing as free text",
-                session.end_reason, session.id, user_id,
+                "tracker_sync_unknown_end_reason",
+                extra={"end_reason": session.end_reason, "session_id": session.id, "user_id": user_id},
             )
 
         prior_index = winning_index_for_id.get(session.id)

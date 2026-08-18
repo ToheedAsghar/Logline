@@ -87,7 +87,9 @@ async def _send_token_email(user_id: int, email: str, subject: str, body: str, k
     try:
         await provider.send(to=email, subject=subject, body=body)
     except EmailDeliveryError as exc:
-        logger.error("Failed to send %s email to user_id=%s email=%s: %s", kind, user_id, email, exc, exc_info=True)
+        logger.error(
+            "email_send_failed", extra={"kind": kind, "user_id": user_id, "error": str(exc)}, exc_info=True
+        )
 
 
 def _issue_and_queue_email(db: Session, user: User, background_tasks: BackgroundTasks, spec: _TokenEmail) -> None:
@@ -155,7 +157,7 @@ def verify_email(token: str, db: Session = Depends(get_db)):
     try:
         token_row = verify_email_verification_token(db, token)
     except EmailVerificationTokenError as exc:
-        logger.info("Email verification failed: %s", exc.reason)
+        logger.info("email_verification_failed", extra={"reason": exc.reason})
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_VERIFICATION_TOKEN_ERROR)
 
     token_row.used_at = datetime.now(timezone.utc)
@@ -222,7 +224,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     try:
         token_row = verify_password_reset_token(db, payload.token)
     except PasswordResetTokenError as exc:
-        logger.info("Password reset failed: %s", exc.reason)
+        logger.info("password_reset_failed", extra={"reason": exc.reason})
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_PASSWORD_TOKEN_ERROR)
 
     now = datetime.now(timezone.utc)
@@ -282,14 +284,14 @@ def google_callback(
     try:
         consume_oauth_state(db, token=state, expected_purpose=GOOGLE_LOGIN_STATE_PURPOSE)
     except OAuthStateError as exc:
-        logger.info("Google login state validation failed: %s", exc.message)
+        logger.info("google_login_state_validation_failed", extra={"reason": exc.message})
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message)
 
     try:
         id_token = google_oauth.exchange_code_for_id_token(code)
         claims = google_oauth.verify_google_id_token(id_token)
     except GoogleAuthError as exc:
-        logger.error("Google login failed: %s", exc, exc_info=True)
+        logger.info("google_login_failed", extra={"error": str(exc)})
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_GOOGLE_SIGN_IN_FAILED)
 
     google_user_id = claims["sub"]

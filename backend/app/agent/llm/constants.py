@@ -1,3 +1,7 @@
+# --- Usage logging ---
+
+LLM_USAGE_EVENT = "llm_usage"
+
 # --- Shared structured-output error messages ---
 
 ERROR_RUN_STRUCTURED_TRUNCATED = (

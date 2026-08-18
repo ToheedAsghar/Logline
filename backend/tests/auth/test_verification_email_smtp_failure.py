@@ -45,10 +45,12 @@ class TestSendTokenEmailSMTPFailure:
         assert len(caplog.records) == 1
         record = caplog.records[0]
         assert record.levelname == "ERROR"
-        assert "123" in record.message
-        assert "someone@example.com" in record.message
-        assert "verification email" in record.message.lower()
-        assert "Authentication failed" in record.message
+        assert record.user_id == 123
+        assert record.kind == "verification"
+        assert "Authentication failed" in record.error
+        # The email address must never reach a log line -- see auth/routers.py's user_id-not-email
+        # fix -- so this is an explicit regression guard, not just an oversight to update quietly.
+        assert "someone@example.com" not in caplog.text
 
     def test_smtp_failure_does_not_propagate_out_of_the_background_task(self, monkeypatch, caplog):
         async def raise_connect_failure(*args, **kwargs):
@@ -59,4 +61,5 @@ class TestSendTokenEmailSMTPFailure:
         with caplog.at_level("ERROR", logger="app.auth.routers"):
             asyncio.run(_send_token_email(**_verification_email_args(456, "other@example.com", "anothertoken")))
 
-        assert any("456" in r.message for r in caplog.records)
+        assert any(getattr(r, "user_id", None) == 456 for r in caplog.records)
+        assert "other@example.com" not in caplog.text

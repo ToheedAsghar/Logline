@@ -14,6 +14,7 @@ from openai import AsyncOpenAI
 from app.agent.llm.base import LLMProvider, LLMStructuredOutputError, Message, T
 from app.agent.llm.constants import (
     ERROR_RUN_STRUCTURED_CONTENT_FILTERED, ERROR_RUN_STRUCTURED_TRUNCATED, ERROR_RUN_STRUCTURED_VALIDATION_FAILED,
+    LLM_USAGE_EVENT,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,6 @@ ERROR_RUN_STRUCTURED_PARSED_NONE = (
     "run_structured failed: the model's response could not be parsed into {model_name} "
     "(no exception was raised, but .parsed was None)"
 )
-USAGE_LOG_FORMAT = "openai %s usage: prompt=%s completion=%s total=%s"
 
 
 class OpenAIProvider(LLMProvider):
@@ -81,11 +81,14 @@ class OpenAIProvider(LLMProvider):
         if usage is None:
             return
         logger.info(
-            USAGE_LOG_FORMAT,
-            call_kind,
-            getattr(usage, "prompt_tokens", None),
-            getattr(usage, "completion_tokens", None),
-            getattr(usage, "total_tokens", None),
+            LLM_USAGE_EVENT,
+            extra={
+                "provider": "openai",
+                "call_kind": call_kind,
+                "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                "completion_tokens": getattr(usage, "completion_tokens", None),
+                "total_tokens": getattr(usage, "total_tokens", None),
+            },
         )
 
     @staticmethod
