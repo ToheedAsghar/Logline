@@ -116,15 +116,11 @@ Python capture logic as-is rather than risking a rewrite.
 ### Phase 6: Packaging
 - [ ] **Task 7: Packaging — both binaries.** PyInstaller spec for the Python executable;
   Xcode build embedding it inside the Swift `.app`'s bundle; login-item registration call
-  included. Both the Swift app and the bundled Python executable need to be signed (confirm
-  this requirement directly against Gatekeeper behavior on a real distributed build, not
-  assumed) — an unsigned child executable inside a signed app bundle is a plausible failure
-  point.
+  included. Both the Swift app and the bundled Python executable will ship unsigned —
+  no Apple Developer ID is planned. Users will approve the app once via Gatekeeper
+  on first launch (right-click -> Open).
   - Acceptance: double-click launches with no Dock icon, menu-bar icon present, Start/Stop/
-    Quit and all prior-phase behavior intact in the fully packaged, signed build — re-verify
-    for real, since signing/bundling can change behavior that worked in dev mode (this
-    includes re-verifying Task 0's permissions finding still holds once both binaries are
-    actually signed).
+    Quit and all prior-phase behavior intact in the fully packaged build.
 
 ### Checkpoint: Complete
 - [ ] All acceptance criteria in spec.md met.
@@ -144,7 +140,6 @@ Python capture logic as-is rather than risking a rewrite.
 - Whether Python → Swift needs a live status signal beyond DB-polling + backend status
   (affects Task 6's IPC scope).
 - Minimum macOS version (affects Task 2's login-item API choice).
-- Apple Developer ID / signing status for **both** binaries (affects Task 7).
 - DMG hosting location (affects distribution, not development).
 - Disconnect (Task 3a): local-clear-only vs. also server-side revoke.
 
