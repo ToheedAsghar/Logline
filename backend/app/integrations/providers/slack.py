@@ -4,8 +4,14 @@ generic connect and token-refresh routes don't need to know about individual pro
 
 This pattern (a dedicated provider class per service) will scale to future integrations like Jira or Calendar -- each
 gets one subclass here and one entry in the provider registry, with no changes to the shared route logic.
+
+Changing SLACK_OAUTH_USER_SCOPES does not affect tokens Slack has already issued: a stored token keeps exactly the
+scopes it was granted at connect time. Anyone already connected has to disconnect and reconnect before a newly added
+scope takes effect, and until they do, calls needing it fail with Slack's `missing_scope` error. There is no
+forced-reconnect prompt yet, so a scope addition here is not self-applying.
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -16,6 +22,8 @@ from app.integrations.errors import TokenRefreshError
 from app.integrations.models import IntegrationSource
 from app.integrations.providers.base import OAuthProvider, OAuthTokens
 
+logger = logging.getLogger(__name__)
+
 SLACK_OAUTH_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
 SLACK_OAUTH_ACCESS_URL = "https://slack.com/api/oauth.v2.access"
 
@@ -24,6 +32,7 @@ SLACK_OAUTH_USER_SCOPES = (
     "channels:history",
     "groups:history",
     "im:read",
+    "im:history",
 )
 
 SLACK_CONNECT_STATE_PURPOSE = "slack_connect"
@@ -32,6 +41,10 @@ SLACK_TOKEN_EXCHANGE_FAILED_MESSAGE = (
     "Slack rejected the {context} request: {slack_error}. This usually means the "
     "authorization code already expired or was already used. Restart the connect "
     "flow from the Integrations page."
+)
+
+SLACK_CONNECT_MISSING_AUTHED_USER_ID_DETAIL = (
+    "Slack exchange succeeded without authed_user.id; the stored token will carry no identity"
 )
 
 SLACK_TOKEN_REFRESH_FAILED_MESSAGE = (
@@ -121,12 +134,18 @@ def _parse_authed_user_response(data: dict) -> OAuthTokens:
     if not access_token:
         raise SlackOAuthError(SLACK_MISSING_USER_TOKEN_MESSAGE)
 
+    user_id = authed_user.get("id") or ""
+    if not user_id:
+        logger.warning(
+            "slack_connect_exchange_missing_authed_user_id",
+            extra={"detail": SLACK_CONNECT_MISSING_AUTHED_USER_ID_DETAIL},
+        )
     return OAuthTokens(
         access_token=access_token,
         refresh_token=authed_user.get("refresh_token"),
         expires_at=_compute_expires_at(authed_user.get("expires_in")),
         scope=authed_user.get("scope", ""),
-        authed_user_id=authed_user.get("id", ""),
+        authed_user_id=user_id,
     )
 
 

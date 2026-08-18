@@ -7,6 +7,7 @@ refactor.
 """
 
 import asyncio
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -60,10 +61,16 @@ class TestBuildSlackAuthorizeUrl:
         assert query["redirect_uri"] == [settings.slack_redirect_uri]
         assert query["user_scope"] == [",".join(SLACK_OAUTH_USER_SCOPES)]
 
-    def test_does_not_request_im_history(self):
+    def test_requests_im_history_for_dm_message_content(self):
+        """im:read only enumerates DM conversations; reading the messages inside them needs im:history. Without it,
+        DM fetches come back empty rather than failing, so the gap is easy to reintroduce unnoticed.
+        """
         url = provider.build_authorize_url("state")
         query = parse_qs(urlparse(url).query)
-        assert "im:history" not in query["user_scope"][0].split(",")
+        requested = query["user_scope"][0].split(",")
+
+        assert "im:history" in requested
+        assert "im:read" in requested
 
 
 class TestExchangeCodeForUserToken:
@@ -93,6 +100,20 @@ class TestExchangeCodeForUserToken:
         assert call_kwargs.args[0] == SLACK_OAUTH_ACCESS_URL
         assert call_kwargs.kwargs["data"]["code"] == "some-code"
         assert call_kwargs.kwargs["data"]["redirect_uri"] == settings.slack_redirect_uri
+
+    def test_exchange_without_authed_user_id_logs_a_warning(self, caplog):
+        """A successful exchange that omits authed_user.id is undocumented Slack behavior; log it so a stored token
+        with no identity is visible rather than silently perpetuating stale state.
+        """
+        response = _mock_response(
+            {"ok": True, "authed_user": {"access_token": "xoxp-user-token"}}
+        )
+        with patch("httpx.AsyncClient.post", AsyncMock(return_value=response)):
+            with caplog.at_level(logging.WARNING, logger="app.integrations.providers.slack"):
+                tokens = asyncio.run(provider.exchange_code("some-code"))
+
+        assert tokens.authed_user_id == ""
+        assert "slack_connect_exchange_missing_authed_user_id" in caplog.text
 
     def test_slack_error_raises_informative_error_not_generic(self):
         response = _mock_response({"ok": False, "error": "invalid_code"})

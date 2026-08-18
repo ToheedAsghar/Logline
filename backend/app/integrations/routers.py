@@ -173,6 +173,11 @@ def _get_or_create_integration(db: Session, user_id: int, source: IntegrationSou
 
 
 def _upsert_oauth_token(db: Session, integration_id: int, tokens: OAuthTokens) -> OAuthToken:
+    """Create or update the stored token row for `integration_id` from a provider's exchange result.
+
+    `authed_user_id` is only written when the provider actually supplied one, so a provider that omits it leaves any
+    previously captured identity intact instead of blanking it.
+    """
     token = db.query(OAuthToken).filter(OAuthToken.integration_id == integration_id).first()
     if token is None:
         token = OAuthToken(integration_id=integration_id)
@@ -181,4 +186,6 @@ def _upsert_oauth_token(db: Session, integration_id: int, tokens: OAuthTokens) -
     token.access_token = tokens.access_token
     token.refresh_token = tokens.refresh_token
     token.expires_at = tokens.expires_at
+    if tokens.authed_user_id:
+        token.authed_user_id = tokens.authed_user_id
     return token
