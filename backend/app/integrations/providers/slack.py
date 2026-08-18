@@ -30,6 +30,7 @@ SLACK_OAUTH_ACCESS_URL = "https://slack.com/api/oauth.v2.access"
 SLACK_OAUTH_USER_SCOPES = (
     "channels:read",
     "channels:history",
+    "groups:read",
     "groups:history",
     "im:read",
     "im:history",

@@ -260,8 +260,8 @@ class TestRedactionSignal:
 class TestFullPipelineIntegration:
     def test_a_real_existing_call_site_produces_valid_json(self, capsys):
         configure_logging()
-        logging.getLogger("app.remote_fetch.mcp.connection").warning(
-            "could not connect '%s' MCP server: %s", "github", "connection refused"
+        logging.getLogger("app.remote_fetch.sources.github").warning(
+            "could not fetch '%s' repository: %s", "github", "rate limit exhausted"
         )
         out = capsys.readouterr().out.strip()
         parsed = json.loads(out)
