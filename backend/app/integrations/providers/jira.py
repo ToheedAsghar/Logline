@@ -14,8 +14,8 @@ Atlassian's OAuth flow differs from Slack and GitHub in important ways:
   parse both with one function.
 - Cloud ID discovery (NOT done here): After getting a token, you can't call Jira's API until you discover the user's
   cloud ID via a separate API call (`GET /oauth/token/accessible-resources`). That discovery step is outside this
-  module's scope — this module only handles obtaining and refreshing tokens. The actual Jira API integration lives
-  elsewhere (currently the Jira MCP server in toolbelt.py uses separate shared credentials untouched by this module).
+  module's scope — this module only handles obtaining and refreshing tokens. The standalone Jira MCP connectivity
+  script (`backend/scripts/manual_test_jira_mcp.py`) uses separate shared credentials untouched by this module.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -24,16 +24,90 @@ from urllib.parse import urlencode
 import httpx
 
 from app.config import settings
-from app.integrations.constants import (
-    JIRA_CALLBACK_MISSING_PARAMS_MESSAGE, JIRA_MALFORMED_RESPONSE_MESSAGE, JIRA_MISSING_ACCESS_TOKEN_MESSAGE,
-    JIRA_OAUTH_AUTHORIZE_URL, JIRA_OAUTH_CALLBACK_ERROR_MESSAGES, JIRA_OAUTH_NETWORK_ERROR_MESSAGE, JIRA_OAUTH_SCOPES,
-    JIRA_OAUTH_TOKEN_URL, JIRA_OAUTH_UNKNOWN_CALLBACK_ERROR_MESSAGE, JIRA_RESPONSE_MISSING_REFRESH_TOKEN_MESSAGE,
-    JIRA_TOKEN_EXCHANGE_FAILED_MESSAGE, JIRA_TOKEN_MISSING_REFRESH_TOKEN_MESSAGE, JIRA_TOKEN_NOT_FOUND_MESSAGE,
-    JIRA_TOKEN_REFRESH_FAILED_MESSAGE, JIRA_TOKEN_REFRESH_PERSIST_FAILED_MESSAGE,
-)
 from app.integrations.errors import TokenRefreshError
 from app.integrations.models import IntegrationSource
 from app.integrations.providers.base import OAuthProvider, OAuthTokens
+
+JIRA_OAUTH_AUTHORIZE_URL = "https://auth.atlassian.com/authorize"
+JIRA_OAUTH_TOKEN_URL = "https://auth.atlassian.com/oauth/token"
+
+JIRA_OAUTH_SCOPES = ("read:jira-work", "read:jira-user", "offline_access")
+
+JIRA_TOKEN_EXCHANGE_FAILED_MESSAGE = (
+    "Jira rejected the authorization_code exchange: {jira_error}. This usually means "
+    "the authorization code already expired or was already used. Restart the connect "
+    "flow from the Integrations page."
+)
+
+JIRA_TOKEN_REFRESH_FAILED_MESSAGE = (
+    "Jira rejected the refresh_token exchange: {jira_error}. Atlassian's refresh "
+    "tokens rotate on every use and expire after 90 days of inactivity, so the stored "
+    "one may have already been superseded, expired, or revoked -- reconnect Jira "
+    "from the Integrations page."
+)
+
+JIRA_OAUTH_NETWORK_ERROR_MESSAGE = (
+    "Could not reach Jira to complete the OAuth request: {detail}. Check network "
+    "connectivity and try again."
+)
+
+JIRA_MISSING_ACCESS_TOKEN_MESSAGE = (
+    "Jira's response did not include an access token. This app's Atlassian OAuth "
+    "2.0 (3LO) app configuration is likely missing the required scopes ({scopes}) -- "
+    "check its settings before retrying the connect flow."
+).format(scopes=", ".join(JIRA_OAUTH_SCOPES))
+
+JIRA_RESPONSE_MISSING_REFRESH_TOKEN_MESSAGE = (
+    "Jira's token response did not include a refresh_token. Atlassian only issues one "
+    "when `offline_access` is granted, and its refresh tokens rotate on every use -- "
+    "without a fresh one here the connection could not be renewed again, so this is "
+    "refused rather than silently stored. This app's Atlassian OAuth 2.0 (3LO) app is "
+    "likely missing the `offline_access` scope; check its settings, then reconnect Jira "
+    "from the Integrations page."
+)
+
+JIRA_MALFORMED_RESPONSE_MESSAGE = (
+    "Jira returned a response that could not be parsed as the expected token JSON: "
+    "{detail}. This is unexpected from Atlassian's token endpoint -- restart the connect "
+    "flow from the Integrations page, and if it persists the endpoint may be having "
+    "issues."
+)
+
+JIRA_TOKEN_NOT_FOUND_MESSAGE = (
+    "No stored Jira OAuth token was found for integration_id={integration_id}. The "
+    "user needs to connect Jira from the Integrations page before this token can be "
+    "refreshed."
+)
+
+JIRA_TOKEN_MISSING_REFRESH_TOKEN_MESSAGE = (
+    "The stored Jira token for integration_id={integration_id} is near/past expiry "
+    "but has no refresh_token on file, so it can't be silently refreshed. The user "
+    "needs to reconnect Jira from the Integrations page."
+)
+
+JIRA_TOKEN_REFRESH_PERSIST_FAILED_MESSAGE = (
+    "Could not persist the refreshed Jira token pair for integration_id={integration_id} "
+    "after Atlassian rotated the credentials. Reconnect Jira from the Integrations page."
+)
+
+JIRA_CALLBACK_MISSING_PARAMS_MESSAGE = (
+    "Jira's callback did not include both `code` and `state` -- the connect flow "
+    "did not complete. Restart it from the Integrations page."
+)
+
+JIRA_OAUTH_ACCESS_DENIED_MESSAGE = (
+    "Jira authorization was not granted -- the connect flow was cancelled. Restart "
+    "it from the Integrations page if you'd like to connect Jira."
+)
+
+JIRA_OAUTH_UNKNOWN_CALLBACK_ERROR_MESSAGE = (
+    "Jira's callback reported an error completing the connect flow. Restart it "
+    "from the Integrations page."
+)
+
+JIRA_OAUTH_CALLBACK_ERROR_MESSAGES = {
+    "access_denied": JIRA_OAUTH_ACCESS_DENIED_MESSAGE,
+}
 
 
 class JiraOAuthError(TokenRefreshError):
@@ -87,15 +161,17 @@ def _extract_error_detail(response: httpx.Response) -> str:
 def _parse_httpx_response(
     response: httpx.Response, *, failed_message: str, require_refresh_token: bool
 ) -> OAuthTokens:
+    """Parse a token-exchange/refresh response, raising `JiraOAuthError` on any failure.
+
+    A 2xx response whose body isn't the expected token JSON is a malformed *received* response, not
+    a transport failure -- it's raised via `JIRA_MALFORMED_RESPONSE_MESSAGE`, not `failed_message`,
+    so callers don't mistake it for "could not reach Jira".
+    """
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise JiraOAuthError(failed_message.format(jira_error=_extract_error_detail(response))) from exc
 
-    # A 2xx with a body that isn't the token JSON we expect (non-JSON, or JSON
-    # that isn't an object) is a malformed *received* response, not a transport
-    # failure -- surface it as such rather than as a "could not reach Jira"
-    # network error, which would be misleading.
     try:
         data = response.json()
     except ValueError as exc:

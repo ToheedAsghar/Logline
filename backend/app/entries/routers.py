@@ -13,14 +13,19 @@ from app.entries.schemas import EntryResponse, EntryUpdate
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 
+ENTRY_NOT_FOUND_ERROR = "Entry not found"
+
 
 def _get_owned_entry(entry_id: int, current_user: User, db: Session) -> Entry:
-    # Scoped by user_id in the query itself (not checked after fetching) so an
-    # entry owned by someone else 404s exactly like one that doesn't exist —
-    # existence isn't a hint we want to leak. See CLAUDE.md's error convention.
+    """Fetch an entry scoped to `current_user`, or raise 404.
+
+    Ownership is filtered in the query itself, not checked after fetching, so an entry owned by
+    someone else 404s exactly like one that doesn't exist -- existence isn't a hint to leak. See
+    backend/CLAUDE.md's error convention.
+    """
     entry = crud.get_owned_entry(db, entry_id, current_user.id)
     if entry is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ENTRY_NOT_FOUND_ERROR)
     return entry
 
 

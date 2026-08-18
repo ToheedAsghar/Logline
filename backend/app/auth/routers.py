@@ -12,8 +12,8 @@ from app.auth import crud, google_oauth
 from app.auth.constants import (
     EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, GOOGLE_LOGIN_STATE_PURPOSE, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
     TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE, TEXT_GOOGLE_SIGN_IN_FAILED, TEXT_INACTIVE_USER_ACCOUNT,
-    TEXT_LOGIN_EMAIL_NOT_VERIFIED, TEXT_LOGIN_INVALID_CREDENTIALS, TEXT_PASSWORD_RESET_SUBJECT,
-    TEXT_PASSWORD_RESET_SUCCESSFULL, TEXT_PASSWORD_TOKEN_ERROR, TEXT_SIGNUP_GENERIC_MESSAGE,
+    TEXT_LOGIN_EMAIL_NOT_VERIFIED, TEXT_LOGIN_INVALID_CREDENTIALS, TEXT_PASSWORD_RESET_SUCCESSFULL,
+    TEXT_PASSWORD_TOKEN_ERROR, TEXT_SIGNUP_GENERIC_MESSAGE,
 )
 from app.auth.deps import get_current_user
 from app.auth.google_oauth import GoogleAuthError
@@ -38,6 +38,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 logger = logging.getLogger(__name__)
 
+TEXT_VERIFICATION_SUBJECT = "Verify your Logline email"
+TEXT_PASSWORD_RESET_SUBJECT = "Reset your Logline password"
+TEXT_VERIFICATION_TOKEN_ERROR = "Invalid or expired verification link"
+TEXT_EMAIL_VERIFIED_SUCCESSFUL = "Email verified successfully"
+TEXT_RESEND_VERIFICATION_GENERIC_MESSAGE = (
+    "If an account exists for that email and needs verification, a new email has been sent."
+)
+
 
 @dataclass(frozen=True)
 class _TokenEmail:
@@ -53,7 +61,7 @@ class _TokenEmail:
 _VERIFICATION_EMAIL = _TokenEmail(
     kind="verification",
     path="verify-email",
-    subject="Verify your Logline email",
+    subject=TEXT_VERIFICATION_SUBJECT,
     body="Click the link below to verify your email address:\n\n{url}\n\nThis link expires in 24 hours.",
     create_token=create_email_verification_token,
 )
@@ -148,14 +156,14 @@ def verify_email(token: str, db: Session = Depends(get_db)):
         token_row = verify_email_verification_token(db, token)
     except EmailVerificationTokenError as exc:
         logger.info("Email verification failed: %s", exc.reason)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_VERIFICATION_TOKEN_ERROR)
 
     token_row.used_at = datetime.now(timezone.utc)
     user = db.query(User).filter(User.id == token_row.user_id).first()
     user.is_active = True
     db.commit()
 
-    return MessageResponse(message="Email verified successfully")
+    return MessageResponse(message=TEXT_EMAIL_VERIFIED_SUCCESSFUL)
 
 
 @router.post("/resend-verification", response_model=MessageResponse)
@@ -171,9 +179,7 @@ def resend_verification(
 
     user = crud.get_user_by_email(db, payload.email)
 
-    generic_response = MessageResponse(
-        message="If an account exists for that email and needs verification, a new email has been sent."
-    )
+    generic_response = MessageResponse(message=TEXT_RESEND_VERIFICATION_GENERIC_MESSAGE)
     if user is None or user.is_active:
         return generic_response
 
@@ -217,7 +223,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
         token_row = verify_password_reset_token(db, payload.token)
     except PasswordResetTokenError as exc:
         logger.info("Password reset failed: %s", exc.reason)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_PASSWORD_TOKEN_ERROR)
 
     now = datetime.now(timezone.utc)
     claimed = (

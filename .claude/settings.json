@@ -15,7 +15,6 @@
       "Bash(ps -p 2316 -o pid,ppid,command)",
       "Bash(ps -p 99447 -o pid,ppid,command)",
       "Bash(curl -s -X GET http://localhost:5173/ -o /dev/null -w \"%{http_code}\\\\n\")",
-      "Bash(.venv/bin/python scripts/manual_test_agent_runner.py)",
       "Bash(echo \"EXIT_CODE=$?\")",
       "Bash(npx tsc *)",
       "Bash(node check.js)",

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.agent.llm.base import AgentResponse, LLMProvider, LLMStructuredOutputError, Message
+from app.agent.llm.base import LLMProvider, LLMStructuredOutputError, Message
 from app.agent.reconciliation.description import describe_entry
 from app.agent.reconciliation.entries import form_entries
 from app.agent.reconciliation.evidence import build_evidence
@@ -60,9 +60,6 @@ class QueuedProvider(LLMProvider):
     def __init__(self, responses):
         self._responses = list(responses)
         self.calls: list[list[Message]] = []
-
-    async def run_turn(self, messages, tools) -> AgentResponse:
-        raise AssertionError("describe_entry must use run_structured, never run_turn")
 
     async def run_structured(self, messages, response_model):
         self.calls.append(messages)
