@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button, Input } from "@/atoms";
-import { AUTH_STRINGS } from "@/constants/authMessages";
+import { AUTH_STRINGS } from "@/constants";
 import { signup as signupApi } from "@/repositories/api/auth";
 import { ApiError } from "@/repositories/api/client";
 import { AuthFieldLabel, AuthShell } from "./AuthShell";

@@ -1,4 +1,4 @@
-import type { IntegrationId } from "@/constants/integrations";
+import type { IntegrationId } from "@/constants";
 
 export type EntryFormat = "project_log" | "standup";
 export type EntryStatus = "draft" | "pending" | "approved";
@@ -20,6 +20,7 @@ export interface Entry {
   user_id: number;
   format: EntryFormat;
   content: EntryContent;
+  work_date: string;
   status: EntryStatus;
   created_at: string;
   approved_at: string | null;
@@ -146,6 +147,10 @@ export interface ReconciliationResult {
 export interface ReconciliationGenerateParams {
   date_range_start: string;
   date_range_end: string;
+}
+
+export interface ReconciliationApproveParams extends ReconciliationGenerateParams {
+  draft: WorkLogDraft;
 }
 
 export interface TrackerSyncStatus {

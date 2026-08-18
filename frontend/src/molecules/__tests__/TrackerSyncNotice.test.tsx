@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { TrackerSyncNotice } from "../TrackerSyncNotice";
-import { TRACKER_STALE_AFTER_MINUTES } from "@/constants/tracker";
+import { TRACKER_STALE_AFTER_MINUTES } from "@/constants";
 
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 

@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { formatMinutes, minutesToHHMM, parseTimeToMinutes } from "@/common/utils";
+import { formatMinutes, getTodayLocalDate, minutesToHHMM, parseTimeToMinutes } from "@/common/utils";
 import { ReviewDraft, describeApiError } from "../ReviewDraft";
 import { ApiError } from "@/repositories/api";
 import type { WorkLogDraft, ReconciliationResult } from "@/repositories/types";
@@ -48,10 +48,10 @@ const mockVerification: ReconciliationResult["verification"] = {
   ],
 };
 
-function mockGenerateWithDraft() {
+function mockGenerateWithDraft(draft = mockDraft) {
   (useGenerateDraft as ReturnType<typeof vi.fn>).mockReturnValue({
     mutate: (_params: unknown, options: { onSuccess: (data: ReconciliationResult) => void }) => {
-      options.onSuccess({ draft: mockDraft, verification: mockVerification });
+      options.onSuccess({ draft, verification: mockVerification });
     },
     isPending: false,
     isError: false,
@@ -82,7 +82,11 @@ describe("ReviewDraft utilities", () => {
 
 describe("ReviewDraft Component", () => {
   let generateMutateMock: ReturnType<typeof vi.fn>;
-  let approveMutateMock: ReturnType<typeof vi.fn<(draft: WorkLogDraft) => void>>;
+  let approveMutateMock: ReturnType<
+    typeof vi.fn<
+      (payload: { date_range_start: string; date_range_end: string; draft: WorkLogDraft }) => void
+    >
+  >;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -159,8 +163,11 @@ describe("ReviewDraft Component", () => {
   it("sends the edited payload to approve and shows the success banner on completion", async () => {
     mockGenerateWithDraft();
     (useApproveDraft as ReturnType<typeof vi.fn>).mockReturnValue({
-      mutate: (draft: WorkLogDraft, options: { onSuccess: () => void }) => {
-        approveMutateMock(draft);
+      mutate: (
+        payload: { date_range_start: string; date_range_end: string; draft: WorkLogDraft },
+        options: { onSuccess: () => void },
+      ) => {
+        approveMutateMock(payload);
         options.onSuccess();
       },
       isPending: false,
@@ -184,12 +191,27 @@ describe("ReviewDraft Component", () => {
     fireEvent.click(approveButton);
 
     expect(approveMutateMock).toHaveBeenCalledTimes(1);
-    const approvedPayload = approveMutateMock.mock.calls[0][0] as WorkLogDraft;
-    expect(approvedPayload.entries[0].description).toBe("Final edited description");
+    const approvedPayload = approveMutateMock.mock.calls[0][0];
+    expect(approvedPayload.date_range_start).toBe(getTodayLocalDate());
+    expect(approvedPayload.date_range_end).toBe(getTodayLocalDate());
+    expect(approvedPayload.draft.entries[0].description).toBe("Final edited description");
 
     await waitFor(() => {
       expect(screen.getByText(/Draft entries successfully approved/i)).toBeInTheDocument();
     });
+  });
+
+  it("shows feedback when no residual tracker time can be added", async () => {
+    mockGenerateWithDraft({ ...mockDraft, residual_unassigned_minutes: [] });
+
+    render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: /Regenerate/i }));
+    await waitFor(() => expect(screen.getByText("Initial description from AI")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /Add a block the tracker missed/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/no untracked time to allocate/i);
+    expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(1);
   });
 });
 

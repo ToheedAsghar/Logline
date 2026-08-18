@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Loading } from "@/atoms";
-import { AUTH_STRINGS } from "@/constants/authMessages";
+import { AUTH_STRINGS } from "@/constants";
 import { useSession } from "@/context/SessionContext";
 import { useToast } from "@/context/ToastContext";
 import { googleExchange } from "@/repositories/api/auth";

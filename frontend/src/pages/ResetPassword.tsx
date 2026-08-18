@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Input } from "@/atoms";
-import { AUTH_STRINGS } from "@/constants/authMessages";
+import { AUTH_STRINGS } from "@/constants";
 import { resetPassword } from "@/repositories/api/auth";
 import { ApiError } from "@/repositories/api/client";
 import { AuthFieldLabel, AuthShell } from "./AuthShell";

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loading } from "@/atoms";
 import { formatMinutes, getTodayLocalDate, parseLocalDate } from "@/common/utils";
+import { REVIEW_DRAFT_TEXTS } from "@/constants";
 import { ApiError } from "@/repositories/api";
 import { ALL_ENTRY_TAGS, type DraftEntry, type EntryTag, type ReconciliationResult, type VerificationIssue, type WorkLogDraft } from "@/repositories/types";
 import { useApproveDraft, useGenerateDraft } from "@/repositories/hooks";
@@ -213,19 +214,25 @@ export function ReviewDraft() {
   const [ignoredGaps, setIgnoredGaps] = useState<Set<string>>(new Set());
   const [generateError, setGenerateError] = useState<DescribedError | null>(null);
   const [approveError, setApproveError] = useState<DescribedError | null>(null);
+  const [addBlockError, setAddBlockError] = useState<DescribedError | null>(null);
 
   const generateMutation = useGenerateDraft();
   const approveMutation = useApproveDraft();
+
+  const getSelectedDateRange = () => {
+    const date_range_start = startDate > todayStr ? todayStr : startDate;
+    const date_range_end = scopeMode === "DAY" ? date_range_start : endDate > todayStr ? todayStr : endDate;
+    return { date_range_start, date_range_end };
+  };
 
   const handleGenerate = () => {
     setApproveSuccess(false);
     setSelectedIndex(null);
     setGenerateError(null);
     setApproveError(null);
-    const effectiveStart = startDate > todayStr ? todayStr : startDate;
-    const effectiveEnd = scopeMode === "DAY" ? effectiveStart : endDate > todayStr ? todayStr : endDate;
+    setAddBlockError(null);
     generateMutation.mutate(
-      { date_range_start: effectiveStart, date_range_end: effectiveEnd },
+      getSelectedDateRange(),
       {
         onSuccess: (data) => {
           setDraft(data.draft);
@@ -241,7 +248,7 @@ export function ReviewDraft() {
   const handleApprove = () => {
     if (!draft) return;
     setApproveError(null);
-    approveMutation.mutate(draft, {
+    approveMutation.mutate({ ...getSelectedDateRange(), draft }, {
       onSuccess: () => {
         setApproveSuccess(true);
       },
@@ -299,8 +306,15 @@ export function ReviewDraft() {
   const addBlankEntry = () => {
     if (!draft) return;
     const available = draft.residual_unassigned_minutes.find((b) => b.minutes > 0);
-    if (!available) return;
+    if (!available) {
+      setAddBlockError({
+        title: REVIEW_DRAFT_TEXTS.NO_UNTRACKED_TIME_TITLE,
+        detail: REVIEW_DRAFT_TEXTS.NO_UNTRACKED_TIME_DETAIL,
+      });
+      return;
+    }
 
+    setAddBlockError(null);
     const newEntry: DraftEntry = {
       date: startDate,
       project: "unidentified",
@@ -575,6 +589,7 @@ export function ReviewDraft() {
 
       {generateError && <ErrorBanner error={generateError} onDismiss={() => setGenerateError(null)} />}
       {approveError && <ErrorBanner error={approveError} onDismiss={() => setApproveError(null)} />}
+      {addBlockError && <ErrorBanner error={addBlockError} onDismiss={() => setAddBlockError(null)} />}
 
       {verification && !verification.passed && (
         <div

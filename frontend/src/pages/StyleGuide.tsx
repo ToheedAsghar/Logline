@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Checkbox, ConfidenceTier, Input, Loading, Textarea, Tooltip } from "@/atoms";
 import { ApprovalTransition, EditableTimeField, IntegrationCard } from "@/molecules";
-import { CONFIDENCE_TIERS, type ConfidenceTier as Tier, type ThemeName } from "@/constants/tokens";
+import { CONFIDENCE_TIERS, type ConfidenceTier as Tier, type ThemeName } from "@/constants";
 import type { Entry, Integration } from "@/repositories/types";
 
 const TIERS: Tier[] = ["proven", "estimated", "gap", "personal"];
@@ -17,6 +17,7 @@ const MOCK_DRAFT_ENTRY: Entry = {
   user_id: 1,
   format: "standup",
   content: { yesterday: "Shipped Phase 2 hooks.", today: "Building Phase 3 molecules.", blockers: "" },
+  work_date: "2026-07-08",
   status: "draft",
   created_at: "2026-07-08T09:00:00.000Z",
   approved_at: null,
@@ -27,6 +28,7 @@ const MOCK_APPROVED_ENTRY: Entry = {
   user_id: 1,
   format: "project_log",
   content: { text: "Shipped the molecules layer." },
+  work_date: "2026-07-07",
   status: "approved",
   created_at: "2026-07-07T09:00:00.000Z",
   approved_at: "2026-07-07T16:00:00.000Z",
@@ -153,8 +155,8 @@ export default function StyleGuide() {
             <div>
               <div className="font-mono text-base font-semibold">IBM Plex Mono — proven &amp; factual data</div>
               <p className="mt-1 max-w-prose font-mono text-[13px] text-muted">
-                Timestamps, source chips, eyebrows, and evidence values use this mono to signal "this came from a
-                system, not from prose."
+                Timestamps, source chips, eyebrows, and evidence values use this mono to signal &quot;this came from a
+                system, not from prose.&quot;
               </p>
             </div>
           </div>
