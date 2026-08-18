@@ -9,7 +9,7 @@ import pytest
 
 from app.remote_fetch.base import SourceCredentials, SourceUnavailable
 from app.remote_fetch.constants import MAX_EVENTS_PER_SOURCE
-from app.remote_fetch.sources.calendar import CalendarFetcher
+from app.remote_fetch.sources.calendar import CALENDAR_MAX_PAGES, CalendarFetcher
 from app.remote_fetch.sources.github import GITHUB_MAX_PAGES, GITHUB_PER_PAGE, GitHubFetcher
 from app.remote_fetch.sources.jira import JiraFetcher, _adf_to_plain_text, _issue_description
 from app.remote_fetch.sources.slack import SlackFetcher
@@ -692,6 +692,20 @@ class TestSlackFetcher:
         }
         assert history_channel_ids == {"C1", "D1"}
 
+    def test_conversation_discovery_failure_raises_rather_than_silently_fetching_nothing(self, monkeypatch):
+        """Slack reports a missing-scope token as HTTP 200 + `ok: false`, not an HTTP error --
+        silently treating that as zero conversations would let a scope regression advance the
+        high-water mark past a window that was never actually fetched.
+        """
+
+        monkeypatch.setattr("app.remote_fetch.sources.slack.get_mapped_remote_project_ids", lambda user_id, source: [])
+        client = FakeAsyncClient(
+            get_handler=_by_url_suffix({"/users.conversations": {"ok": False, "error": "missing_scope"}})
+        )
+
+        with pytest.raises(SourceUnavailable, match="missing_scope"):
+            asyncio.run(SlackFetcher().fetch_with_client(client, SLACK_CREDENTIALS, 1, SINCE))
+
     def test_history_pagination_follows_the_cursor_until_exhausted(self, monkeypatch):
         monkeypatch.setattr(
             "app.remote_fetch.sources.slack.get_mapped_remote_project_ids", lambda user_id, source: ["C123LOGLINE"]
@@ -869,6 +883,23 @@ class TestCalendarFetcher:
 
         assert len(data.events) == MAX_EVENTS_PER_SOURCE
         assert data.fetched_through_override == base + timedelta(minutes=MAX_EVENTS_PER_SOURCE - 1)
+
+    def test_hitting_the_page_cap_holds_the_high_water_mark_to_the_last_raw_event_seen(self):
+        """A raw fetch cut off by CALENDAR_MAX_PAGES is known-incomplete -- advancing the watermark
+        to `now` would skip whatever came after the last page actually requested, even though far
+        fewer than MAX_EVENTS_PER_SOURCE events survived filtering.
+        """
+
+        base = datetime(2026, 7, 1, 9, 0, tzinfo=timezone.utc)
+        event = {"id": "evt-repeat", "summary": "Standup", "start": {"dateTime": base.isoformat()}}
+        client = FakeAsyncClient(
+            get_handler=lambda url, **kwargs: _response({"items": [event], "nextPageToken": "always-more"})
+        )
+
+        data = asyncio.run(CalendarFetcher().fetch_with_client(client, CREDENTIALS, 1, SINCE))
+
+        assert len(client.calls) == CALENDAR_MAX_PAGES
+        assert data.fetched_through_override == base
 
 
 # --- Cross-source -----------------------------------------------------------

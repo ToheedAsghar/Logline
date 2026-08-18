@@ -113,15 +113,13 @@ class CalendarFetcher(SourceFetcher):
         params: dict[str, Any] = {
             "timeMax": to_utc_rfc3339(now),
             "maxResults": CALENDAR_LIST_EVENTS_PAGE_SIZE,
-            # Google's default groups a recurring series into one master row; expanding to one row
-            # per occurrence matches what this app actually needs (each occurrence is its own piece
-            # of evidence) and is required for timeMin/timeMax filtering to apply per-occurrence.
             "singleEvents": "true",
+            "orderBy": "startTime",
         }
         if since is not None:
             params["timeMin"] = to_utc_rfc3339(since)
 
-        raw_events = await self._fetch_all_pages(client, headers, params)
+        raw_events, hit_page_cap = await self._fetch_all_pages(client, headers, params)
 
         events: list[FetchedEvent] = []
         for raw_event in raw_events:
@@ -131,19 +129,27 @@ class CalendarFetcher(SourceFetcher):
         events.sort(key=lambda event: event.occurred_at)
 
         override = None
+        if hit_page_cap:
+            override = _event_time(raw_events[-1].get("start")) if raw_events else None
         if len(events) > MAX_EVENTS_PER_SOURCE:
             events = events[:MAX_EVENTS_PER_SOURCE]
-            override = events[-1].occurred_at
+            trimmed_override = events[-1].occurred_at
+            override = trimmed_override if override is None else min(override, trimmed_override)
 
         return SourceFetchData(events=events, fetched_through_override=override)
 
     async def _fetch_all_pages(
         self, client: httpx.AsyncClient, headers: dict[str, str], params: dict[str, Any]
-    ) -> list[dict[str, Any]]:
-        """Follow `nextPageToken` up to CALENDAR_MAX_PAGES, returning every raw event dict seen."""
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Follow `nextPageToken` up to CALENDAR_MAX_PAGES.
+
+        Returns every raw event dict seen and whether the page cap was hit before pagination
+        naturally exhausted (i.e. the raw fetch is known-incomplete).
+        """
 
         raw_events: list[dict[str, Any]] = []
         page_token: Optional[str] = None
+        hit_page_cap = False
 
         for _ in range(CALENDAR_MAX_PAGES):
             page_params = dict(params)
@@ -163,9 +169,10 @@ class CalendarFetcher(SourceFetcher):
             if not page_token:
                 break
         else:
+            hit_page_cap = True
             logger.warning("calendar_hit_max_pages_without_exhausting_results", extra={"max_pages": CALENDAR_MAX_PAGES})
 
-        return raw_events
+        return raw_events, hit_page_cap
 
 
 def _events_from_payload(payload: Any) -> list[dict[str, Any]]:

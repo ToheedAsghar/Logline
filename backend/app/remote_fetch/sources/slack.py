@@ -106,6 +106,12 @@ async def iter_all_slack_conversations(
     Live testing against a real ~1000-channel workspace hit Slack's rate limit doing exactly that.
     `users.conversations` takes the same `types` filter but is pre-scoped to membership, so every
     yielded item is already readable -- no separate `is_member` check needed.
+
+    Raises SourceUnavailable on `ok: false` rather than returning nothing -- Slack reports a
+    missing-scope token as HTTP 200 with `ok: false`, and treating that the same as "this user is
+    in zero conversations" would let `fetch_with_client` return an empty result the orchestrator
+    can't distinguish from a real empty account, advancing the high-water mark past a window that
+    was never actually fetched.
     """
 
     cursor = None
@@ -118,11 +124,8 @@ async def iter_all_slack_conversations(
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict) or not payload.get("ok"):
-            logger.warning(
-                "slack_users_conversations_failed",
-                extra={"error": payload.get("error") if isinstance(payload, dict) else None},
-            )
-            return
+            error = payload.get("error") if isinstance(payload, dict) else None
+            raise SourceUnavailable(f"slack users.conversations failed: {error}")
         for channel in payload.get("channels", []):
             yield channel
         cursor = (payload.get("response_metadata") or {}).get("next_cursor")
