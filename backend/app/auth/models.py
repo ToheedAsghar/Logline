@@ -20,9 +20,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     integrations = relationship("Integration", back_populates="user", cascade="all, delete-orphan")
-    events = relationship("Event", back_populates="user", cascade="all, delete-orphan")
     entries = relationship("Entry", back_populates="user", cascade="all, delete-orphan")
-    self_captures = relationship("SelfCapture", back_populates="user", cascade="all, delete-orphan")
     email_verification_tokens = relationship(
         "EmailVerificationToken", back_populates="user", cascade="all, delete-orphan"
     )

@@ -14,6 +14,9 @@ MINUTES_PER_DAY = 24 * 60
 
 MAX_CONCURRENT_DESCRIPTION_REQUESTS = 8
 MAX_RANGE_DAYS = 31
+ERROR_DATE_RANGE_ORDER = "date_range_start must be on or before date_range_end"
+ERROR_DATE_RANGE_MAX_SPAN = "date range cannot span more than {max_days} days"
+RECONCILIATION_VERIFICATION_FAILED_MESSAGE = "Draft failed verification against its evidence and was not saved."
 
 TOPIC_ENTRY_MINUTES_FLOOR = 10
 FLOORED_TOPIC_KINDS = frozenset({"pr", "branch"})

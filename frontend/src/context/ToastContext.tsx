@@ -46,14 +46,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const toastObj = useMemo(() => ({
-    success: (message: string) => addToast(message, "success"),
-    error: (message: string) => addToast(message, "error"),
-    info: (message: string) => addToast(message, "info"),
-  }), [addToast]);
+  const value = useMemo(
+    () => ({
+      toast: {
+        success: (message: string) => addToast(message, "success"),
+        error: (message: string) => addToast(message, "error"),
+        info: (message: string) => addToast(message, "info"),
+      },
+    }),
+    [addToast]
+  );
 
   return (
-    <ToastContext.Provider value={{ toast: toastObj }}>
+    <ToastContext.Provider value={value}>
       {children}
       {createPortal(
         <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2">

@@ -240,27 +240,18 @@ def _merge_contiguous(rows: list[RawSessionRow]) -> list[LocalActivityBlock]:
     return blocks
 
 
-def _merge_named_meetings_within_day(rows: list[RawSessionRow], tz: tzinfo) -> list[LocalActivityBlock]:
-    """Merge named meetings within a day, breaking blocks when the gap exceeds the merge threshold."""
+def _merge_unlimited_within_day(rows: list[RawSessionRow], tz: tzinfo) -> list[LocalActivityBlock]:
+    """Merge each named meeting into one block per local row start-date, regardless of intervening activity."""
     rows_by_day: dict[date, list[RawSessionRow]] = {}
     for row in rows:
         rows_by_day.setdefault(local_date(row.start_time, tz), []).append(row)
 
     blocks: list[LocalActivityBlock] = []
     for day_rows in rows_by_day.values():
-        day_rows = sorted(day_rows, key=lambda r: r.start_time)
         open_block = _open_block(day_rows[0])
         for row in day_rows[1:]:
-            if row.start_time - open_block.end < MERGE_GAP_THRESHOLD:
-                _extend_block(open_block, row)
-            else:
-                blocks.append(
-                    _finalize_block(None, SessionCategory.meeting, open_block, meeting_name=day_rows[0].meeting_name)
-                )
-                open_block = _open_block(row)
-        blocks.append(
-            _finalize_block(None, SessionCategory.meeting, open_block, meeting_name=day_rows[0].meeting_name)
-        )
+            _extend_block(open_block, row)
+        blocks.append(_finalize_block(None, SessionCategory.meeting, open_block, meeting_name=day_rows[0].meeting_name))
     return blocks
 
 
@@ -304,7 +295,7 @@ def aggregate_local_activity(
 
     blocks: list[LocalActivityBlock] = []
     for meeting_rows in named_meeting_rows_by_name.values():
-        blocks.extend(_merge_named_meetings_within_day(meeting_rows, tz))
+        blocks.extend(_merge_unlimited_within_day(meeting_rows, tz))
 
     blocks.extend(_merge_contiguous([row for row in rows if row.end_time > row.start_time]))
 
