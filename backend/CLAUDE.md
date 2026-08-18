@@ -35,7 +35,7 @@ duration directly.
 | Stage | Module | Status on `main` |
 | --- | --- | --- |
 | 1. Local aggregation (raw tracker activity → blocks, pure function) | `app/local_activity/` | Built, tested (`tests/test_local_activity_aggregation.py`) |
-| 2. Remote fetch (code decides what to fetch, never the LLM) | `app/remote_fetch/` | Built, tested (`tests/test_remote_fetch_sources.py`, `tests/test_remote_fetch_orchestrator.py`). Per-source fetchers live under `app/remote_fetch/mcp/`; `orchestrator.py` drives them and advances the `remote_fetch_state` high-water marks |
+| 2. Remote fetch (code decides what to fetch, never the LLM) | `app/remote_fetch/` | Built, tested (`tests/test_remote_fetch_sources.py`, `tests/test_remote_fetch_orchestrator.py`). Per-source fetchers live under `app/remote_fetch/sources/`, calling each provider's REST API directly with per-user OAuth tokens (no MCP in the live fetch path); `orchestrator.py` drives them and advances the `remote_fetch_state` high-water marks |
 | 3. Deterministic matching (exact project + time-window rules, no automatic tiebreaking) | `app/matching/` | Built, tested (`tests/test_matching_resolution.py`) |
 | 4. Reminder generation (unmatched remote events, never auto-assigned durations) | `app/reminders/` | Built, tested |
 | 5. AI reconciliation (structured draft; AI allocates minutes against real measured blocks, never states bare durations) | `app/agent/reconciliation/` | **Schemas only** (`WorkLogDraft`, `DraftEntry`, `DraftReminder`, `BlockAllocation` in `schemas.py`, tested in `tests/test_reconciliation_schema*.py`). No service calls `run_structured` with them yet — nothing produces a `WorkLogDraft` in a real run. |
@@ -67,8 +67,8 @@ The `confidence` principle above still applies universally regardless of table s
 information to a human should carry a proven/estimated/gap signal, whatever the underlying table looks like.
 
 All of the above constrains *storage*, not file layout. One fetcher module per source is fine — each source's real
-API genuinely differs — even when those fetchers all write into one shared table. `app/remote_fetch/mcp/` is the
-worked example: four per-source fetchers (`github.py`, `jira.py`, `slack.py`, `calendar.py`) all persisting into
+API genuinely differs — even when those fetchers all write into one shared table. `app/remote_fetch/sources/` is
+the worked example: four per-source fetchers (`github.py`, `jira.py`, `slack.py`, `calendar.py`) all persisting into
 the single `remote_events` table.
 
 ### `metadata` is a reserved name on SQLAlchemy's declarative base
