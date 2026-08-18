@@ -25,12 +25,20 @@ run-positive:
 	@sleep 3
 	@cat /tmp/spike.log || echo "No log found."
 
-run-negative:
-	@echo "Running negative control (launchctl submit) to exclude Terminal ancestry..."
+run-headless:
+	@echo "Running headless positive control (launchctl submit on SpikeApp) to prove detached grant..."
 	rm -f /tmp/spike.log
-	# Use a unique label for the launchctl job
-	launchctl submit -l com.logline.spike.negative -- $(PWD)/$(EXECUTABLE)
+	launchctl submit -l com.logline.spike.headless -- $(PWD)/$(EXECUTABLE)
+	@echo "Waiting for background process to finish..."
+	@sleep 3
+	launchctl remove com.logline.spike.headless
+	@cat /tmp/spike.log || echo "No log found."
+
+run-negative:
+	@echo "Running true cross-identity negative control (launchctl submit on bare python)..."
+	rm -f /tmp/true_negative.log
+	launchctl submit -l com.logline.spike.negative -- /Users/toheed.asghar/Documents/projects/logline/.worktrees/tracker-desktop-app/tracker/test_env/bin/python -c "import sys; sys.path.append('/Users/toheed.asghar/Documents/projects/logline/.worktrees/tracker-desktop-app'); import json, tracker.ax_probe; open('/tmp/true_negative.log', 'w').write(json.dumps(tracker.ax_probe.probe()) + '\n')"
 	@echo "Waiting for background process to finish..."
 	@sleep 3
 	launchctl remove com.logline.spike.negative
-	@cat /tmp/spike.log || echo "No log found."
+	@cat /tmp/true_negative.log || echo "No log found."

@@ -40,11 +40,21 @@ After the permission was granted, the app was **killed, rebuilt from scratch, an
 }
 ```
 
-A subsequent negative control (`launchctl submit`) also succeeded with `trusted: true` and fetched a window title, proving the grant belongs to `Spike` directly and is not leaking through Terminal ancestry.
+A subsequent test (`make run-headless`) executed the `SpikeApp` binary via `launchctl submit`. This succeeded with `trusted: true` and fetched a window title, proving the grant belongs to `Spike` directly and functions even when running completely detached in the background without UI ancestry.
 
-## Final Verdict
+## 3. True Cross-Identity Negative Control
 
-The two-process architecture (Swift UI host + Python worker child) is a **GO**. macOS handles the permissions boundary exactly as needed for a distributable application, provided the app is signed with a certificate rather than ad-hoc.
+To definitively rule out the possibility that the Python executable itself somehow gained blanket permissions (or leaked them globally), a true cross-identity negative control was executed (`make run-negative`). 
+
+This test launched the bare Python executable (`test_env/bin/python`) via `launchctl submit`, completely severed from `SpikeApp`'s process tree and any terminal ancestry.
+
+- **Output:** The bare Python process correctly failed to access accessibility features, returning `trusted: false` and `kAXErrorAPIDisabled`:
+
+```json
+{"trusted": false, "frontmost_app": "Code", "frontmost_bundle_id": "com.microsoft.VSCode", "frontmost_pid": 6703, "ax_error": -25211, "ax_error_name": "kAXErrorAPIDisabled", "window_title": null}
+```
+
+**Conclusion:** The accessibility grant is strictly bounded to the `SpikeApp` certificate identity. The Python executable has no intrinsic permissions of its own and only gains functional access when launched as a legitimate child of the authorized `SpikeApp` host.
 
 ***
 
