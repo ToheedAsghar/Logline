@@ -7,10 +7,9 @@ from pydantic import ValidationError
 
 from app.agent.reconciliation.schemas import (
     DESCRIPTION_MAX_LENGTH, MINUTES_PER_DAY, REMINDER_NOTE_MAX_LENGTH, REVIEW_REASON_MAX_LENGTH, BlockAllocation,
-    DraftEntry, DraftReminder, EntryTag, WorkLogDraft, find_duration_language,
+    DraftEntry, DraftReminder, EntryTag, WorkLogDraft, find_duration_language, truncate_description,
 )
 
-# Canonical tag set literal used to verify enum completeness independently.
 CANONICAL_TAGS = {
     "Training/Learning", "Coding", "R&D", "Team Engagement", "Testing", "Meeting", "Designing",
     "Code Review", "Debugging", "Documentation", "Backlog grooming", "Technical Project Setup",
@@ -45,7 +44,15 @@ def valid_reminder(**overrides) -> dict:
     return {**base, **overrides}
 
 
-# --- EntryTag ------------------------------------------------------------
+def test_truncate_description_preserves_complete_words_when_possible():
+    text = "complete " * 40
+
+    truncated = truncate_description(text)
+
+    assert len(truncated) <= DESCRIPTION_MAX_LENGTH
+    assert truncated.endswith("...")
+    assert set(truncated.removesuffix("...").split()) == {"complete"}
+
 
 def test_all_36_tags_present_and_exact():
     values = [tag.value for tag in EntryTag]
@@ -74,8 +81,6 @@ def test_unknown_tag_is_rejected():
     with pytest.raises(ValidationError):
         DraftEntry.model_validate(valid_entry(tag="Napping"))
 
-
-# --- BlockAllocation: 0 < minutes <= MINUTES_PER_DAY ----------------------
 
 @pytest.mark.parametrize("minutes", [0, -1, -60])
 def test_minutes_must_be_positive(minutes):
@@ -119,8 +124,6 @@ def test_allocation_forbids_a_bare_hours_field():
         BlockAllocation.model_validate({"block_id": 1, "minutes": 30, "hours": 4})
 
 
-# --- BlockAllocation.block_id > 0 -----------------------------------------
-
 @pytest.mark.parametrize("block_id", [0, -1, -99])
 def test_block_id_must_be_positive(block_id):
     """Verify that block_id is rejected at or below zero — real measured block IDs start at 1."""
@@ -142,8 +145,6 @@ def test_nonpositive_block_id_rejected_in_residual():
     with pytest.raises(ValidationError):
         WorkLogDraft.model_validate({"residual_unassigned_minutes": [{"block_id": -3, "minutes": 30}]})
 
-
-# --- No block may be charged twice in one list ----------------------------
 
 def test_duplicate_block_id_rejected_within_an_entry():
     """Verify that charging one block twice in a single entry is rejected as double-counted time."""
@@ -190,8 +191,6 @@ def test_same_block_may_appear_in_two_different_entries():
     assert [a.block_id for e in draft.entries for a in e.allocations] == [1, 1]
 
 
-# --- DraftEntry.allocations min_length=1 ---------------------------------
-
 def test_empty_allocations_rejected():
     with pytest.raises(ValidationError) as exc:
         DraftEntry.model_validate(valid_entry(allocations=[]))
@@ -208,8 +207,6 @@ def test_zero_minute_allocation_rejected_inside_an_entry():
         DraftEntry.model_validate(valid_entry(allocations=[{"block_id": 7, "minutes": 0}]))
 
 
-# --- DraftEntry.description max_length ------------------------------------
-
 def test_description_at_limit_accepted():
     entry = DraftEntry.model_validate(valid_entry(description="x" * DESCRIPTION_MAX_LENGTH))
     assert len(entry.description) == DESCRIPTION_MAX_LENGTH
@@ -220,8 +217,6 @@ def test_description_over_limit_rejected():
         DraftEntry.model_validate(valid_entry(description="x" * (DESCRIPTION_MAX_LENGTH + 1)))
     assert "description" in str(exc.value)
 
-
-# --- source_remote_event_ids may legitimately be empty --------------------
 
 def test_entry_allows_zero_remote_events():
     """Verify that entries accept empty remote event lists for local-only work."""
@@ -235,8 +230,6 @@ def test_review_reason_is_optional_but_expressible():
     assert flagged.review_reason == "Two projects share this block."
 
 
-# --- DraftReminder.source literals ----------------------------------------
-
 @pytest.mark.parametrize("source", ["github", "jira", "slack", "calendar"])
 def test_valid_reminder_sources_accepted(source):
     assert DraftReminder.model_validate(valid_reminder(source=source)).source == source
@@ -248,8 +241,6 @@ def test_invalid_reminder_sources_rejected(source):
         DraftReminder.model_validate(valid_reminder(source=source))
     assert "source" in str(exc.value)
 
-
-# --- duration-language validator: REJECT direction ------------------------
 
 DURATION_BEARING_NOTES = [
     "Did you work 2 hours on the auth refactor?",
@@ -265,12 +256,10 @@ DURATION_BEARING_NOTES = [
     "The review took roughly the same as yesterday.",
     "Were you in meetings all day Tuesday?",
     "Most of the morning went to code review, right?",
-    # Hyphenated separator between the number and the unit.
     "Was that the 2-hour architecture sync?",
     "Did the 90-minute workshop cover Logline?",
     "Was this the 30-min triage call?",
     "A 45-min pairing session on the parser?",
-    # Number words above ten, including hyphenated compounds.
     "Was it eleven minutes of CI babysitting?",
     "Did fifteen minutes go to the flaky test?",
     "Was twenty minutes of that the standup?",
@@ -278,11 +267,9 @@ DURATION_BEARING_NOTES = [
     "Was ninety minutes of this the migration?",
     "Did twenty-five minutes go to Slack?",
     "Was seventy minutes of that debugging?",
-    # Bare interrogative duration requests, with no unit of their own.
     "How long was the incident call?",
     "How long did the deploy take?",
     "How much time went to the Atlas migration?",
-    # Whole-period claims beyond "all day".
     "Were you in workshops all morning?",
     "Did the entire afternoon go to interviews?",
     "Did the whole evening go to the release?",
@@ -290,7 +277,6 @@ DURATION_BEARING_NOTES = [
     "Was half a day on the migration?",
     "Did a full day go to onboarding?",
     "Was half the morning on code review?",
-    # Day as a unit.
     "Did 3 days go to the Atlas rollout?",
     "Was that two days of migration work?",
 ]
@@ -304,8 +290,6 @@ def test_duration_bearing_notes_rejected(note):
     assert "duration" in str(exc.value)
 
 
-# --- duration-language validator: ACCEPT direction ------------------------
-
 LEGITIMATE_NOTES = [
     "PR #123 needs review — was that Logline work?",
     "Ticket ABC-4821 was moved to Done. Which project?",
@@ -317,7 +301,6 @@ LEGITIMATE_NOTES = [
     "Commit a1b2c3d landed on main — which project?",
     "Was the 9:00 to 9:30 slot on your calendar work?",
     "Sprint 12 planning — was that Logline or Atlas?",
-    # "spend" as a noun — a real term under the Marketing Campaigns and Account Management tags.
     "Was the ad spend review Marketing Campaigns work?",
     "Which client does the marketing spend belong to?",
     "Was this media spend work or Account Management?",
@@ -332,8 +315,6 @@ def test_legitimate_notes_accepted(note):
     assert reminder.note == note
 
 
-# --- "spend" the noun vs "spend" the verb ---------------------------------
-
 @pytest.mark.parametrize(
     "note",
     [
@@ -347,8 +328,6 @@ def test_verbal_spend_still_rejected(note):
     """Verify the noun-'spend' fix did not stop the detector catching genuinely verbal uses."""
     assert find_duration_language(note) is not None
 
-
-# --- clock times vs durations ---------------------------------------------
 
 @pytest.mark.parametrize("note", ["Was your 14:30 standup work-related?", "Was the 9:00 to 9:30 slot work?"])
 def test_colon_clock_times_are_not_duration_language(note):
@@ -371,8 +350,6 @@ def test_empty_note_rejected():
     with pytest.raises(ValidationError):
         DraftReminder.model_validate(valid_reminder(note=""))
 
-
-# --- WorkLogDraft round-trip ----------------------------------------------
 
 def build_full_draft() -> WorkLogDraft:
     return WorkLogDraft(
@@ -425,8 +402,6 @@ def test_residual_minutes_also_reject_zero():
         WorkLogDraft.model_validate({"residual_unassigned_minutes": [{"block_id": 9, "minutes": 0}]})
 
 
-# --- extra="forbid" holds on every model ----------------------------------
-
 @pytest.mark.parametrize(
     ("model", "payload", "smuggled"),
     [
@@ -448,8 +423,6 @@ def test_unmeasured_time_fields_cannot_be_smuggled_in(model, payload, smuggled):
         model.model_validate({**payload, smuggled: 4})
     assert smuggled in str(exc.value)
 
-
-# --- free-text fields are bounded at both ends ----------------------------
 
 @pytest.mark.parametrize("field", ["description", "project"])
 def test_entry_text_fields_reject_empty_strings(field):

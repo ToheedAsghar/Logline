@@ -44,6 +44,10 @@ export function me(): Promise<UserResponse> {
   return apiRequest<UserResponse>("/auth/me");
 }
 
+export function setTimezone(timezone: string): Promise<UserResponse> {
+  return apiRequest<UserResponse>("/auth/me/timezone", { method: "PATCH", body: { timezone } });
+}
+
 export function forgotPassword(payload: ForgotPasswordPayload): Promise<MessageResponse> {
   return apiRequest<MessageResponse>("/auth/forgot-password", { method: "POST", body: payload, skipAuth: true });
 }

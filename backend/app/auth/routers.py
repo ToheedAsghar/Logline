@@ -20,7 +20,7 @@ from app.auth.google_oauth import GoogleAuthError
 from app.auth.models import EmailVerificationToken, PasswordResetToken, User
 from app.auth.schemas import (
     ForgotPasswordRequest, MessageResponse, OAuthExchangeRequest, ResendVerificationRequest, ResetPasswordRequest,
-    Token, UserLogin, UserResponse, UserSignup,
+    Token, UserLogin, UserResponse, UserSignup, UserTimezoneUpdate,
 )
 from app.auth.security import (
     EmailVerificationTokenError, PasswordResetTokenError, create_access_token, create_email_verification_token,
@@ -117,6 +117,17 @@ def _under_cooldown(last_token, cooldown_seconds: int) -> bool:
 
 @router.get("/me", response_model=UserResponse)
 def me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@router.patch("/me/timezone", response_model=UserResponse)
+def set_timezone(
+    payload: UserTimezoneUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    """Set the current user's IANA timezone, which decides the day boundaries reconciliation reads."""
+    current_user.timezone = payload.timezone
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 

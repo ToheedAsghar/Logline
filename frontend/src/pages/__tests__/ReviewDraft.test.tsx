@@ -34,6 +34,7 @@ const mockDraft: WorkLogDraft = {
     },
   ],
   residual_unassigned_minutes: [{ block_id: 2, minutes: 15 }],
+  tracked_wall_clock_minutes: 75,
 };
 
 const mockVerification: ReconciliationResult["verification"] = {
@@ -108,6 +109,32 @@ describe("ReviewDraft Component", () => {
     expect(screen.getByText(/Review draft/i)).toBeInTheDocument();
     expect(screen.getByText(/No draft loaded/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Regenerate/i })).toBeInTheDocument();
+  });
+
+  it("shows tracked and allocated as separate header figures", async () => {
+    mockGenerateWithDraft();
+
+    render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: /Regenerate/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("TRACKED")).toBeInTheDocument();
+    });
+    expect(screen.getByText("ALLOCATED")).toBeInTheDocument();
+  });
+
+  it("reports allocated time exceeding tracked time rather than collapsing them into one number", async () => {
+    mockGenerateWithDraft();
+
+    render(<MemoryRouter><ReviewDraft /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: /Regenerate/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("TRACKED")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("TRACKED").nextElementSibling).toHaveTextContent(formatMinutes(75));
+    expect(screen.getByText("ALLOCATED").nextElementSibling).toHaveTextContent(formatMinutes(90));
   });
 
   it("edits entries in local React state only without calling API prematurely", async () => {

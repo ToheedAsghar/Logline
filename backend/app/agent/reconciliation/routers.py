@@ -1,22 +1,8 @@
-"""REST surface for the Stage 4-6 reconciliation pipeline.
-
-Two endpoints, deliberately split around the human:
-
-- `POST /reconciliation/generate` gathers evidence, runs the model, verifies the draft, and returns it.
-  It writes nothing. A draft is a proposal, and proposals do not belong in the entry history.
-- `POST /reconciliation/approve` takes the draft a human actually approved and turns it into entries.
-
-`approve` re-derives the evidence from the database and re-runs `verify_draft` against the submitted
-draft rather than trusting the caller. The client is free to edit a draft before approving it, so the
-draft arriving here is not the one `generate` returned and its verification result cannot be carried
-over from that call. Re-verifying is what keeps an edited draft from charging more minutes than were
-measured. Each approved entry gets a `human_approved` version snapshot in the same transaction, so
-the approval is atomic across the whole draft -- a mid-loop failure rolls back every entry, not just
-the one that failed.
-"""
+"""Expose read-only draft generation and verified human approval for reconciliation."""
 
 import logging
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, model_validator
@@ -24,16 +10,21 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.agent.llm import get_llm_provider
+from app.agent.reconciliation.constants import (
+    ERROR_DATE_RANGE_MAX_SPAN, ERROR_DATE_RANGE_ORDER, MAX_RANGE_DAYS, RECONCILIATION_VERIFICATION_FAILED_MESSAGE,
+)
 from app.agent.reconciliation.evidence import build_evidence
 from app.agent.reconciliation.reconciler import ReconciliationResult, reconcile_evidence
 from app.agent.reconciliation.schemas import WorkLogDraft
 from app.agent.reconciliation.verifier import verify_draft
 from app.auth.deps import get_current_user
 from app.auth.models import User
+from app.core.timezones import resolve_timezone
 from app.db.session import get_db
 from app.entries.models import Entry, EntryFormat, EntryStatus, EntryVersion, EntryVersionSource
 from app.entries.schemas import EntryResponse, normalize_entry_content
-from app.local_activity.aggregation import RawSessionRow, aggregate_local_activity
+from app.local_activity.aggregation import RawSessionRow, aggregate_local_activity, split_blocks_at_local_midnight
+from app.local_activity.classification import SessionCategory, classify_session, parse_context_detail
 from app.matching.matcher import MatchResult, RemoteEventData, ResolvedLocalBlock, match_local_blocks_to_remote_events
 from app.matching.models import RemoteEvent
 from app.matching.resolution import resolve_project_identities
@@ -43,10 +34,36 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reconciliation", tags=["reconciliation"])
 
-MAX_RANGE_DAYS = 31
-ERROR_DATE_RANGE_ORDER = "date_range_start must be on or before date_range_end"
-ERROR_DATE_RANGE_MAX_SPAN = "date range cannot span more than {max_days} days"
-RECONCILIATION_VERIFICATION_FAILED_MESSAGE = "Draft failed verification against its evidence and was not saved."
+
+def _context_string(detail: dict, key: str) -> str | None:
+    value = detail.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _resolve_user_timezone(user: User) -> ZoneInfo:
+    """Return the user's IANA timezone, which decides which local day each block belongs to.
+
+    Rejects an unset or unrecognised value rather than falling back to UTC, because a silent UTC fallback is the
+    misattribution this resolution exists to prevent.
+    """
+    if not user.timezone:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "No timezone is set for this account, so day boundaries cannot be determined. "
+                "Set an IANA timezone name (for example 'Asia/Karachi') before reconciling."
+            ),
+        )
+    try:
+        return resolve_timezone(user.timezone)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"The timezone set for this account ({user.timezone!r}) is not a recognised IANA timezone name. "
+                "Set a valid name (for example 'Asia/Karachi') before reconciling."
+            ),
+        )
 
 
 class ReconciliationDateRange(BaseModel):
@@ -63,30 +80,26 @@ class ReconciliationDateRange(BaseModel):
             raise ValueError(ERROR_DATE_RANGE_MAX_SPAN.format(max_days=MAX_RANGE_DAYS))
         return self
 
-    def as_utc_bounds(self) -> tuple[datetime, datetime]:
+    def as_utc_bounds(self, tz: tzinfo) -> tuple[datetime, datetime]:
+        """Return the half-open UTC span `[start, end)` covering this local-day range in `tz`."""
         return (
-            datetime.combine(self.date_range_start, time.min, tzinfo=timezone.utc),
-            datetime.combine(self.date_range_end, time.max, tzinfo=timezone.utc),
+            datetime.combine(self.date_range_start, time.min, tzinfo=tz).astimezone(timezone.utc),
+            datetime.combine(self.date_range_end + timedelta(days=1), time.min, tzinfo=tz).astimezone(timezone.utc),
         )
 
 
 class ReconciliationApproveRequest(ReconciliationDateRange):
-    """A human-approved draft, plus the range it covers so its evidence can be re-derived.
-
-    The range is required rather than inferred from the draft's entry dates: verification checks that
-    every *measured* block is accounted for, including blocks the draft assigned to nothing, and those
-    blocks leave no trace in the draft to infer a range from.
-    """
+    """Contain a human-approved draft and the range required to re-derive its evidence."""
 
     draft: WorkLogDraft
 
 
-def _gather_evidence(db: Session, user_id: int, start_dt: datetime, end_dt: datetime) -> MatchResult:
-    """Run Stages 3-4 for one user and range: read stored evidence, then match local work to remote events.
+def _gather_evidence(
+    db: Session, user_id: int, start_dt: datetime, end_dt: datetime, tz: tzinfo
+) -> MatchResult:
+    """Classify and aggregate sessions, exclude Idle blocks, split them on `tz` midnights, and match remote events.
 
-    Reads only. Remote events are whatever `remote_events` already holds -- populating that table is the
-    fetch pipeline's job, not this endpoint's, so reconciliation reports on the evidence that exists
-    rather than silently depending on a live fetch succeeding.
+    `start_dt`/`end_dt` bound a half-open UTC span.
     """
     remote_events = [
         RemoteEventData(
@@ -102,7 +115,7 @@ def _gather_evidence(db: Session, user_id: int, start_dt: datetime, end_dt: date
             .filter(
                 RemoteEvent.user_id == user_id,
                 RemoteEvent.occurred_at >= start_dt,
-                RemoteEvent.occurred_at <= end_dt,
+                RemoteEvent.occurred_at < end_dt,
             )
             .order_by(RemoteEvent.occurred_at.asc(), RemoteEvent.external_id.asc())
             .all()
@@ -116,27 +129,54 @@ def _gather_evidence(db: Session, user_id: int, start_dt: datetime, end_dt: date
             LocalSession.started_at < end_dt,
             LocalSession.ended_at > start_dt,
             LocalSession.is_idle.is_(False),
-            LocalSession.project_path.isnot(None),
         )
-        .order_by(LocalSession.started_at.asc(), LocalSession.id.asc())
+        .order_by(LocalSession.started_at.asc(), LocalSession.ended_at.asc(), LocalSession.id.asc())
         .all()
     )
 
-    blocks = aggregate_local_activity(
-        [
+    raw_rows = []
+    for session in sessions:
+        context_detail = parse_context_detail(session.context_detail)
+        classification = classify_session(
+            bundle_id=session.bundle_id,
+            window_title=session.window_title,
+            project_path=session.project_path,
+            context_detail=context_detail,
+        )
+        raw_rows.append(
             RawSessionRow(
                 project=session.project_path,
                 app=session.app_name,
                 start_time=session.started_at,
                 end_time=session.ended_at,
+                category=classification.category,
+                session_id=session.id,
+                window_title=session.window_title,
+                meeting_name=classification.meeting_name,
+                branch=_context_string(context_detail, "git_branch")
+                or _context_string(context_detail, "branch"),
+                project_name=_context_string(context_detail, "project_name"),
+                active_file=_context_string(context_detail, "active_file"),
+                tool=_context_string(context_detail, "tool"),
+                url=_context_string(context_detail, "url"),
+                cwd=_context_string(context_detail, "cwd"),
+                browser=_context_string(context_detail, "browser"),
+                end_reason=session.end_reason,
+                bundle_id=session.bundle_id,
             )
-            for session in sessions
-        ]
+        )
+
+    blocks = split_blocks_at_local_midnight(
+        [block for block in aggregate_local_activity(raw_rows, tz) if block.category != SessionCategory.idle],
+        tz,
     )
 
     identity_cache: dict[str, dict[str, str | None]] = {}
     resolved = []
     for block in blocks:
+        if block.project is None:
+            resolved.append(ResolvedLocalBlock(block=block, remote_identities={}))
+            continue
         if block.project not in identity_cache:
             identity_cache[block.project] = resolve_project_identities(db, user_id, block.project)
         resolved.append(ResolvedLocalBlock(block=block, remote_identities=identity_cache[block.project]))
@@ -150,31 +190,22 @@ async def generate_reconciliation(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ReconciliationResult:
-    """Reconcile the authenticated user's stored evidence for a date range into a draft work log.
-
-    Returns the draft together with its verification result and persists nothing. A failing
-    verification still returns 200 with the draft -- a flagged draft is exactly what a human needs
-    to see, so withholding it would defeat the point of the review step.
-    """
-    start_dt, end_dt = payload.as_utc_bounds()
-    match_result = await run_in_threadpool(_gather_evidence, db, current_user.id, start_dt, end_dt)
+    """Generate and verify a draft from stored evidence without persisting it."""
+    tz = _resolve_user_timezone(current_user)
+    start_dt, end_dt = payload.as_utc_bounds(tz)
+    match_result = await run_in_threadpool(_gather_evidence, db, current_user.id, start_dt, end_dt, tz)
 
     return await reconcile_evidence(
         matched_groups=match_result.matched,
         unmatched_blocks=match_result.unmatched_blocks,
         unmatched_events=match_result.unmatched_events,
         llm_provider=get_llm_provider(),
-        tz=timezone.utc,
+        tz=tz,
     )
 
 
 def _entry_content(draft_entry) -> dict:
-    """Build the stored content for one approved draft entry.
-
-    Keeps the allocations, tag and cited event ids alongside the prose. Storing only the description
-    would discard the link between an entry and the measured time it was charged against, leaving an
-    approved entry impossible to audit against its evidence afterwards.
-    """
+    """Build persisted approved-entry content with its allocations, tag, and citations."""
     return normalize_entry_content(
         EntryFormat.project_log,
         {
@@ -194,24 +225,18 @@ async def approve_reconciliation(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[Entry]:
-    """Persist a human-approved draft as approved entries, after re-verifying it against the evidence.
+    """Re-verify and atomically persist a human-approved draft as approved entries.
 
-    Rejects the whole draft with 422 if verification finds any error-severity issue. Partial writes are
-    not offered: the checks are about time conservation across the draft as a whole, so accepting the
-    entries that happen to pass individually could still persist a double-charged block.
-
-    Reminders and `residual_unassigned_minutes` are intentionally not persisted -- a reminder is a
-    question about missing evidence and residual minutes are time explicitly assigned to nothing;
-    neither is a work-log entry.
+    Reminders and residual allocations are deliberately not persisted because they are not work-log entries.
     """
-    start_dt, end_dt = payload.as_utc_bounds()
-    match_result = await run_in_threadpool(_gather_evidence, db, current_user.id, start_dt, end_dt)
+    tz = _resolve_user_timezone(current_user)
+    start_dt, end_dt = payload.as_utc_bounds(tz)
+    match_result = await run_in_threadpool(_gather_evidence, db, current_user.id, start_dt, end_dt, tz)
 
     evidence = build_evidence(
         matched_groups=match_result.matched,
         unmatched_blocks=match_result.unmatched_blocks,
         unmatched_events=match_result.unmatched_events,
-        tz=timezone.utc,
     )
 
     verification = verify_draft(payload.draft, evidence)

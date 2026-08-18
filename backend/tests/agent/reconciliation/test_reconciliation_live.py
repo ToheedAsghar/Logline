@@ -24,6 +24,7 @@ from app.agent.llm.openai_provider import OpenAIProvider
 from app.agent.reconciliation.reconciler import ReconciliationResult, reconcile_evidence
 from app.agent.reconciliation.schemas import EntryTag, WorkLogDraft
 from app.local_activity.aggregation import LocalActivityBlock
+from app.local_activity.classification import SessionCategory
 from app.matching.matcher import MatchedGroup, RemoteEventData
 
 RUN_LIVE = os.environ.get("RUN_LIVE_OPENAI_TESTS") == "1"
@@ -33,11 +34,19 @@ UTC = timezone.utc
 DAY = date(2026, 7, 24)
 
 
-def _block(project: str, start_hour: int, start_minute: int, minutes: int, apps: list[str]) -> LocalActivityBlock:
+def _block(
+    project: str,
+    start_hour: int,
+    start_minute: int,
+    minutes: int,
+    apps: list[str],
+    category: SessionCategory = SessionCategory.coding,
+) -> LocalActivityBlock:
     start = datetime(2026, 7, 24, start_hour, start_minute, tzinfo=UTC)
     duration = timedelta(minutes=minutes)
     return LocalActivityBlock(
-        project=project, start_time=start, end_time=start + duration, duration=duration, apps=apps
+        project=project, start_time=start, end_time=start + duration, duration=duration, apps=apps,
+        category=category,
     )
 
 

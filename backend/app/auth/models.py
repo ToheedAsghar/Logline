@@ -16,6 +16,7 @@ class User(Base):
     is_active = Column(Boolean, nullable=False, default=False, server_default=expression.false())
     is_sso_user = Column(Boolean, nullable=False, default=False, server_default=expression.false())
     google_user_id = Column(String, nullable=True, unique=True)
+    timezone = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     integrations = relationship("Integration", back_populates="user", cascade="all, delete-orphan")
