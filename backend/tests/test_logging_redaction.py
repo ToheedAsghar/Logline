@@ -18,6 +18,8 @@ A_FAKE_OAUTH_CALLBACK_URL = (
     "http://localhost:8000/auth/google/callback?state=" + A_FAKE_OAUTH_STATE_JWT + "&code=fake_code_value"
 )
 A_FAKE_HOME_PATH = "/Users/fake-user/Documents/projects/logline/backend"
+A_FAKE_LINUX_HOME_PATH = "/home/deploy/projects/logline/backend"
+A_FAKE_ROOT_PATH = "/root/.config/logline/secrets.json"
 FAKE_EVIDENCE = (
     f"context | urls: https://accounts.google.com/...&state={A_FAKE_OAUTH_STATE_JWT} | "
     f"stripe: {A_FAKE_STRIPE_TOKEN} | project: {A_FAKE_HOME_PATH}"
@@ -112,6 +114,22 @@ class TestScanForLeakPatterns:
         assert A_FAKE_HOME_PATH not in result["event"]
         assert "/Users/fake-user" not in result["event"]
 
+    def test_must_catch_linux_and_root_home_paths(self):
+        result_linux = scan_for_leak_patterns(None, "info", {"event": f"project: {A_FAKE_LINUX_HOME_PATH}"})
+        assert A_FAKE_LINUX_HOME_PATH not in result_linux["event"]
+        assert "/home/deploy" not in result_linux["event"]
+        assert REDACTED_MARKER in result_linux["event"]
+
+        result_root = scan_for_leak_patterns(None, "info", {"event": f"config: {A_FAKE_ROOT_PATH}"})
+        assert A_FAKE_ROOT_PATH not in result_root["event"]
+        assert "/root" not in result_root["event"]
+        assert REDACTED_MARKER in result_root["event"]
+
+    def test_must_catch_bare_root_home_path(self):
+        result = scan_for_leak_patterns(None, "info", {"event": "HOME=/root"})
+        assert "/root" not in result["event"]
+        assert REDACTED_MARKER in result["event"]
+
     def test_must_catch_stripe_style_key(self):
         result = scan_for_leak_patterns(
             None, "info", {"event": f"invoice.stripe.com/i/acct_x/{A_FAKE_STRIPE_TOKEN}"}
@@ -132,6 +150,11 @@ class TestScanForLeakPatterns:
 
     def test_must_not_redact_a_normal_github_api_url(self):
         text = "https://api.github.com/repos/ToheedAsghar/logline/pulls/61"
+        result = scan_for_leak_patterns(None, "info", {"event": text})
+        assert result["event"] == text
+
+    def test_must_not_redact_a_web_route_starting_with_home(self):
+        text = "navigated to /homepage"
         result = scan_for_leak_patterns(None, "info", {"event": text})
         assert result["event"] == text
 

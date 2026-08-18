@@ -45,7 +45,7 @@ FORBIDDEN_LOG_FIELDS = frozenset({
 LEAK_PATTERNS: tuple[tuple[str, "re.Pattern[str]"], ...] = (
     ("jwt_shaped_token", re.compile(r"\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b")),
     ("oauth_query_param", re.compile(r"[?&](?:state|code|token|access_token|refresh_token)=[^&\s]+", re.I)),
-    ("local_home_path", re.compile(r"/Users/[^/\s]+(?:/[^\s]*)?")),
+    ("local_home_path", re.compile(r"(?:/(?:Users|home)/[^/\s]+|/root)(?:/[^\s]*)?")),
     ("stripe_style_key", re.compile(r"\b(?:sk|pk|rk|live)_[A-Za-z0-9]{16,}\b")),
 )
 
@@ -143,8 +143,8 @@ def scan_for_leak_patterns(logger: Any, method_name: str, event_dict: dict) -> d
 
     Only redacts the matching part of a string, not the whole message, so normal log text like "could not
     connect to 'github' MCP server" stays readable even when a secret is found nearby. This only catches the
-    four secret shapes in LEAK_PATTERNS (JWT-shaped tokens, OAuth query params, local home paths, Stripe-style
-    keys) -- a new secret shape needs a new pattern added here.
+    four secret shapes in LEAK_PATTERNS (JWT-shaped tokens, OAuth query params, filesystem home paths across macOS,
+    Linux, and container roots, Stripe-style keys) -- a new secret shape needs a new pattern added here.
 
     Known gaps, not fixed here: a secret split across two separate log calls won't be caught, since each log
     call is checked on its own; and an object that only reveals a secret through its own `__str__` isn't
