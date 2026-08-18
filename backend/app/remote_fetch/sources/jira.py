@@ -260,8 +260,14 @@ class JiraFetcher(SourceFetcher):
         clauses.append("assignee = currentUser()")
 
         if since is not None:
+            # JQL date/time literals are quoted "yyyy-MM-dd HH:mm" -- no "T" separator, no seconds,
+            # no UTC offset (an ISO 8601 string like isoformat() produces isn't valid JQL syntax
+            # and the search request would fail). Note this is interpreted in the Jira site/user's
+            # configured timezone, not UTC -- converting to UTC first is the closest approximation
+            # available without an extra call to discover that timezone, and is off by the site's
+            # UTC offset until that's resolved.
             since_utc = since.astimezone(timezone.utc)
-            clauses.append(f'updated >= "{since_utc.isoformat(timespec="seconds")}"')
+            clauses.append(f'updated >= "{since_utc.strftime("%Y-%m-%d %H:%M")}"')
 
         return " AND ".join(clauses) + " ORDER BY updated ASC, key ASC"
 

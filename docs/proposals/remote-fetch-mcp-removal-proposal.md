@@ -1,6 +1,8 @@
 # Proposal: Remove MCP from `remote_fetch`, fix the Slack identity gap
 
-Status: **DRAFT — awaiting sign-off. Not implemented.**
+Status: **Implemented.** Part B landed on `toheed/feature/remote-fetch-direct-api` (commits `063e6df`/`9496d13`,
+plus follow-up review-driven fixes), stacked on #72. Kept here as the design record — "Part A" below describes the
+pre-implementation MCP state, not current `main`.
 
 ## Pre-flight note
 

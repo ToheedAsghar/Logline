@@ -297,9 +297,12 @@ class GitHubFetcher(SourceFetcher):
                 truncated = True
 
         override = None
-        if truncated and events:
-            events.sort(key=lambda event: event.occurred_at)
-            override = events[0].occurred_at
+        if truncated:
+            # /commits returns newest-first, so whatever's beyond the page cap is older than
+            # everything fetched here -- advancing the mark to the oldest *fetched* commit would
+            # mark that unfetched older window as covered and lose it permanently, since nothing
+            # ever re-requests it. Holding the mark at `since` retries the whole window next run.
+            override = since
 
         return events, override
 
@@ -341,9 +344,11 @@ class GitHubFetcher(SourceFetcher):
                 truncated = True
 
         override = None
-        if truncated and events:
-            events.sort(key=lambda event: event.occurred_at)
-            override = events[0].occurred_at
+        if truncated:
+            # Same reasoning as _fetch_repo_commits: sorted newest-updated-first, so the page cap
+            # means older PRs went unfetched -- hold the mark at `since` rather than the oldest
+            # *fetched* PR's timestamp, or that unfetched window is lost for good.
+            override = since
         return events, override
 
     async def _search_paginated(
@@ -412,7 +417,9 @@ class GitHubFetcher(SourceFetcher):
             query=f"author:{login}{pr_date_qualifier} type:pr",
             sort="updated",
             list_keys=("items", "pull_requests"),
-            build_event=lambda item: _pull_request_event(item, _repo_from_search_item(item)),
+            build_event=lambda item: _pull_request_event(
+                _normalize_search_issue_as_pull_request(item), _repo_from_search_item(item)
+            ),
         )
 
         events = commit_events + pr_events
@@ -423,6 +430,22 @@ class GitHubFetcher(SourceFetcher):
         override = min((event.occurred_at for event in truncated_events), default=None)
 
         return events, override
+
+
+def _normalize_search_issue_as_pull_request(item: dict[str, Any]) -> dict[str, Any]:
+    """Lift `merged_at` out of the nested `pull_request` sub-object `/search/issues` returns.
+
+    Search results are issue-shaped: a PR's merge state lives at `item["pull_request"]["merged_at"]`,
+    not top-level. Without this, `_pull_request_event` never sees it and reports every
+    discovery-found PR as open/closed instead of merged. `base`/`head` branch refs aren't present
+    in search results at all (that requires the full `/pulls` endpoint per PR, not done here), so
+    `base_branch`/`head_branch` stay unset for discovery-found PRs -- a known, accepted gap.
+    """
+
+    nested = item.get("pull_request")
+    if isinstance(nested, dict) and item.get("merged_at") is None:
+        return {**item, "merged_at": nested.get("merged_at")}
+    return item
 
 
 def _repo_from_search_item(item: dict[str, Any]) -> Optional[str]:

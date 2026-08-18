@@ -178,11 +178,11 @@ detect it.
 
 ## Integrations: per-user OAuth, not shared test credentials
 
-Real per-user OAuth connect flows exist for GitHub, Slack, and Jira — `app/integrations/providers/{github,jira,
-slack}.py` implement the shared `OAuthProvider` interface (`providers/base.py`), wired through
+Real per-user OAuth connect flows exist for GitHub, Slack, Jira, and Calendar — `app/integrations/providers/{github,
+jira,slack,calendar}.py` implement the shared `OAuthProvider` interface (`providers/base.py`), wired through
 `POST /integrations/{source}/connect-link`, `GET /integrations/{source}/connect`, `GET
-/integrations/{source}/callback`, and `DELETE /integrations/{source}` in `app/integrations/routers.py`. Calendar
-has no provider module yet (`is_source_registered` 404s cleanly for it) — still pending, per-user OAuth work. Do
+/integrations/{source}/callback`, and `DELETE /integrations/{source}` in `app/integrations/routers.py`. All four are
+registered in `PROVIDERS` (`providers/__init__.py`), so `is_source_registered` is true for all of them. Do
 not build new integration work against shared/global test credentials in `.env` — that pattern was an early
 bootstrapping shortcut for standalone MCP connectivity testing (see below), not the production design. Route new
 work through the existing per-source OAuth pattern rather than reintroducing a global credential.

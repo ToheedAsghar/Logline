@@ -227,6 +227,36 @@ class TestGitHubFetcher:
 
         assert data.events[0].remote_project_id == "Arbisoft/logline"
 
+    def test_discovered_merged_pr_reports_merged_not_open(self, monkeypatch):
+        """`/search/issues` is issue-shaped: merge state lives at `pull_request.merged_at`, not
+        top-level like the full `/pulls` response `_pull_request_event` was originally written
+        against. Without lifting it, every search-discovered merged PR looks open/closed instead.
+        """
+
+        monkeypatch.setattr("app.remote_fetch.sources.github.get_user_github_repos", lambda user_id: None)
+        search_hit = {
+            "number": 77,
+            "title": "Add Phase 3 remote fetching",
+            "body": "Fills remote_events from all four sources.",
+            "state": "closed",
+            "created_at": "2026-07-18T08:00:00Z",
+            "updated_at": "2026-07-22T16:45:00Z",
+            "repository_url": "https://api.github.com/repos/Arbisoft/logline",
+            "pull_request": {"merged_at": "2026-07-22T16:45:00Z"},
+        }
+        client = FakeAsyncClient(
+            get_handler=_by_url_suffix(
+                {
+                    "/user": {"login": "ToheedAsghar"},
+                    "/search/commits": {"items": []},
+                    "/search/issues": {"items": [search_hit]},
+                }
+            )
+        )
+        data = asyncio.run(GitHubFetcher().fetch_with_client(client, CREDENTIALS, 1, SINCE))
+
+        assert data.events[0].match_keys["state"] == "merged"
+
     def test_no_login_means_no_events_rather_than_an_unscoped_search(self, monkeypatch):
         monkeypatch.setattr("app.remote_fetch.sources.github.get_user_github_repos", lambda user_id: None)
         client = FakeAsyncClient(get_handler=_by_url_suffix({"/user": {}}))
@@ -254,7 +284,10 @@ class TestGitHubFetcher:
 
         commit_calls = [call for call in client.calls if call.url.endswith("/commits")]
         assert len(commit_calls) == GITHUB_MAX_PAGES
-        assert data.fetched_through_override == base
+        # /commits is newest-first, so whatever's beyond the page cap is *older* than every fetched
+        # commit -- the mark must hold at `since`, not advance to the oldest fetched commit, or that
+        # unfetched older window is lost for good.
+        assert data.fetched_through_override == SINCE
 
     def test_a_single_partial_page_of_commits_does_not_hold_the_mark_back(self, monkeypatch):
         monkeypatch.setattr("app.remote_fetch.sources.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
@@ -273,7 +306,9 @@ class TestGitHubFetcher:
 
         pr_calls = [call for call in client.calls if call.url.endswith("/pulls")]
         assert len(pr_calls) == GITHUB_MAX_PAGES
-        assert data.fetched_through_override == base
+        # Same reasoning as the commit page-cap test: sorted newest-updated-first, so the mark must
+        # hold at `since` rather than advance to the oldest fetched PR's timestamp.
+        assert data.fetched_through_override == SINCE
 
     def test_empty_repo_409_is_treated_as_no_commits_not_a_fatal_error(self, monkeypatch):
         monkeypatch.setattr("app.remote_fetch.sources.github.get_user_github_repos", lambda user_id: ["Toheed/logline"])
@@ -419,7 +454,8 @@ class TestJiraFetcher:
         jql = post_call.kwargs["json"]["jql"]
         assert "assignee = currentUser()" in jql
         assert "project in" not in jql
-        assert 'updated >= "2026-07-01T00:00:00+00:00"' in jql
+        # Quoted "yyyy-MM-dd HH:mm" -- JQL date literals don't accept an ISO 8601 "T"/seconds/offset.
+        assert 'updated >= "2026-07-01 00:00"' in jql
         assert jql.endswith("ORDER BY updated ASC, key ASC")
 
     def test_jql_scopes_to_mapped_projects_when_configured(self, monkeypatch):
@@ -642,6 +678,22 @@ class TestSlackFetcher:
 
         assert data.events == []
 
+    def test_token_level_channel_failure_raises_rather_than_looking_like_an_empty_channel(self, monkeypatch):
+        """`not_in_channel` means only this one channel is unreadable -- skip it. `missing_scope`
+        means the token itself is broken, so every remaining channel would fail identically; that
+        must raise SourceUnavailable instead of silently completing as a successful empty fetch.
+        """
+
+        monkeypatch.setattr(
+            "app.remote_fetch.sources.slack.get_mapped_remote_project_ids", lambda user_id, source: ["C_PRIVATE"]
+        )
+        client = FakeAsyncClient(
+            get_handler=_by_url_suffix({"/conversations.history": {"ok": False, "error": "missing_scope"}})
+        )
+
+        with pytest.raises(SourceUnavailable, match="missing_scope"):
+            asyncio.run(SlackFetcher().fetch_with_client(client, SLACK_CREDENTIALS, 1, SINCE))
+
     def test_messages_from_other_users_are_not_recorded(self, monkeypatch):
         other_users_message = {**SLACK_MESSAGE, "user": "U09SOMEONEELSE", "ts": "1784799100.000000"}
         data, _ = self._fetch([SLACK_MESSAGE, other_users_message], monkeypatch)
@@ -743,6 +795,43 @@ class TestSlackFetcher:
         data = asyncio.run(SlackFetcher().fetch_with_client(client, SLACK_CREDENTIALS, 1, SINCE))
 
         assert data.fetched_through_override == datetime.fromtimestamp(1784799000.0, tz=timezone.utc)
+
+    def test_standard_thread_replies_are_fetched_via_conversations_replies(self, monkeypatch):
+        """conversations.history returns thread roots (with a reply_count) but never the replies
+        themselves -- a standard (non-broadcast) reply from the connected user needs a separate
+        conversations.replies call to surface at all.
+        """
+
+        monkeypatch.setattr(
+            "app.remote_fetch.sources.slack.get_mapped_remote_project_ids", lambda user_id, source: ["C123LOGLINE"]
+        )
+        root = {
+            "type": "message",
+            "user": "U09SOMEONEELSE",
+            "text": "Anyone looked at the flaky test yet?",
+            "ts": "1784799000.000000",
+            "reply_count": 1,
+        }
+        reply = {
+            "type": "message",
+            "user": CONNECTED_SLACK_USER_ID,
+            "text": "Yep, tracked it down to a timezone bug",
+            "ts": "1784799500.000000",
+            "thread_ts": "1784799000.000000",
+        }
+
+        def handler(url, **kwargs):
+            if url.endswith("/conversations.history"):
+                return _response({"ok": True, "messages": [root]})
+            if url.endswith("/conversations.replies"):
+                assert kwargs["params"]["ts"] == "1784799000.000000"
+                return _response({"ok": True, "messages": [root, reply]})
+            raise AssertionError(f"unexpected GET call: {url}")
+
+        client = FakeAsyncClient(get_handler=handler)
+        data = asyncio.run(SlackFetcher().fetch_with_client(client, SLACK_CREDENTIALS, 1, SINCE))
+
+        assert [event.external_id for event in data.events] == ["C123LOGLINE:1784799500.000000"]
 
 
 # --- Calendar ---------------------------------------------------------------

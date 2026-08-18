@@ -78,6 +78,12 @@ IGNORED_SLACK_MESSAGE_SUBTYPES = frozenset(
     }
 )
 
+# Errors that mean "this one conversation isn't fetchable" (stale membership, a channel the user
+# left, etc) -- safe to skip and move on to the next conversation. Anything else (missing_scope,
+# invalid_auth, and other token-level failures) means every remaining conversation would fail the
+# same way, so those must raise SourceUnavailable rather than silently look like an empty channel.
+SLACK_PER_CHANNEL_SKIPPABLE_ERRORS = frozenset({"not_in_channel", "channel_not_found", "is_archived"})
+
 
 def _auth_headers(credentials: SourceCredentials) -> dict[str, str]:
     return {"Authorization": f"Bearer {credentials.access_token}"}
@@ -291,14 +297,99 @@ class SlackFetcher(SourceFetcher):
 
             if not isinstance(payload, dict) or not payload.get("ok"):
                 error = payload.get("error") if isinstance(payload, dict) else None
+                if error not in SLACK_PER_CHANNEL_SKIPPABLE_ERRORS:
+                    raise SourceUnavailable(f"slack conversations.history failed for channel_id={channel_id}: {error}")
                 logger.warning("slack_channel_history_read_failed", extra={"channel_id": channel_id, "error": error})
                 return events, oldest_seen
 
+            thread_roots: list[str] = []
             for message in _messages_from_payload(payload):
                 if message.get("subtype") in IGNORED_SLACK_MESSAGE_SUBTYPES:
                     continue
                 ts = first_non_empty_string(message.get("ts"))
                 message_occurred_at = parse_slack_ts(ts) if ts is not None else None
+                if message_occurred_at is None:
+                    continue
+                if oldest_seen is None or message_occurred_at < oldest_seen:
+                    oldest_seen = message_occurred_at
+
+                if isinstance(message.get("reply_count"), int) and message["reply_count"] > 0:
+                    thread_roots.append(ts)
+
+                event = _message_event(message, channel_id, channel_name, connected_user_id)
+                if event is None:
+                    continue
+                if since is not None and event.occurred_at <= since:
+                    continue
+                events.append(event)
+
+            for thread_ts in thread_roots:
+                reply_events, reply_oldest = await self._fetch_thread_replies(
+                    client, headers, channel_id, channel_name, thread_ts, since, connected_user_id
+                )
+                events.extend(reply_events)
+                if reply_oldest is not None and (oldest_seen is None or reply_oldest < oldest_seen):
+                    oldest_seen = reply_oldest
+
+            cursor = (payload.get("response_metadata") or {}).get("next_cursor")
+            if not cursor:
+                return events, None
+
+        logger.warning(
+            "slack_channel_history_page_cap_reached",
+            extra={"channel_id": channel_id, "max_pages": SLACK_HISTORY_MAX_PAGES},
+        )
+        return events, oldest_seen
+
+    async def _fetch_thread_replies(
+        self,
+        client: httpx.AsyncClient,
+        headers: dict[str, str],
+        channel_id: str,
+        channel_name: Optional[str],
+        thread_ts: str,
+        since: Optional[datetime],
+        connected_user_id: str,
+    ) -> tuple[list[FetchedEvent], Optional[datetime]]:
+        """Fetch one thread's replies via `conversations.replies`.
+
+        `conversations.history` returns thread *root* messages (with a `reply_count`) but never the
+        replies themselves -- a standard (non-broadcast) reply from the connected user would
+        otherwise never be seen. Only threads whose root falls within the current fetch window are
+        discovered this way; a reply to an older thread whose root predates `since` won't surface
+        the thread at all, since that root is outside this run's `conversations.history` page. That's
+        a known, accepted gap -- closing it fully would mean fetching full channel history every run.
+        """
+
+        events: list[FetchedEvent] = []
+        oldest_seen: Optional[datetime] = None
+        cursor: Optional[str] = None
+
+        for _ in range(SLACK_HISTORY_MAX_PAGES):
+            params: dict[str, Any] = {"channel": channel_id, "ts": thread_ts, "limit": SLACK_HISTORY_PAGE_LIMIT}
+            if cursor:
+                params["cursor"] = cursor
+
+            response = await _get_with_rate_limit_retry(
+                client, f"{SLACK_API_BASE_URL}/conversations.replies", headers, params
+            )
+            response.raise_for_status()
+            payload = response.json()
+
+            if not isinstance(payload, dict) or not payload.get("ok"):
+                error = payload.get("error") if isinstance(payload, dict) else None
+                if error not in SLACK_PER_CHANNEL_SKIPPABLE_ERRORS:
+                    raise SourceUnavailable(f"slack conversations.replies failed for channel_id={channel_id}: {error}")
+                logger.warning("slack_thread_replies_read_failed", extra={"channel_id": channel_id, "error": error})
+                return events, oldest_seen
+
+            for message in _messages_from_payload(payload):
+                ts = first_non_empty_string(message.get("ts"))
+                if ts is None or ts == thread_ts:
+                    continue  # the root message itself; already processed via conversations.history
+                if message.get("subtype") in IGNORED_SLACK_MESSAGE_SUBTYPES:
+                    continue
+                message_occurred_at = parse_slack_ts(ts)
                 if message_occurred_at is None:
                     continue
                 if oldest_seen is None or message_occurred_at < oldest_seen:
@@ -315,10 +406,6 @@ class SlackFetcher(SourceFetcher):
             if not cursor:
                 return events, None
 
-        logger.warning(
-            "slack_channel_history_page_cap_reached",
-            extra={"channel_id": channel_id, "max_pages": SLACK_HISTORY_MAX_PAGES},
-        )
         return events, oldest_seen
 
 
