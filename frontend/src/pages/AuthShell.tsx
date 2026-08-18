@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { cn } from "@/common/utils";
 import { Button, ConfidenceTier } from "@/atoms";
-import { CONFIDENCE_TIERS, type ConfidenceTier as Tier } from "@/constants/tokens";
+import { CONFIDENCE_TIERS, type ConfidenceTier as Tier } from "@/constants";
 import { getGoogleLoginUrl } from "@/repositories/api/auth";
 
 function GithubIcon() {

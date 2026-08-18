@@ -1,5 +1,3 @@
-import hmac
-
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -9,6 +7,8 @@ from app.auth.constants import TEXT_UNAUTHORIZED
 from app.auth.models import User
 from app.auth.security import decode_access_token
 from app.db.session import get_db
+from app.tracker_sync import crud
+from app.tracker_sync.constants import INVALID_DEVICE_TOKEN_ERROR_MSG
 from app.tracker_sync.models import TrackerDevice
 
 _bearer_scheme = HTTPBearer()
@@ -40,24 +40,18 @@ def get_tracker_device(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
     db: Session = Depends(get_db),
 ) -> TrackerDevice:
-    """Authenticates a local tracker daemon using a long-lived device token. Returns the authenticated TrackerDevice
-    model. Uses constant-time comparison to verify the device secret token against timing attacks.
+    """Authenticates a local tracker daemon by the hash of its opaque device token.
+
+    An unknown token, a revoked device, and a device left without a hash all raise the same 401, so the client
+    learns nothing about which it hit.
     """
-    unauthorized = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid tracker device token",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    try:
-        device_id_str, secret = credentials.credentials.split(":", 1)
-    except ValueError:
-        raise unauthorized
-
-    device = db.query(TrackerDevice).filter(TrackerDevice.device_id == device_id_str).first()
-    if device is None or not hmac.compare_digest(device.token, secret):
-        raise unauthorized
-
+    device = crud.get_device_by_token(db, credentials.credentials)
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=INVALID_DEVICE_TOKEN_ERROR_MSG,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return device
 
 

@@ -12,15 +12,15 @@ from app.auth import crud, google_oauth
 from app.auth.constants import (
     EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, GOOGLE_LOGIN_STATE_PURPOSE, PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
     TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE, TEXT_GOOGLE_SIGN_IN_FAILED, TEXT_INACTIVE_USER_ACCOUNT,
-    TEXT_LOGIN_EMAIL_NOT_VERIFIED, TEXT_LOGIN_INVALID_CREDENTIALS, TEXT_PASSWORD_RESET_SUBJECT,
-    TEXT_PASSWORD_RESET_SUCCESSFULL, TEXT_PASSWORD_TOKEN_ERROR, TEXT_SIGNUP_GENERIC_MESSAGE,
+    TEXT_LOGIN_EMAIL_NOT_VERIFIED, TEXT_LOGIN_INVALID_CREDENTIALS, TEXT_PASSWORD_RESET_SUCCESSFULL,
+    TEXT_PASSWORD_TOKEN_ERROR, TEXT_SIGNUP_GENERIC_MESSAGE,
 )
 from app.auth.deps import get_current_user
 from app.auth.google_oauth import GoogleAuthError
 from app.auth.models import EmailVerificationToken, PasswordResetToken, User
 from app.auth.schemas import (
     ForgotPasswordRequest, MessageResponse, OAuthExchangeRequest, ResendVerificationRequest, ResetPasswordRequest,
-    Token, UserLogin, UserResponse, UserSignup,
+    Token, UserLogin, UserResponse, UserSignup, UserTimezoneUpdate,
 )
 from app.auth.security import (
     EmailVerificationTokenError, PasswordResetTokenError, create_access_token, create_email_verification_token,
@@ -38,6 +38,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 logger = logging.getLogger(__name__)
 
+TEXT_VERIFICATION_SUBJECT = "Verify your Logline email"
+TEXT_PASSWORD_RESET_SUBJECT = "Reset your Logline password"
+TEXT_VERIFICATION_TOKEN_ERROR = "Invalid or expired verification link"
+TEXT_EMAIL_VERIFIED_SUCCESSFUL = "Email verified successfully"
+TEXT_RESEND_VERIFICATION_GENERIC_MESSAGE = (
+    "If an account exists for that email and needs verification, a new email has been sent."
+)
+
 
 @dataclass(frozen=True)
 class _TokenEmail:
@@ -53,7 +61,7 @@ class _TokenEmail:
 _VERIFICATION_EMAIL = _TokenEmail(
     kind="verification",
     path="verify-email",
-    subject="Verify your Logline email",
+    subject=TEXT_VERIFICATION_SUBJECT,
     body="Click the link below to verify your email address:\n\n{url}\n\nThis link expires in 24 hours.",
     create_token=create_email_verification_token,
 )
@@ -72,9 +80,8 @@ _PASSWORD_RESET_EMAIL = _TokenEmail(
 
 async def _send_token_email(user_id: int, email: str, subject: str, body: str, kind: str) -> None:
     """Runs as a FastAPI BackgroundTask, which awaits this coroutine with no try/except of its own
-    (starlette.background.BackgroundTask.__call__). A failure here never reaches the original HTTP
-    request -- the response was already sent -- so it must be caught and logged here, or it vanishes
-    with no record anywhere.
+    (starlette.background.BackgroundTask.__call__). A failure here never reaches the original HTTP request -- the
+    response was already sent -- so it must be caught and logged here, or it vanishes with no record anywhere.
     """
     provider = get_email_provider()
     try:
@@ -115,11 +122,21 @@ def me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+@router.patch("/me/timezone", response_model=UserResponse)
+def set_timezone(
+    payload: UserTimezoneUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    """Set the current user's IANA timezone, which decides the day boundaries reconciliation reads."""
+    current_user.timezone = payload.timezone
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
 @router.post("/signup", response_model=MessageResponse)
 def signup(payload: UserSignup, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """
-    Same enumeration principle as /forgot-password: the caller must not be able to
-    tell "email already registered" from "account created" by status, body, or shape.
+    """Same enumeration principle as /forgot-password: the caller must not be able to tell "email already registered"
+    from "account created" by status, body, or shape.
     """
     generic_response = MessageResponse(message=TEXT_SIGNUP_GENERIC_MESSAGE)
 
@@ -141,14 +158,14 @@ def verify_email(token: str, db: Session = Depends(get_db)):
         token_row = verify_email_verification_token(db, token)
     except EmailVerificationTokenError as exc:
         logger.info("email_verification_failed", extra={"reason": exc.reason})
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_VERIFICATION_TOKEN_ERROR)
 
     token_row.used_at = datetime.now(timezone.utc)
     user = db.query(User).filter(User.id == token_row.user_id).first()
     user.is_active = True
     db.commit()
 
-    return MessageResponse(message="Email verified successfully")
+    return MessageResponse(message=TEXT_EMAIL_VERIFIED_SUCCESSFUL)
 
 
 @router.post("/resend-verification", response_model=MessageResponse)
@@ -157,16 +174,14 @@ def resend_verification(
 ):
     """Resend a verification email when the account still needs one.
 
-    The response stays the same in every case so people cannot tell whether
-    the email exists, the account is already active, or a new email was sent.
-    If the last verification email was sent too recently, this skips sending a
-    new one but still returns the same generic success message.
+    The response stays the same in every case so people cannot tell whether the email exists, the account is already
+    active, or a new email was sent. If the last verification email was sent too recently, this skips sending a new
+    one but still returns the same generic success message.
     """
+
     user = crud.get_user_by_email(db, payload.email)
 
-    generic_response = MessageResponse(
-        message="If an account exists for that email and needs verification, a new email has been sent."
-    )
+    generic_response = MessageResponse(message=TEXT_RESEND_VERIFICATION_GENERIC_MESSAGE)
     if user is None or user.is_active:
         return generic_response
 
@@ -182,11 +197,11 @@ def resend_verification(
 def forgot_password(payload: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Send a password reset email when the account can use one.
 
-    The reply is always the same so people cannot tell whether the email
-    exists, belongs to an SSO-only account, or already has a reset email
-    queued. If the last reset email was sent too recently, this skips sending
-    a new one but still returns the same generic message.
+    The reply is always the same so people cannot tell whether the email exists, belongs to an SSO-only account, or
+    already has a reset email queued. If the last reset email was sent too recently, this skips sending a new one but
+    still returns the same generic message.
     """
+
     generic_response = MessageResponse(message=TEXT_FORGOT_PASSWORD_GENERIC_MESSAGE)
 
     user = crud.get_user_by_email(db, payload.email)
@@ -210,7 +225,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
         token_row = verify_password_reset_token(db, payload.token)
     except PasswordResetTokenError as exc:
         logger.info("password_reset_failed", extra={"reason": exc.reason})
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_PASSWORD_TOKEN_ERROR)
 
     now = datetime.now(timezone.utc)
     claimed = (
@@ -280,6 +295,7 @@ def google_callback(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TEXT_GOOGLE_SIGN_IN_FAILED)
 
     google_user_id = claims["sub"]
+
     email = claims["email"]
     name = claims.get("name")
 

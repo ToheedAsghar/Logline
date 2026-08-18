@@ -13,16 +13,75 @@ from urllib.parse import urlencode
 import httpx
 
 from app.config import settings
-from app.integrations.constants import (
-    GITHUB_CALLBACK_MISSING_PARAMS_MESSAGE, GITHUB_MISSING_ACCESS_TOKEN_MESSAGE, GITHUB_OAUTH_ACCESS_TOKEN_URL,
-    GITHUB_OAUTH_AUTHORIZE_URL, GITHUB_OAUTH_CALLBACK_ERROR_MESSAGES, GITHUB_OAUTH_NETWORK_ERROR_MESSAGE,
-    GITHUB_OAUTH_SCOPES, GITHUB_OAUTH_UNKNOWN_CALLBACK_ERROR_MESSAGE, GITHUB_REFRESH_NOT_SUPPORTED_MESSAGE,
-    GITHUB_TOKEN_EXCHANGE_FAILED_MESSAGE, GITHUB_TOKEN_MISSING_REFRESH_TOKEN_MESSAGE, GITHUB_TOKEN_NOT_FOUND_MESSAGE,
-    GITHUB_TOKEN_REFRESH_PERSIST_FAILED_MESSAGE,
-)
 from app.integrations.errors import TokenRefreshError
 from app.integrations.models import IntegrationSource
 from app.integrations.providers.base import OAuthProvider, OAuthTokens
+
+GITHUB_OAUTH_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
+GITHUB_OAUTH_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
+
+GITHUB_OAUTH_SCOPES = ("repo",)
+
+GITHUB_TOKEN_EXCHANGE_FAILED_MESSAGE = (
+    "GitHub rejected the access_token request: {github_error}. This usually means the "
+    "authorization code already expired or was already used. Restart the connect "
+    "flow from the Integrations page."
+)
+
+GITHUB_OAUTH_NETWORK_ERROR_MESSAGE = (
+    "Could not reach GitHub to complete the OAuth request: {detail}. Check network "
+    "connectivity and try again."
+)
+
+GITHUB_MISSING_ACCESS_TOKEN_MESSAGE = (
+    "GitHub's response did not include an access token. This app's GitHub OAuth App "
+    "configuration is likely missing the required scopes ({scopes}) -- check its "
+    "settings before retrying the connect flow."
+).format(scopes=", ".join(GITHUB_OAUTH_SCOPES))
+
+GITHUB_TOKEN_NOT_FOUND_MESSAGE = (
+    "No stored GitHub OAuth token was found for integration_id={integration_id}. The "
+    "user needs to connect GitHub from the Integrations page before this token can be "
+    "refreshed."
+)
+
+GITHUB_TOKEN_MISSING_REFRESH_TOKEN_MESSAGE = (
+    "The stored GitHub token for integration_id={integration_id} has no refresh_token "
+    "on file. GitHub OAuth Apps don't issue refresh tokens -- their access tokens "
+    "don't expire, so this should not happen. If GitHub revoked the token, the user "
+    "needs to reconnect GitHub from the Integrations page."
+)
+
+GITHUB_REFRESH_NOT_SUPPORTED_MESSAGE = (
+    "GitHub OAuth Apps don't support refreshing access tokens -- tokens from the "
+    "initial exchange don't expire, so there is nothing to refresh. If this was "
+    "reached, the stored token may have been revoked; reconnect GitHub from the "
+    "Integrations page instead."
+)
+
+GITHUB_TOKEN_REFRESH_PERSIST_FAILED_MESSAGE = (
+    "Could not persist the refreshed GitHub token pair for integration_id={integration_id} "
+    "after GitHub rotated the credentials. Reconnect GitHub from the Integrations page."
+)
+
+GITHUB_CALLBACK_MISSING_PARAMS_MESSAGE = (
+    "GitHub's callback did not include both `code` and `state` -- the connect flow "
+    "did not complete. Restart it from the Integrations page."
+)
+
+GITHUB_OAUTH_ACCESS_DENIED_MESSAGE = (
+    "GitHub authorization was not granted -- the connect flow was cancelled. Restart "
+    "it from the Integrations page if you'd like to connect GitHub."
+)
+
+GITHUB_OAUTH_UNKNOWN_CALLBACK_ERROR_MESSAGE = (
+    "GitHub's callback reported an error completing the connect flow. Restart it "
+    "from the Integrations page."
+)
+
+GITHUB_OAUTH_CALLBACK_ERROR_MESSAGES = {
+    "access_denied": GITHUB_OAUTH_ACCESS_DENIED_MESSAGE,
+}
 
 
 class GitHubOAuthError(TokenRefreshError):

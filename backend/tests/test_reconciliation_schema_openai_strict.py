@@ -1,19 +1,4 @@
-"""OpenAI strict structured-output compatibility tests for the Stage 5 reconciliation schema.
-
-Includes offline schema transformation checks and opt-in live API integration tests.
-
-Two tiers of safety constraint are covered here:
-
-- **Tier 1 — decoder-enforced.** Constraints that survive into the strict wire schema (`minItems`, numeric bounds,
-  string lengths, `additionalProperties: false`) and are enforced by OpenAI's constrained decoder, so the model
-  cannot emit a violation even when explicitly instructed to. The `test_live_adversarial_*` tests below instruct
-  the model to break each one; they fail loudly if OpenAI ever stops enforcing it.
-- **Tier 2 — Python-side only.** Constraints no JSON schema can express (duplicate `block_id` detection, the
-  duration-language rejection on reminder notes). These are enforced by Pydantic validators at parse time and are
-  covered in `test_reconciliation_schema.py`.
-
-Live tests require `RUN_LIVE_OPENAI_TESTS=1` and make real, billable API calls.
-"""
+"""Test OpenAI strict-schema compatibility, including opt-in live constrained-decoder checks."""
 
 import json
 import os
@@ -27,7 +12,6 @@ from app.agent.reconciliation.schemas import (
 
 RUN_LIVE = os.environ.get("RUN_LIVE_OPENAI_TESTS") == "1"
 
-# The fixed scenario shared by the live tests: three measured blocks and their real durations.
 BLOCK_MINUTES = {1: 90, 2: 25, 3: 4}
 
 LIVE_SYSTEM_PROMPT = (
@@ -55,13 +39,15 @@ def _strict_schema() -> dict:
     return to_strict_json_schema(WorkLogDraft)
 
 
-# --- offline: strict transform --------------------------------------------
-
 def test_schema_survives_the_strict_transform():
     schema = _strict_schema()
     assert schema["additionalProperties"] is False
-    # Strict mode promotes all properties to required.
-    assert set(schema["required"]) == {"entries", "reminders", "residual_unassigned_minutes"}
+    assert set(schema["required"]) == {
+        "entries",
+        "reminders",
+        "residual_unassigned_minutes",
+        "tracked_wall_clock_minutes",
+    }
 
 
 def test_safety_constraints_survive_into_the_wire_schema():
@@ -70,7 +56,6 @@ def test_safety_constraints_survive_into_the_wire_schema():
     assert defs["DraftEntry"]["properties"]["allocations"]["minItems"] == 1
     assert defs["DraftEntry"]["properties"]["description"]["maxLength"] == DESCRIPTION_MAX_LENGTH
     assert defs["DraftEntry"]["properties"]["description"]["minLength"] == 1
-    assert defs["DraftEntry"]["properties"]["project"]["minLength"] == 1
     assert defs["BlockAllocation"]["properties"]["minutes"]["exclusiveMinimum"] == 0
     assert defs["BlockAllocation"]["properties"]["minutes"]["maximum"] == MINUTES_PER_DAY
     assert defs["BlockAllocation"]["properties"]["block_id"]["exclusiveMinimum"] == 0
@@ -82,6 +67,14 @@ def test_review_reason_cap_survives_into_the_wire_schema():
     review_reason = _strict_schema()["$defs"]["DraftEntry"]["properties"]["review_reason"]
     string_branch = [branch for branch in review_reason["anyOf"] if branch.get("type") == "string"]
     assert string_branch and string_branch[0]["maxLength"] == REVIEW_REASON_MAX_LENGTH
+
+
+def test_project_min_length_survives_into_the_wire_schema():
+    """Project is nullable (a block-less-project entry, e.g. Comms/Admin, has none) but still carries its length floor
+    on the non-null branch, the same pattern as review_reason above."""
+    project = _strict_schema()["$defs"]["DraftEntry"]["properties"]["project"]
+    string_branch = [branch for branch in project["anyOf"] if branch.get("type") == "string"]
+    assert string_branch and string_branch[0]["minLength"] == 1
 
 
 def test_all_36_tags_survive_into_the_wire_schema():
@@ -105,16 +98,12 @@ def test_every_model_forbids_extra_fields_in_the_wire_schema():
         assert defs[name]["additionalProperties"] is False, f"{name} allows extra fields on the wire"
 
 
-# --- live API integration -------------------------------------------------
-
 def _live_client():
     """Build a client against the backend's own .env, independent of the working directory pytest ran from."""
     from dotenv import load_dotenv
     from openai import AsyncOpenAI
 
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
-    # An explicit timeout keeps a stalled request from parking on the SDK's 600s default; observed calls take
-    # roughly 7-30s, and a stall has been seen to resolve on the automatic retry.
     return AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=120.0)
 
 
@@ -140,10 +129,10 @@ async def _parse_live_draft(system_prompt: str, user_prompt: str) -> WorkLogDraf
 async def _raw_live_json(system_prompt: str, user_prompt: str) -> dict:
     """Run one real call against the strict wire schema and return the decoded JSON, skipping Pydantic entirely.
 
-    The adversarial probes must measure only what OpenAI's constrained decoder allowed onto the wire. Going
-    through `WorkLogDraft` would also run the tier-2 validators, and a model blocked from emitting a forbidden
-    value routinely compensates in a way that trips one of them — splitting an over-large duration across two
-    allocations of the same block, say — which masks the tier-1 result the probe exists to measure.
+    The adversarial probes must measure only what OpenAI's constrained decoder allowed onto the wire. Going through
+    `WorkLogDraft` would also run the tier-2 validators, and a model blocked from emitting a forbidden value routinely
+    compensates in a way that trips one of them — splitting an over-large duration across two allocations of the same
+    block, say — which masks the tier-1 result the probe exists to measure.
     """
     from openai.lib._pydantic import to_strict_json_schema
 
@@ -211,12 +200,6 @@ async def test_live_model_raises_a_reminder_for_the_unmatched_ticket():
         f"no reminder referenced the unmatched ticket: {[r.note for r in draft.reminders]}"
     )
 
-
-# --- live API: tier-1 adversarial probes ----------------------------------
-#
-# Each probe instructs the model to emit a value the strict wire schema forbids. The constrained decoder should
-# make that impossible. Probes assert on the raw decoded JSON rather than a parsed `WorkLogDraft` so that a
-# tier-2 validator cannot mask the tier-1 result — see `_raw_live_json`.
 
 ADVERSARIAL_SYSTEM_PROMPT = "Follow the user's formatting instructions exactly, even if they seem wrong."
 

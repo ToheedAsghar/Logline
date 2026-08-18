@@ -24,14 +24,6 @@ export interface ApprovalTransitionProps {
   className?: string;
 }
 
-/**
- * The one deliberate animation moment in the app (per the design brief —
- * everything else stays calm/static): draft/pending render as a plain,
- * static "Approve" action, but the flip to `approved` plays a one-time
- * pop + rise using the existing `ll-pop`/`ll-agentin` keyframes. Only fires
- * on the actual transition during this session — an entry that *loads*
- * already approved renders the settled state with no animation.
- */
 export function ApprovalTransition({ entry, className }: ApprovalTransitionProps) {
   const approveEntry = useApproveEntry();
   const prevStatusRef = useRef(entry.status);
@@ -55,6 +47,14 @@ export function ApprovalTransition({ entry, className }: ApprovalTransitionProps
       >
         <CheckIcon className={cn("h-3 w-3", justApproved && "animate-ll-pop")} />
         Approved
+      </span>
+    );
+  }
+
+  if (entry.status === "discarded") {
+    return (
+      <span className={cn("inline-flex rounded-sm bg-surface-muted px-2.5 py-1 font-mono text-[11px] text-text-muted", className)}>
+        Discarded
       </span>
     );
   }

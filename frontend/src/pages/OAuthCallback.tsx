@@ -1,50 +1,54 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Loading } from "@/atoms";
-import { AUTH_STRINGS } from "@/constants/authMessages";
+import { AUTH_STRINGS } from "@/constants";
 import { useSession } from "@/context/SessionContext";
+import { useToast } from "@/context/ToastContext";
 import { googleExchange } from "@/repositories/api/auth";
 import { AuthShell } from "./AuthShell";
 
 export default function OAuthCallback() {
   const [searchParams] = useSearchParams();
   const { loginWithToken } = useSession();
+  const toast = useToast();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(true);
+
   const hasExchangedRef = useRef(false);
 
   useEffect(() => {
-    let token = searchParams.get("token") || searchParams.get("code");
+    if (hasExchangedRef.current) return;
 
-    if (!token && window.location.hash) {
+    let code = searchParams.get("code");
+
+    if (!code && window.location.hash) {
       const hash = window.location.hash.replace(/^#/, "");
       const hashParams = new URLSearchParams(hash);
-      token = hashParams.get("token") || hashParams.get("code");
+      code = hashParams.get("code");
     }
 
-    if (token) {
-      if (hasExchangedRef.current) return;
+    if (code) {
       hasExchangedRef.current = true;
-
-      const exchangeAndLogin = async () => {
-        try {
-          const { access_token } = await googleExchange(token);
-          loginWithToken(access_token);
+      googleExchange(code)
+        .then((res) => {
+          loginWithToken(res.access_token);
           navigate("/", { replace: true });
-        } catch {
+        })
+        .catch(() => {
+          toast.error(AUTH_STRINGS.GOOGLE_SSO_FAILED);
           setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
           setIsProcessing(false);
-        }
-      };
-      exchangeAndLogin();
+        });
     } else {
+      hasExchangedRef.current = true;
       queueMicrotask(() => {
+        toast.error(AUTH_STRINGS.GOOGLE_SSO_FAILED);
         setError(AUTH_STRINGS.GOOGLE_SSO_FAILED);
         setIsProcessing(false);
       });
     }
-  }, [searchParams, loginWithToken, navigate]);
+  }, [searchParams, loginWithToken, navigate, toast]);
 
   return (
     <AuthShell
@@ -77,4 +81,3 @@ export default function OAuthCallback() {
     </AuthShell>
   );
 }
-

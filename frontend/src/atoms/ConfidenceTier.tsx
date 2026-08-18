@@ -1,6 +1,6 @@
 import type { HTMLAttributes, ReactNode } from "react";
 import { cn } from "@/common/utils";
-import { CONFIDENCE_TIERS, type ConfidenceTier as Tier } from "@/constants/tokens";
+import { CONFIDENCE_TIERS, type ConfidenceTier as Tier } from "@/constants";
 
 /**
  * The confidence-tier visual language: every fact Logline shows is either

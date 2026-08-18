@@ -1,8 +1,4 @@
-"""Structured-output Pydantic schemas for Stage 5 AI reconciliation.
-
-Defines `WorkLogDraft`, `DraftEntry`, `DraftReminder`, and `BlockAllocation`. Measured time enters only via
-`BlockAllocation.minutes` bound to measured block IDs to prevent AI duration guesses.
-"""
+"""Define structured-output schemas and deterministic validation for reconciliation drafts."""
 
 import enum
 import re
@@ -11,18 +7,16 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-DESCRIPTION_MAX_LENGTH = 280
-REVIEW_REASON_MAX_LENGTH = 280
-REMINDER_NOTE_MAX_LENGTH = 280
-MINUTES_PER_DAY = 24 * 60
+from app.agent.reconciliation.constants import (
+    DESCRIPTION_MAX_LENGTH, DESCRIPTION_TRUNCATION_SUFFIX, MINUTES_PER_DAY, REMINDER_NOTE_MAX_LENGTH,
+    REVIEW_REASON_MAX_LENGTH, TAG_SUGGESTION_REASON_MAX_LENGTH,
+)
+
+DateType = date
 
 
 class EntryTag(str, enum.Enum):
-    """Canonical work-log entry tags ordered by expected prompt frequency.
-
-    Enum string values are matched verbatim downstream.
-    Member order reflects expected frequency to steer model tag selection.
-    """
+    """Define canonical work-log tags in expected prompt-frequency order."""
 
     coding = "Coding"
     debugging = "Debugging"
@@ -65,33 +59,28 @@ class EntryTag(str, enum.Enum):
 ReminderSource = Literal["github", "jira", "slack", "calendar"]
 
 
-_ONES = r"one|two|three|four|five|six|seven|eight|nine"
-_TEENS = r"ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen"
-_TENS = r"twenty|thirty|forty|fourty|fifty|sixty|seventy|eighty|ninety"
-# Order matters: the compound tens form is tried before the bare ones so "forty-five" is not read as "forty".
-_NUMBER_WORD = rf"(?:{_TENS})(?:[\s-](?:{_ONES}))?|{_TEENS}|{_ONES}"
+ONES = r"one|two|three|four|five|six|seven|eight|nine"
+TEENS = r"ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen"
+TENS = r"twenty|thirty|forty|fourty|fifty|sixty|seventy|eighty|ninety"
+NUMBER_WORD = rf"(?:{TENS})(?:[\s-](?:{ONES}))?|{TEENS}|{ONES}"
 
-_PERIOD = r"(?:day|morning|afternoon|evening)"
+PERIOD = r"(?:day|morning|afternoon|evening)"
 
-_VERBAL_SUBJECT = r"(?:did|didn't|do|don't|does|doesn't|you|i|we|they|to|would|should|could|will|can|might)"
+VERBAL_SUBJECT = r"(?:did|didn't|do|don't|does|doesn't|you|i|we|they|to|would|should|could|will|can|might)"
 
 DURATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    # "2 hours", "45 min", "1.5hrs", "30m", "2-hour", "90-minute", "3 days"
     (
         "digits followed by a time unit",
         re.compile(r"\b\d+(?:[.,]\d+)?[\s-]*(?:h|hrs?|hours?|m|mins?|minutes?|days?)\b", re.IGNORECASE),
     ),
-    # Compound hour/minute durations (e.g. "1h30"). This shape is indistinguishable from the European clock-time
-    # format ("14h30"), which is therefore also matched — see `find_duration_language`.
     (
         "compound hour/minute duration",
         re.compile(r"\b\d{1,2}\s*h(?:rs?)?\s*\d{1,2}\s*(?:m|mins?)?\b", re.IGNORECASE),
     ),
-    # Spelled-out quantities with time units (e.g. "two hours", "forty-five minutes", "a few minutes").
     (
         "spelled-out quantity with a time unit",
         re.compile(
-            rf"\b(?:an?|half|couple|few|several|{_NUMBER_WORD})"
+            rf"\b(?:an?|half|couple|few|several|{NUMBER_WORD})"
             r"\s+(?:of\s+)?(?:hours?|hrs?|minutes?|mins?|days?)\b",
             re.IGNORECASE,
         ),
@@ -101,7 +90,7 @@ DURATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         "\"spent\"/\"spend\" used as a verb",
         re.compile(
             r"\bspent\b"
-            rf"|\b{_VERBAL_SUBJECT}\s+(?:you\s+|i\s+|we\s+|they\s+)?spend(?:ing)?\b"
+            rf"|\b{VERBAL_SUBJECT}\s+(?:you\s+|i\s+|we\s+|they\s+)?spend(?:ing)?\b"
             r"|\bspend(?:ing)?\s+(?:time|about|approximately|approx|roughly|around|nearly|almost)\b",
             re.IGNORECASE,
         ),
@@ -114,7 +103,6 @@ DURATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
             re.IGNORECASE,
         ),
     ),
-    # Bare requests for a duration ("how long was that?") carry no unit of their own.
     (
         "interrogative duration request",
         re.compile(r"\bhow\s+long\b|\bhow\s+much\s+time\b", re.IGNORECASE),
@@ -122,11 +110,11 @@ DURATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "whole-period duration claim",
         re.compile(
-            rf"\ball\s+(?:of\s+the\s+)?{_PERIOD}\b"
-            rf"|\bthe\s+(?:entire|whole)\s+{_PERIOD}\b"
-            rf"|\b(?:most|the\s+rest)\s+of\s+the\s+{_PERIOD}\b"
-            rf"|\bhalf\s+(?:the|a)\s+{_PERIOD}\b"
-            rf"|\ba\s+full\s+{_PERIOD}\b",
+            rf"\ball\s+(?:of\s+the\s+)?{PERIOD}\b"
+            rf"|\bthe\s+(?:entire|whole)\s+{PERIOD}\b"
+            rf"|\b(?:most|the\s+rest)\s+of\s+the\s+{PERIOD}\b"
+            rf"|\bhalf\s+(?:the|a)\s+{PERIOD}\b"
+            rf"|\ba\s+full\s+{PERIOD}\b",
             re.IGNORECASE,
         ),
     ),
@@ -134,13 +122,9 @@ DURATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 
 def find_duration_language(note: str) -> str | None:
-    """Return the pattern label of the first duration phrase found in `note`, or None if clean.
+    """Return the first explicit or hedged duration-language pattern in a note, or None.
 
-    Scans for explicit or hedged time phrases ("2 hours", "45 min", "spent") to prevent AI duration assertions.
-
-    Clock times written with a colon ("14:30", "9:00 to 9:30") are deliberately not treated as duration language —
-    they name a point in time, not an amount of it. The European "14h30" form is not distinguishable from the
-    compound duration "1h30" by shape alone and IS matched; reminder notes should use the colon form.
+    Colon-form clock times are allowed; ambiguous compact `14h30` forms are treated as durations.
     """
     for label, pattern in DURATION_PATTERNS:
         if pattern.search(note):
@@ -148,13 +132,20 @@ def find_duration_language(note: str) -> str | None:
     return None
 
 
-def _reject_duplicate_block_ids(allocations: list["BlockAllocation"], field_name: str) -> None:
-    """Raise if any block is charged twice within the same allocation list.
+def truncate_description(description: str) -> str:
+    """Limit description text while preserving complete words when a boundary is available."""
+    if len(description) <= DESCRIPTION_MAX_LENGTH:
+        return description
+    keep = DESCRIPTION_MAX_LENGTH - len(DESCRIPTION_TRUNCATION_SUFFIX)
+    truncated = description[:keep].rstrip()
+    last_space = truncated.rfind(" ")
+    if last_space > 0:
+        truncated = truncated[:last_space]
+    return truncated + DESCRIPTION_TRUNCATION_SUFFIX
 
-    Tier 2 (Python-side only): this cannot be pushed into the wire schema. OpenAI strict mode does not support
-    `uniqueItems`, and even where it is supported it compares whole objects — so `{block 1, 30min}` plus
-    `{block 1, 45min}` would pass as two distinct items while double-counting block 1's measured time.
-    """
+
+def _reject_duplicate_block_ids(allocations: list["BlockAllocation"], field_name: str) -> None:
+    """Reject duplicate block IDs within one allocation list."""
     seen: set[int] = set()
     for allocation in allocations:
         if allocation.block_id in seen:
@@ -174,13 +165,19 @@ class BlockAllocation(BaseModel):
     minutes: int = Field(gt=0, le=MINUTES_PER_DAY)
 
 
+class ReviewBlockAllocation(BlockAllocation):
+    """Expose the local day for a residual block so range review can assign it correctly."""
+
+    date: DateType | None = None
+
+
 class DraftEntry(BaseModel):
     """Proposed work-log entry with time allocations linked to measured blocks."""
 
     model_config = ConfigDict(extra="forbid")
 
     date: date
-    project: str = Field(min_length=1)
+    project: str | None = Field(default=None, min_length=1)
     allocations: list[BlockAllocation] = Field(min_length=1)
     tag: EntryTag
     description: str = Field(min_length=1, max_length=DESCRIPTION_MAX_LENGTH)
@@ -192,6 +189,47 @@ class DraftEntry(BaseModel):
         """Reject entries charging the same block more than once, which would double-count measured time."""
         _reject_duplicate_block_ids(self.allocations, "allocations")
         return self
+
+
+class ReviewDraftEntry(DraftEntry):
+    """Editable review entry, including persisted identity or explicitly asserted manual time."""
+
+    entry_id: int | None = Field(default=None, gt=0)
+    origin: Literal["evidence", "manual"] = "evidence"
+    allocations: list[ReviewBlockAllocation] = Field(default_factory=list)
+    manual_minutes: int | None = Field(default=None, gt=0, le=MINUTES_PER_DAY)
+
+    @model_validator(mode="after")
+    def _validate_origin(self) -> "ReviewDraftEntry":
+        if self.origin == "evidence":
+            if not self.allocations:
+                raise ValueError("evidence entries require at least one measured block allocation")
+            if self.manual_minutes is not None:
+                raise ValueError("evidence entries cannot carry manual_minutes")
+        else:
+            if bool(self.allocations) == (self.manual_minutes is not None):
+                raise ValueError("manual entries require either measured allocations or manual_minutes, not both")
+            if self.source_remote_event_ids:
+                raise ValueError("manual entries cannot cite remote events")
+        return self
+
+
+class TagSuggestion(BaseModel):
+    """A model-proposed override of an entry's deterministically assigned tag, with its reason."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tag: EntryTag
+    reason: str = Field(min_length=1, max_length=TAG_SUGGESTION_REASON_MAX_LENGTH)
+
+
+class EntryDescriptionProposal(BaseModel):
+    """Contain the model's per-entry prose and optional tag suggestion."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: str = Field(min_length=1, max_length=DESCRIPTION_MAX_LENGTH)
+    tag_suggestion: TagSuggestion | None = None
 
 
 class DraftReminder(BaseModel):
@@ -218,16 +256,28 @@ class DraftReminder(BaseModel):
 
 
 class WorkLogDraft(BaseModel):
-    """Complete reconciliation draft output containing entries, AI reminders, and residual block allocations."""
+    """Complete reconciliation draft output containing entries, AI reminders, and residual block allocations.
+
+    `tracked_wall_clock_minutes` is measured wall-clock time with concurrency counted once, so it can legitimately be
+    less than the entries' allocated total when real overlapping work exists.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     entries: list[DraftEntry] = Field(default_factory=list)
     reminders: list[DraftReminder] = Field(default_factory=list)
     residual_unassigned_minutes: list[BlockAllocation] = Field(default_factory=list)
+    tracked_wall_clock_minutes: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def _reject_repeated_residual_blocks(self) -> "WorkLogDraft":
         """Reject residual lists charging the same block more than once."""
         _reject_duplicate_block_ids(self.residual_unassigned_minutes, "residual_unassigned_minutes")
         return self
+
+
+class ReviewWorkLogDraft(WorkLogDraft):
+    """Review-time draft whose entries carry persisted IDs or manual-time assertions."""
+
+    entries: list[ReviewDraftEntry] = Field(default_factory=list)
+    residual_unassigned_minutes: list[ReviewBlockAllocation] = Field(default_factory=list)

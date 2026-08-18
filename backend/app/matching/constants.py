@@ -7,6 +7,3 @@ these aren't magic numbers buried in matching/resolution logic.
 # --- Matching window ---
 
 MATCH_BUFFER_MINUTES = 15
-
-# --- Github Hosts ---
-GITHUB_HOSTS = {"github.com"}

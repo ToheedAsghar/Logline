@@ -1,4 +1,4 @@
-import type { IntegrationId } from "@/constants/integrations";
+import type { IntegrationId } from "@/constants";
 import type { Integration } from "../types";
 import { apiRequest } from "./client";
 
@@ -19,4 +19,3 @@ export function connectIntegration(source: IntegrationId): Promise<{ connect_url
 export function disconnectIntegration(source: IntegrationId): Promise<void> {
   return apiRequest<void>(`/integrations/${source}`, { method: "DELETE" });
 }
-

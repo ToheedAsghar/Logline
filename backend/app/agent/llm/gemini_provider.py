@@ -11,17 +11,25 @@ import pydantic
 from google import genai
 from google.genai import errors, types
 
-from app.agent.llm.base import (
-    AgentResponse, LLMProvider, LLMResponseError, LLMStructuredOutputError, Message, T, ToolDefinition,
-)
+from app.agent.llm.base import LLMProvider, LLMStructuredOutputError, Message, T
 from app.agent.llm.constants import (
-    ERROR_GEMINI_API_ERROR, ERROR_GEMINI_RUN_TURN_UNSUPPORTED, ERROR_GEMINI_TOOL_MESSAGE_UNSUPPORTED,
-    ERROR_RUN_STRUCTURED_CONTENT_FILTERED, ERROR_RUN_STRUCTURED_EMPTY_TEXT, ERROR_RUN_STRUCTURED_NO_CANDIDATES,
-    ERROR_RUN_STRUCTURED_PROMPT_BLOCKED, ERROR_RUN_STRUCTURED_TRUNCATED, ERROR_RUN_STRUCTURED_VALIDATION_FAILED,
+    ERROR_RUN_STRUCTURED_CONTENT_FILTERED, ERROR_RUN_STRUCTURED_TRUNCATED, ERROR_RUN_STRUCTURED_VALIDATION_FAILED,
     LLM_USAGE_EVENT,
 )
 
 logger = logging.getLogger(__name__)
+
+ERROR_RUN_STRUCTURED_PROMPT_BLOCKED = (
+    "run_structured failed: the prompt was blocked before generation could start (reason: {reason})"
+)
+ERROR_RUN_STRUCTURED_NO_CANDIDATES = "run_structured failed: the model returned no candidates"
+ERROR_RUN_STRUCTURED_EMPTY_TEXT = (
+    "run_structured failed: the model returned an empty response body, so there was nothing to "
+    "parse into {model_name}"
+)
+ERROR_GEMINI_API_ERROR = (
+    "run_structured failed: the Gemini API request for {model_name} failed (see cause for detail)"
+)
 
 REQUEST_TIMEOUT_MS = 60_000
 
@@ -42,18 +50,6 @@ class GeminiProvider(LLMProvider):
         self._client = genai.Client(
             api_key=api_key, http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_MS)
         )
-
-    async def run_turn(
-        self, messages: list[Message], tools: list[ToolDefinition]
-    ) -> AgentResponse:
-        """Not supported -- Gemini is wired for structured output only.
-
-        `run_turn` is abstract on `LLMProvider`, so this class has to define it. Raising is the honest option:
-        implementing Gemini tool calling here would ship a substantial, completely unexercised code path, since
-        nothing that uses Gemini calls tools. A caller that reaches this gets a clear error instead of
-        silently-wrong agent behaviour.
-        """
-        raise NotImplementedError(ERROR_GEMINI_RUN_TURN_UNSUPPORTED)
 
     async def run_structured(self, messages: list[Message], response_model: type[T]) -> T:
         """Asks Gemini for structured JSON matching `response_model` and validates it before returning.
@@ -164,7 +160,9 @@ class GeminiProvider(LLMProvider):
         """Splits neutral messages into Gemini's (system_instruction, contents) shape.
 
         Gemini carries system text out-of-band rather than as a turn in the conversation, so system messages are
-        pulled out and joined; the rest map to user/model turns.
+        pulled out and joined; the rest map to user/model turns. Any role other than system/user/assistant is
+        treated as a user turn rather than rejected -- `Role` no longer admits any other value, so there is no
+        remaining caller that can construct one.
         """
         system_parts: list[str] = []
         contents: list[types.Content] = []
@@ -174,8 +172,6 @@ class GeminiProvider(LLMProvider):
                 if message.content:
                     system_parts.append(message.content)
                 continue
-            if message.role == "tool":
-                raise LLMResponseError(ERROR_GEMINI_TOOL_MESSAGE_UNSUPPORTED)
 
             contents.append(
                 types.Content(

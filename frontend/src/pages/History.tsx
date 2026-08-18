@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Loading } from "@/atoms";
-import { escapeCsvField, formatMinutes } from "@/common/utils";
+import { escapeCsvField, formatMinutes, parseLocalDate } from "@/common/utils";
 import { useEntries } from "@/repositories/hooks";
 
 function getEntryMinutes(content: unknown): number {
   if (typeof content === "object" && content !== null) {
     const c = content as Record<string, unknown>;
+    if (typeof c.manual_minutes === "number" && c.manual_minutes > 0) return c.manual_minutes;
     if (typeof c.duration_minutes === "number" && c.duration_minutes > 0) return c.duration_minutes;
     if (typeof c.minutes === "number" && c.minutes > 0) return c.minutes;
     if (Array.isArray(c.allocations) && c.allocations.length > 0) {
@@ -96,12 +97,12 @@ export default function History() {
 
   const allEntries = entriesQuery.data ?? [];
   const periodEntries = allEntries.filter((entry) => {
-    const entryDate = new Date(entry.approved_at || entry.created_at);
+    const entryDate = parseLocalDate(entry.work_date);
     return entryDate >= periodStart && entryDate <= periodEnd;
   });
 
   const groupedEntries = periodEntries.reduce<Record<string, typeof periodEntries>>((acc, entry) => {
-    const dateStr = new Date(entry.approved_at || entry.created_at).toLocaleDateString(undefined, {
+    const dateStr = parseLocalDate(entry.work_date).toLocaleDateString(undefined, {
       weekday: "short",
       month: "short",
       day: "numeric",
@@ -248,5 +249,3 @@ export default function History() {
     </div>
   );
 }
-
-

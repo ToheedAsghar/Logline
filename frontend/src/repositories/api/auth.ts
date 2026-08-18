@@ -44,6 +44,10 @@ export function me(): Promise<UserResponse> {
   return apiRequest<UserResponse>("/auth/me");
 }
 
+export function setTimezone(timezone: string): Promise<UserResponse> {
+  return apiRequest<UserResponse>("/auth/me/timezone", { method: "PATCH", body: { timezone } });
+}
+
 export function forgotPassword(payload: ForgotPasswordPayload): Promise<MessageResponse> {
   return apiRequest<MessageResponse>("/auth/forgot-password", { method: "POST", body: payload, skipAuth: true });
 }
@@ -60,11 +64,13 @@ export function resendVerification(payload: ResendVerificationPayload): Promise<
   return apiRequest<MessageResponse>("/auth/resend-verification", { method: "POST", body: payload, skipAuth: true });
 }
 
+export function googleExchange(code: string): Promise<TokenResponse> {
+  return apiRequest<TokenResponse>("/auth/google/exchange", { method: "POST", body: { code }, skipAuth: true });
+}
+
+export const exchangeGoogleCode = googleExchange;
+
 export function getGoogleLoginUrl(): string {
   const baseUrl: string = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
   return `${baseUrl}/auth/google/login`;
-}
-
-export function googleExchange(code: string): Promise<TokenResponse> {
-  return apiRequest<TokenResponse>("/auth/google/exchange", { method: "POST", body: { code }, skipAuth: true });
 }

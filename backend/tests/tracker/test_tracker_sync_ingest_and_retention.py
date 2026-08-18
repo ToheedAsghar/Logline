@@ -283,9 +283,11 @@ class TestUpsertConditionalWrite:
                 end_reason="lock",
             )
             service.ingest_sessions(db, user_a, [original])
+            db.query(LocalSession).filter(LocalSession.id == session_id).update(
+                {"synced_at": now - timedelta(seconds=5)}
+            )
+            db.commit()
             first_synced_at = db.query(LocalSession).filter(LocalSession.id == session_id).one().synced_at
-
-            time.sleep(0.01)
 
             changed = _session_in(
                 id=session_id,

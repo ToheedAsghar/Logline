@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSession } from "@/context/SessionContext";
-import { me } from "@/repositories/api/auth";
+import { me, setTimezone } from "@/repositories/api/auth";
 
 export interface AccountSettingsModalProps {
   open: boolean;
@@ -10,18 +10,25 @@ export interface AccountSettingsModalProps {
 interface ProfileFields {
   name: string;
   email: string;
-  handle: string;
-  role: string;
   channel: string;
+  timezone: string;
 }
 
 const DEFAULT_PROFILE: ProfileFields = {
   name: "",
   email: "",
-  handle: "",
-  role: "",
   channel: "",
+  timezone: "",
 };
+
+function detectedTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+function supportedTimezones(): string[] {
+  const supported = Intl.supportedValuesOf?.("timeZone") ?? [];
+  return supported.length > 0 ? supported : [detectedTimezone(), "UTC"];
+}
 
 function initialsFor(name: string): string {
   const trimmed = name.trim();
@@ -37,10 +44,16 @@ function initialsFor(name: string): string {
 }
 
 const FIELD_LABEL = "block font-mono text-[10.5px] uppercase tracking-wider text-[#8A887C] mt-3 mb-1.5 first:mt-0";
+const DISABLED_FIELD =
+  "w-full cursor-not-allowed rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-2 text-xs font-medium " +
+  "text-[#8A887C] opacity-70";
 
 export function AccountSettingsModal({ open, onClose }: AccountSettingsModalProps) {
   const { logout } = useSession();
   const [profile, setProfile] = useState<ProfileFields>(DEFAULT_PROFILE);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const timezones = useMemo(() => supportedTimezones(), []);
 
   useEffect(() => {
     if (!open) return;
@@ -56,7 +69,13 @@ export function AccountSettingsModal({ open, onClose }: AccountSettingsModalProp
     let cancelled = false;
     me().then((user) => {
       if (cancelled) return;
-      setProfile((prev) => ({ ...prev, name: user.name ?? "", email: user.email }));
+      setProfile((prev) => ({
+        ...prev,
+        name: user.name ?? "",
+        email: user.email,
+        channel: user.default_channel ?? "",
+        timezone: user.timezone ?? detectedTimezone(),
+      }));
     });
     return () => {
       cancelled = true;
@@ -65,13 +84,28 @@ export function AccountSettingsModal({ open, onClose }: AccountSettingsModalProp
 
   if (!open) return null;
 
-  const editField = (field: keyof ProfileFields) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setProfile((prev) => ({ ...prev, [field]: e.target.value }));
+  const closeAndClearError = () => {
+    setSaveError(null);
+    onClose();
+  };
+
+  const saveChanges = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await setTimezone(profile.timezone);
+      onClose();
+    } catch {
+      setSaveError("Could not save your timezone. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div
       className="fixed inset-0 z-[110] flex items-start justify-center bg-black/40 px-4 pt-[8vh] pb-4 backdrop-blur-xs"
-      onClick={onClose}
+      onClick={closeAndClearError}
     >
       <div
         role="dialog"
@@ -86,7 +120,7 @@ export function AccountSettingsModal({ open, onClose }: AccountSettingsModalProp
           <button
             type="button"
             aria-label="Close"
-            onClick={onClose}
+            onClick={closeAndClearError}
             className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E3DFD2] bg-[#F5F2EA] text-xs text-[#57564E] hover:bg-[#EFEBE0]"
           >
             ✕
@@ -103,51 +137,62 @@ export function AccountSettingsModal({ open, onClose }: AccountSettingsModalProp
             </span>
             <div className="min-w-0">
               <div className="text-base font-semibold text-[#191917]">{profile.name || "Unnamed"}</div>
-              <div className="font-mono text-xs text-[#8A887C]">{profile.handle || "—"}</div>
+              <div className="font-mono text-xs text-[#8A887C]">{profile.email}</div>
             </div>
           </div>
 
-          <label className={FIELD_LABEL}>Display name</label>
-          <input
-            type="text"
-            value={profile.name}
-            onChange={editField("name")}
-            className="w-full rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-2 text-xs font-medium text-[#191917] focus:border-[#14603C] focus:outline-none"
-          />
+          <label className={FIELD_LABEL} htmlFor="account-name">
+            Display name
+          </label>
+          <input id="account-name" type="text" value={profile.name} disabled className={DISABLED_FIELD} />
 
-          <label className={FIELD_LABEL}>Work email</label>
-          <input
-            type="email"
-            value={profile.email}
-            onChange={editField("email")}
-            className="w-full rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-2 text-xs font-medium text-[#191917] focus:border-[#14603C] focus:outline-none"
-          />
+          <label className={FIELD_LABEL} htmlFor="account-email">
+            Work email
+          </label>
+          <input id="account-email" type="email" value={profile.email} disabled className={DISABLED_FIELD} />
 
-          <label className={FIELD_LABEL}>Handle</label>
+          <label className={FIELD_LABEL} htmlFor="account-channel">
+            Default standup channel
+          </label>
           <input
-            type="text"
-            value={profile.handle}
-            onChange={editField("handle")}
-            placeholder="@handle"
-            className="w-full rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-2 text-xs font-medium text-[#191917] focus:border-[#14603C] focus:outline-none"
-          />
-
-          <label className={FIELD_LABEL}>Role</label>
-          <input
-            type="text"
-            value={profile.role}
-            onChange={editField("role")}
-            className="w-full rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-2 text-xs font-medium text-[#191917] focus:border-[#14603C] focus:outline-none"
-          />
-
-          <label className={FIELD_LABEL}>Default standup channel</label>
-          <input
+            id="account-channel"
             type="text"
             value={profile.channel}
-            onChange={editField("channel")}
-            placeholder="#channel"
-            className="w-full rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-2 text-xs font-medium text-[#191917] focus:border-[#14603C] focus:outline-none"
+            disabled
+            placeholder="Not set"
+            className={DISABLED_FIELD}
           />
+          <p className="mt-1.5 font-mono text-[10.5px] text-[#8A887C]">
+            Name, email, and channel aren&apos;t editable here yet.
+          </p>
+
+          <label className={FIELD_LABEL} htmlFor="account-timezone">
+            Timezone
+          </label>
+          <select
+            id="account-timezone"
+            value={profile.timezone}
+            onChange={(e) => setProfile((prev) => ({ ...prev, timezone: e.target.value }))}
+            className="w-full rounded-md border border-[#E3DFD2] bg-[#F5F2EA] px-3 py-2 text-xs font-medium text-[#191917] focus:border-[#14603C] focus:outline-none"
+          >
+            {!timezones.includes(profile.timezone) && profile.timezone && (
+              <option value={profile.timezone}>{profile.timezone}</option>
+            )}
+            {timezones.map((zone) => (
+              <option key={zone} value={zone}>
+                {zone}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 font-mono text-[10.5px] text-[#8A887C]">
+            Decides which day your work is logged against. Detected: {detectedTimezone()}
+          </p>
+
+          {saveError && (
+            <p role="alert" className="mt-3 rounded-md border border-[#E0B8AC] bg-[#FBEEEA] px-3 py-2 text-xs text-[#A33A22]">
+              {saveError}
+            </p>
+          )}
 
           <div className="mt-6 flex flex-wrap items-center gap-2.5 border-t border-[#E3DFD2] pt-5">
             <button
@@ -160,17 +205,18 @@ export function AccountSettingsModal({ open, onClose }: AccountSettingsModalProp
             <span className="flex-1" />
             <button
               type="button"
-              onClick={onClose}
+              onClick={closeAndClearError}
               className="rounded-md border border-[#CFCABA] bg-[#FFFDF7] px-3.5 py-2 text-xs font-medium text-[#191917] hover:bg-[#F5F2EA]"
             >
               Cancel
             </button>
             <button
               type="button"
-              onClick={onClose}
-              className="rounded-md border border-[#14603C] bg-[#14603C] px-4 py-2 text-xs font-semibold text-[#FFFDF7] shadow-sm hover:bg-[#0F4E31]"
+              onClick={saveChanges}
+              disabled={saving}
+              className="rounded-md border border-[#14603C] bg-[#14603C] px-4 py-2 text-xs font-semibold text-[#FFFDF7] shadow-sm hover:bg-[#0F4E31] disabled:opacity-60"
             >
-              Save changes
+              {saving ? "Saving…" : "Save changes"}
             </button>
           </div>
         </div>

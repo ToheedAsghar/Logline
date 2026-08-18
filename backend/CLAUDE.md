@@ -16,36 +16,19 @@ Do not add a fourth confidence value. In particular, non-work time is not a spec
 `source="personal"` or `source="dismissed"` with `confidence="proven"`. The source describes *what it is*;
 confidence describes *how sure we are*. Keep that separation.
 
-## Architecture: TWO systems coexist, both intentional
+## Architecture: Phase 4 deterministic pipeline
 
-**This corrects an earlier version of this file, which described only a single, fully-agentic architecture with "no
-hardcoded pipeline." That description is now only true of one of the two systems below — do not treat it as the
-whole picture.**
+**This corrects an earlier version of this file.** Two systems used to coexist: a fully-agentic runner
+(`app/agent/runner.py` + `app/agent/toolbelt.py`, an LLM deciding on its own which tools to call) and the
+deterministic pipeline below. The agentic runner was removed (`toheed/chore/remove-runner-toolbelt`) after a live
+diagnostic run showed it functionally broken — its MCP sources failed to connect, so the agent could never ground
+"today" and either hallucinated a date or exhausted its tool-call budget — and its only frontend entry point
+(`/compose`, "Re-generate Standup") was confirmed unused. Only the pipeline below remains; treat any reference to
+"the old runner" elsewhere as historical.
 
-### OLD — fully agentic runner (still live, still production)
-
-`app/agent/runner.py` + `app/agent/toolbelt.py`. An LLM agent is given a toolbelt (MCP servers for
-GitHub/Slack/Jira/Calendar, plus custom tools) and decides entirely on its own which tools to call, in what order,
-and when to stop. No deterministic orchestration layer for this path — no fixed "fetch → correlate → draft"
-sequence as separate services. This still powers the real, production Timeline page's "Refresh Timeline" button
-(`POST /agent/run` → `run_agent`, wired through `frontend/src/molecules/RefreshTimelineTrigger`). It is not being
-removed yet; that's a deliberate future migration, not an oversight.
-
-- Tool **contracts** (inputs/outputs) are strictly Pydantic-validated.
-- The agent's **reasoning** about which tools to call and why is unconstrained for this path — don't hardcode that
-  decision logic in Python here.
-- `Toolbelt` (`app/agent/tools/`: `write_event`, `get_existing_events`, `flag_gap`, `write_draft_entry`) connects to
-  all four MCP servers over stdio and registers them as `ToolDefinition`s alongside the custom tools, namespacing
-  MCP tool names `{source}__{native_name}` to avoid cross-server collisions. `write_draft_entry` is refused until
-  every connected source has had at least one tool call attempted this run (`Toolbelt._attempted_sources`) — a
-  prompt-only version of this rule wasn't enough; the model could synthesize a draft having silently skipped a
-  source. The loop is capped at `MAX_TOOL_ROUNDS = 15`.
-
-### NEW — Phase 4 deterministic pipeline (in progress, partially on `main`)
-
-Deliberately the *opposite* design principle from the old runner: deterministic code decides what to fetch and how
-to match evidence; an LLM is used only for the narrow final task of writing descriptions and resolving genuine
-ambiguity — never for deciding what to fetch, never for stating a duration directly.
+Deterministic code decides what to fetch and how to match evidence; an LLM is used only for the narrow final task
+of writing descriptions and resolving genuine ambiguity — never for deciding what to fetch, never for stating a
+duration directly.
 
 **Verify build status before assuming a stage exists — it's uneven right now:**
 
@@ -66,19 +49,14 @@ suites calls them. `app/remote_fetch/orchestrator.py` sequences the fetch stage 
 matching or reconciliation. Treat "the Phase 4 pipeline" as a set of validated building blocks being assembled, not
 a live end-to-end flow, until stages 6–8 land and a router exposes them.
 
-**Do not treat this pipeline's fixed, code-decided shape as violating the "no hardcoded pipeline" rule above** —
-that rule applies only to the OLD runner's own files. Writing deterministic orchestration code under
-`app/remote_fetch/`, `app/matching/`, etc. is correct, intended design, not something to "fix" into agentic form.
-
-**If you're unsure which system a piece of work belongs to:** if it's powering the live Timeline "Refresh Timeline"
-button today, it's the OLD runner. If it's part of the fetch → match → reconcile → verify → review chain, it's the
-NEW pipeline — but check the table above before assuming a given stage already exists on `main`.
+Writing deterministic orchestration code under `app/remote_fetch/`, `app/matching/`, etc. is correct, intended
+design, not something to "fix" into agentic form.
 
 ## Data model
 
 **This corrects an earlier version of this file**, which said "never add per-source tables, everything is a generic
 `{source, type, timestamp, metadata, confidence}` event." That was an early, since-superseded modeling decision.
-Purpose-built tables exist per pipeline stage instead of one generic shape — e.g. `events` (old-runner evidence),
+Purpose-built tables exist per pipeline stage instead of one generic shape — e.g. `events` (self-capture evidence),
 `remote_events`/`project_mappings` (matching), `entries`/`entry_versions` (drafts and approval history),
 `tracker_devices`/`tracker_sync_states`/`local_sessions` (local-tracker device auth and sync state),
 `integrations`/`oauth_tokens`/`connect_link_tokens` (per-user OAuth). When adding a new table, match the shape to
@@ -183,8 +161,8 @@ Nothing outside `app/agent/llm/` may import a specific LLM SDK directly — rout
 doing the wire-format conversion. Currently only `OpenAIProvider` exists (`LLM_PROVIDER=openai`, model configurable
 via `LLM_MODEL`, default `gpt-5-mini`, both read in `app/config.py`); any other value raises `NotImplementedError`
 from the `get_llm_provider()` factory rather than failing silently. Switching or adding providers means adding one
-new file under `app/agent/llm/` and one branch in the factory function — the OLD runner and toolbelt should never
-need to change for a provider swap.
+new file under `app/agent/llm/` and one branch in the factory function — callers should never need to change for a
+provider swap.
 
 **Correction: structured output is already built, not a gap.** An earlier version of this file said the ABC only
 supported plain-text turns; that's no longer true. `LLMProvider.run_structured(messages, response_model)` exists in
@@ -216,16 +194,13 @@ only, no LLM/agent involved:
 
 - **GitHub** — official server (Docker, `ghcr.io/github/github-mcp-server`), `manual_test_github_mcp.py`.
 - **Slack** — `@modelcontextprotocol/server-slack` (npx), `manual_test_slack_mcp.py`. Write tools are restricted in
-  code (`Toolbelt.dispatch` in `app/agent/toolbelt.py`) to only ever target the `#logline_mcp_test` channel.
+  the script itself (`ALLOWED_CHANNEL_NAME`) to only ever target the `#logline_mcp_test` channel.
 - **Google Calendar** — `@cocal/google-calendar-mcp` (npx), `manual_test_calendar_mcp.py`.
 - **Jira** — community `sooperset/mcp-atlassian` (Docker, `ghcr.io/sooperset/mcp-atlassian`),
   `manual_test_jira_mcp.py`.
 
-`app/agent/toolbelt.py::MCP_SERVER_BUILDERS` builds the same `StdioServerParameters` for all four inside the real
-agent runner, so these scripts double as a standalone way to debug a connection without going through the full
-agent loop. Other scripts in `backend/scripts/` cover the custom tools directly (`manual_test_write_event.py`,
-`manual_test_flag_gap.py`, `manual_test_write_draft_entry.py`, `manual_test_get_existing_events.py`) and the full
-runner end-to-end (`manual_test_agent_runner.py`).
+These four scripts are the only surviving use of the shared/global test credentials in `.env` — nothing else in the
+codebase connects to these MCP servers.
 
 ## REST API (`app/api/` equivalents — one router per domain, see below)
 
@@ -239,11 +214,8 @@ Ordinary FastAPI CRUD routes for the frontend, wired into `app/main.py` under th
 - `/integrations` (`app/integrations/routers.py`) — `GET ""`, `POST /{source}/connect-link`, `GET
   /{source}/connect`, `GET /{source}/callback`, `DELETE /{source}`. See the OAuth section above.
 - `/entries` (`app/entries/routers.py`) — `GET ""`, `GET /{entry_id}`, `PATCH /{entry_id}`, `POST
-  /{entry_id}/approve`. There's intentionally no `POST /entries` — entries are created by the agent (via
-  `write_draft_entry`), not directly by the user through the API.
-- `/timeline` (`app/timeline/routers.py`) — `GET ""`, `PATCH /{event_id}`, `DELETE /{event_id}`.
-- `/self_captures` (`app/self_captures/routers.py`) — `POST ""`.
-- `/agent` (`app/agent/routers.py`) — `POST /run`, the OLD runner's entry point (see Architecture above).
+  /{entry_id}/approve`. There's intentionally no `POST /entries` — entries are created by
+  `POST /reconciliation/approve`, not directly by the user through this router.
 - `/tracker` (`app/tracker_sync/routers.py`) — `GET /sync/checkpoint`, `POST /sync`. Receives batches of local
   activity sessions from the separate `tracker/` desktop app (a sibling top-level project, not part of this
   backend), authenticated per-device via `TrackerDevice`'s encrypted long-lived token rather than user JWT. This is
@@ -255,7 +227,7 @@ for missing/invalid auth. Do not use 403 to distinguish "not yours" from "doesn'
 sharing/collaboration model, every resource is single-owner, so confirming existence to a non-owner via a different
 status code is a pure information leak with no legitimate use. Scope ownership checks in the query itself
 (`.filter(Entry.id == id, Entry.user_id == current_user.id)`), not as a separate check after fetching — see
-`_get_owned_entry` in `app/entries/routers.py` and `_get_owned_event` in `app/timeline/routers.py`.
+`_get_owned_entry` in `app/entries/routers.py`.
 
 ## Local dev
 

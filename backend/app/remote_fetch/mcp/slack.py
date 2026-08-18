@@ -12,9 +12,7 @@ from mcp import ClientSession
 
 from app.integrations.config import get_mapped_remote_project_ids
 from app.remote_fetch.base import FetchedEvent, SourceFetchData, SourceFetcher
-from app.remote_fetch.constants import (
-    IGNORED_SLACK_MESSAGE_SUBTYPES, MAX_EVENTS_PER_SOURCE, SLACK_CHANNELS_PAGE_LIMIT, SLACK_HISTORY_PAGE_LIMIT,
-)
+from app.remote_fetch.constants import MAX_EVENTS_PER_SOURCE
 from app.remote_fetch.mcp.connection import mcp_result_to_json
 from app.remote_fetch.parsing import first_non_empty_string, parse_slack_ts
 
@@ -22,6 +20,21 @@ logger = logging.getLogger(__name__)
 
 SOURCE = "slack"
 EVENT_TYPE_MESSAGE = "message"
+
+SLACK_HISTORY_PAGE_LIMIT = 200
+SLACK_CHANNELS_PAGE_LIMIT = 200
+IGNORED_SLACK_MESSAGE_SUBTYPES = frozenset(
+    {
+        "channel_join",
+        "channel_leave",
+        "channel_topic",
+        "channel_purpose",
+        "channel_name",
+        "channel_archive",
+        "channel_unarchive",
+        "bot_message",
+    }
+)
 
 
 async def iter_all_slack_channels(session: ClientSession) -> AsyncIterator[dict[str, Any]]:

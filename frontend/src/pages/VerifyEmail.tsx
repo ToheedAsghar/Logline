@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/atoms";
-import { AUTH_STRINGS } from "@/constants/authMessages";
+import { AUTH_STRINGS } from "@/constants";
 import { verifyEmail } from "@/repositories/api/auth";
 import { ApiError } from "@/repositories/api/client";
 import { AuthShell } from "./AuthShell";

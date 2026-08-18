@@ -34,6 +34,34 @@ echo "==> launchd agent"
 "$REPO_ROOT/tracker/packaging/install_agent.sh"
 echo
 
+echo "==> Backend enrollment"
+TOKEN_PATH="$("$VENV/bin/python" -c 'from tracker.constants import DEVICE_TOKEN_PATH; print(DEVICE_TOKEN_PATH)')"
+if [ -s "$TOKEN_PATH" ]; then
+    echo "    already enrolled ($TOKEN_PATH) — leaving it alone"
+    echo "    to re-enroll: revoke the old device, then rm '$TOKEN_PATH' and re-run this script"
+else
+    echo "    Paste the device token from POST /tracker/devices (leave blank to skip)."
+    echo "    Skipping is safe: the sync agent exits cleanly until a token exists."
+    printf "    token: "
+    read -r -s DEVICE_TOKEN
+    echo
+    if [ -n "$DEVICE_TOKEN" ]; then
+        mkdir -p "$(dirname "$TOKEN_PATH")"
+        : > "$TOKEN_PATH"
+        chmod 600 "$TOKEN_PATH"
+        printf '%s\n' "$DEVICE_TOKEN" > "$TOKEN_PATH"
+        echo "    stored $TOKEN_PATH (mode 600)"
+    else
+        echo "    skipped — no token stored"
+    fi
+fi
+unset DEVICE_TOKEN
+echo
+
+echo "==> Sync agent"
+"$REPO_ROOT/tracker/packaging/install_sync_agent.sh"
+echo
+
 echo "=================================================================="
 echo "Setup complete. One manual step remains — grant Accessibility (see"
 echo "the path printed above), then verify it took effect:"

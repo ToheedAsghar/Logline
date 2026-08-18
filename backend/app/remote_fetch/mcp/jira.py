@@ -13,7 +13,7 @@ from mcp import ClientSession
 
 from app.integrations.config import get_mapped_remote_project_ids
 from app.remote_fetch.base import FetchedEvent, SourceFetchData, SourceFetcher
-from app.remote_fetch.constants import JIRA_MAX_PAGES, JIRA_PAGE_LIMIT, MAX_EVENTS_PER_SOURCE
+from app.remote_fetch.constants import MAX_EVENTS_PER_SOURCE
 from app.remote_fetch.mcp.connection import mcp_result_to_json
 from app.remote_fetch.parsing import first_non_empty_string, parse_iso_datetime
 
@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 SOURCE = "jira"
 EVENT_TYPE_ISSUE_UPDATED = "issue_updated"
+
+JIRA_PAGE_LIMIT = 50
+JIRA_MAX_PAGES = 10
 
 JIRA_FIELDS = "summary,description,status,issuetype,assignee,reporter,priority,labels,created,updated"
 

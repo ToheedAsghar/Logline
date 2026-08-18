@@ -1,7 +1,7 @@
 from datetime import date, datetime
-from typing import Union
+from typing import Literal, Union
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.entries.models import EntryFormat, EntryStatus
 
@@ -23,8 +23,8 @@ class ContentAllocation(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    block_id: int
-    minutes: int
+    block_id: int = Field(gt=0)
+    minutes: int = Field(gt=0, le=24 * 60)
 
 
 class ProjectLogContent(BaseModel):
@@ -45,6 +45,20 @@ class ProjectLogContent(BaseModel):
     allocations: list[ContentAllocation] | None = None
     source_remote_event_ids: list[str] | None = None
     review_reason: str | None = None
+    origin: Literal["evidence", "manual"] | None = None
+    manual_minutes: int | None = Field(default=None, gt=0, le=24 * 60)
+
+    @model_validator(mode="after")
+    def _validate_provenance(self) -> "ProjectLogContent":
+        if self.origin == "evidence":
+            if not self.allocations or self.manual_minutes is not None:
+                raise ValueError("evidence content requires allocations and cannot carry manual_minutes")
+        elif self.origin == "manual":
+            if bool(self.allocations) == (self.manual_minutes is not None):
+                raise ValueError("manual content requires either allocations or manual_minutes, not both")
+            if self.source_remote_event_ids:
+                raise ValueError("manual content cannot cite remote events")
+        return self
 
 
 EntryContent = Union[StandupContent, ProjectLogContent]
@@ -93,6 +107,12 @@ class EntryUpdate(BaseModel):
     content: dict | None = None
     status: EntryStatus | None = None
     approved_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _reject_internal_discarded_status(self) -> "EntryUpdate":
+        if self.status == EntryStatus.discarded:
+            raise ValueError("discarded is an internal reconciliation lifecycle status")
+        return self
 
     def validate_content_for(self, format: EntryFormat) -> "EntryUpdate":
         if self.content is not None:
