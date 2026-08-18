@@ -51,12 +51,8 @@ Python capture logic as-is rather than risking a rewrite.
   web frontend's design system into `tracker-app/UI/Tokens.swift`. Independent of Task 1, can
   run in parallel.
 - [ ] **Task 1b: Python token-read mechanism.** Update the Python tracker's token-loading code
-  to read from the same Keychain item Swift writes (likely via the `keyring` library from the
-  Python side) instead of its current mechanism. **This is the only planned change to the
+  to read from the standard input stream (`stdin`) instead of its current file-based mechanism. The Swift `ProcessManager` will pipe the token securely to the agent on launch. **This is the only planned change to the
   Python codebase in this entire project** — everything else in `tracker/` stays as-is.
-  Verify Keychain read access works correctly from a PyInstaller-bundled executable
-  specifically (not just from `python main.py` in dev mode — bundling can change access
-  behavior).
 
 ### Checkpoint: Foundation
 - [ ] Swift can store/retrieve/clear a token via Keychain, verified in Keychain Access.

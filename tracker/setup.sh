@@ -35,10 +35,9 @@ echo "==> launchd agent"
 echo
 
 echo "==> Backend enrollment"
-TOKEN_PATH="$("$VENV/bin/python" -c 'from tracker.constants import DEVICE_TOKEN_PATH; print(DEVICE_TOKEN_PATH)')"
-if [ -s "$TOKEN_PATH" ]; then
-    echo "    already enrolled ($TOKEN_PATH) — leaving it alone"
-    echo "    to re-enroll: revoke the old device, then rm '$TOKEN_PATH' and re-run this script"
+if security find-generic-password -a "SyncToken" -s "LoglineTracker" >/dev/null 2>&1; then
+    echo "    already enrolled in Keychain — leaving it alone"
+    echo "    to re-enroll: security delete-generic-password -a SyncToken -s LoglineTracker"
 else
     echo "    Paste the device token from POST /tracker/devices (leave blank to skip)."
     echo "    Skipping is safe: the sync agent exits cleanly until a token exists."
@@ -46,11 +45,8 @@ else
     read -r -s DEVICE_TOKEN
     echo
     if [ -n "$DEVICE_TOKEN" ]; then
-        mkdir -p "$(dirname "$TOKEN_PATH")"
-        : > "$TOKEN_PATH"
-        chmod 600 "$TOKEN_PATH"
-        printf '%s\n' "$DEVICE_TOKEN" > "$TOKEN_PATH"
-        echo "    stored $TOKEN_PATH (mode 600)"
+        security add-generic-password -a "SyncToken" -s "LoglineTracker" -w "$DEVICE_TOKEN" -U
+        echo "    stored token in Keychain securely"
     else
         echo "    skipped — no token stored"
     fi

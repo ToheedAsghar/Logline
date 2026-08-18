@@ -137,9 +137,7 @@ SYNC_OVERLAP_SECONDS = 600
 SYNC_DEFAULT_BASE_URL = "http://localhost:8000"
 SYNC_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
-SYNC_NOT_ENROLLED_MSG = (
-    "sync: no device token at %s — not enrolled, nothing to do. Enroll this machine and re-run tracker/setup.sh."
-)
+
 SYNC_ALREADY_RUNNING_MSG = "sync: refusing to start — %s"
 SYNC_COMPLETE_MSG = "sync: complete — %d session(s) sent in %d batch(es)"
 SYNC_BATCH_MSG = "sync: batch of %d sent (accepted=%s duplicate=%s invalid=%s)"

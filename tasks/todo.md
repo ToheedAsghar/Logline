@@ -1,11 +1,11 @@
 ## Task 1: Add keychain storage for the token
 
-**Description:** Implement `secure_storage.py` and update requirements to use `keyring` for macOS Keychain storage, replacing manual token files.
+**Description:** Implement token reading via standard input (`stdin`) instead of manual token files or the Keychain directly. The Swift app will securely pipe the token on launch.
 
 **Acceptance criteria:**
-- [ ] `keyring` added to `requirements.txt`.
-- [ ] `secure_storage.py` created with `store_token()` and `get_token()`.
-- [ ] Manual test verifies token goes to Keychain.
+- [ ] `agent.py` updated to read from `sys.stdin`.
+- [ ] Stale dependencies and token file code removed.
+- [ ] `ProcessManager.swift` created to spawn Python and pipe token.
 
 **Verification:**
 - [ ] Tests pass: `make test`

@@ -187,9 +187,7 @@ fully-native Swift process. This is a distinct future project, not a task in thi
 - **Permissions attribution** (see above) — needs an early, standalone empirical spike before
   the rest of the plan is trusted to work as designed.
 - **Exact token hand-off mechanism**: Swift writes to Keychain; how exactly does the Python
-  child process read it? (Keychain access from Python via `keyring`, reading the same
-  Keychain item Swift wrote, is the likely answer, but needs confirming — Keychain access
-  scoping/entitlements can differ between a GUI app and a bundled command-line executable.)
+  child process read it? (Resolved: Token is passed via standard input stream (`stdin`) to the Python process by the Swift app, eliminating dual Keychain access issues).
 - **Does Swift need a live status signal from Python**, or is polling `tracker.db` +
   `GET /tracker/sync/status` sufficient to know the child process is healthy? (Affects
   whether the "Python → Swift" IPC line in Architecture stays this simple or needs a status
