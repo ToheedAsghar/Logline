@@ -238,9 +238,14 @@ def rotate_session(db: Session, *, refresh_token: str) -> RotationResult:
 
         if _within_reuse_grace(revoked_at, now):
             logger.info(
-                "Refresh token replayed inside the reuse grace window: user_id=%s family_id=%s "
-                "replayed_session_id=%s revoked_at=%s delta_seconds=%.3f",
-                user_id, family_id, session_id, revoked_at.isoformat(), (now - revoked_at).total_seconds(),
+                "refresh_token_replayed_inside_grace",
+                extra={
+                    "user_id": user_id,
+                    "family_id": family_id,
+                    "replayed_session_id": session_id,
+                    "revoked_at": revoked_at.isoformat(),
+                    "delta_seconds": (now - revoked_at).total_seconds(),
+                },
             )
             return RotationResult(RotationOutcome.CONCURRENT_ROTATION)
 
@@ -249,9 +254,14 @@ def rotate_session(db: Session, *, refresh_token: str) -> RotationResult:
         )
         if revoked_reason == RevokedReason.ROTATED:
             logger.warning(
-                "Refresh token reuse detected: user_id=%s family_id=%s replayed_session_id=%s revoked_at=%s "
-                "sessions_revoked=%s",
-                user_id, family_id, session_id, revoked_at.isoformat(), revoked_count,
+                "refresh_token_reuse_detected",
+                extra={
+                    "user_id": user_id,
+                    "family_id": family_id,
+                    "replayed_session_id": session_id,
+                    "revoked_at": revoked_at.isoformat(),
+                    "sessions_revoked": revoked_count,
+                },
             )
         return RotationResult(RotationOutcome.REJECTED)
 

@@ -474,13 +474,13 @@ class TestRefreshTokenReuseDetection:
             db.close()
 
         assert len(caplog.records) == 1
-        message = caplog.records[0].getMessage()
-        assert "Refresh token reuse detected" in message
-        assert f"user_id={user_id}" in message
-        assert f"family_id={family_id}" in message
-        assert "sessions_revoked=1" in message
-        assert stale_token not in message
-        assert token_hash not in message
+        record = caplog.records[0]
+        assert record.getMessage() == "refresh_token_reuse_detected"
+        assert getattr(record, "user_id", None) == user_id
+        assert getattr(record, "family_id", None) == family_id
+        assert getattr(record, "sessions_revoked", None) == 1
+        assert stale_token not in caplog.text
+        assert token_hash not in caplog.text
 
     def test_replay_against_an_already_revoked_family_still_logs_a_warning(self, user_id, caplog):
         """Closes a blind spot: a replay of a token whose row was superseded by a normal rotation is genuine reuse
@@ -506,10 +506,10 @@ class TestRefreshTokenReuseDetection:
             db.close()
 
         assert len(caplog.records) == 1
-        message = caplog.records[0].getMessage()
-        assert "Refresh token reuse detected" in message
-        assert f"family_id={family_id}" in message
-        assert "sessions_revoked=0" in message
+        record = caplog.records[0]
+        assert record.getMessage() == "refresh_token_reuse_detected"
+        assert getattr(record, "family_id", None) == family_id
+        assert getattr(record, "sessions_revoked", None) == 0
 
     def test_replay_inside_grace_logs_the_measured_delta(self, user_id, caplog):
         db = SessionLocal()
@@ -527,7 +527,9 @@ class TestRefreshTokenReuseDetection:
         finally:
             db.close()
 
-        assert "delta_seconds=" in caplog.records[-1].getMessage()
+        record = caplog.records[-1]
+        assert record.getMessage() == "refresh_token_replayed_inside_grace"
+        assert isinstance(getattr(record, "delta_seconds", None), float)
 
     def test_revoking_a_family_does_not_touch_another_user_s_session_sharing_that_family_id(
         self, user_id, other_user_id
