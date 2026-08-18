@@ -29,9 +29,6 @@ GITHUB_API_VERSION = "2022-11-28"
 GITHUB_PER_PAGE = 100
 GITHUB_MAX_PAGES = 5
 
-# 404 covers a renamed/deleted/inaccessible repo, 409 an empty repo (GitHub's documented response
-# for `commits` on a repo with no commits yet) -- both mean "nothing to fetch here", not a fetch
-# failure worth aborting the whole source over.
 GITHUB_EMPTY_REPO_STATUSES = frozenset({404, 409})
 
 GITHUB_RATE_LIMIT_REMAINING_HEADER = "X-RateLimit-Remaining"
@@ -298,10 +295,6 @@ class GitHubFetcher(SourceFetcher):
 
         override = None
         if truncated:
-            # /commits returns newest-first, so whatever's beyond the page cap is older than
-            # everything fetched here -- advancing the mark to the oldest *fetched* commit would
-            # mark that unfetched older window as covered and lose it permanently, since nothing
-            # ever re-requests it. Holding the mark at `since` retries the whole window next run.
             override = since
 
         return events, override
@@ -345,9 +338,6 @@ class GitHubFetcher(SourceFetcher):
 
         override = None
         if truncated:
-            # Same reasoning as _fetch_repo_commits: sorted newest-updated-first, so the page cap
-            # means older PRs went unfetched -- hold the mark at `since` rather than the oldest
-            # *fetched* PR's timestamp, or that unfetched window is lost for good.
             override = since
         return events, override
 

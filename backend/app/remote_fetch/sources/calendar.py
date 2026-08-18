@@ -24,8 +24,6 @@ WORKING_LOCATION_EVENT_TYPE = "workingLocation"
 DECLINED_RESPONSE_STATUS = "declined"
 
 CALENDAR_LIST_EVENTS_PAGE_SIZE = 250
-# 2500 events per fetch before MAX_EVENTS_PER_SOURCE trims the result -- generous enough that a
-# real user's window never hits it, and finite so a misbehaving API can't page forever.
 CALENDAR_MAX_PAGES = 10
 
 

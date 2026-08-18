@@ -32,8 +32,6 @@ JIRA_FIELDS = ("summary", "description", "status", "issuetype", "assignee", "rep
 
 PROJECT_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9]+$")
 
-# ADF node types whose rendered text should end in a newline, so consecutive blocks (two
-# paragraphs, a heading followed by a paragraph, list items) don't run together with no separator.
 ADF_BLOCK_NODE_TYPES = frozenset({"doc", "paragraph", "heading", "listItem", "codeBlock", "blockquote"})
 
 
@@ -103,8 +101,6 @@ def _adf_node_to_text(node: Any) -> str:
 
     node_type = node.get("type")
     if node_type == "text":
-        # Deliberately not first_non_empty_string here: that strips leading/trailing whitespace,
-        # which would silently swallow a text node's trailing space before an inline mention/emoji.
         text_value = node.get("text")
         return text_value if isinstance(text_value, str) else ""
     if node_type == "hardBreak":
@@ -260,12 +256,6 @@ class JiraFetcher(SourceFetcher):
         clauses.append("assignee = currentUser()")
 
         if since is not None:
-            # JQL date/time literals are quoted "yyyy-MM-dd HH:mm" -- no "T" separator, no seconds,
-            # no UTC offset (an ISO 8601 string like isoformat() produces isn't valid JQL syntax
-            # and the search request would fail). Note this is interpreted in the Jira site/user's
-            # configured timezone, not UTC -- converting to UTC first is the closest approximation
-            # available without an extra call to discover that timezone, and is off by the site's
-            # UTC offset until that's resolved.
             since_utc = since.astimezone(timezone.utc)
             clauses.append(f'updated >= "{since_utc.strftime("%Y-%m-%d %H:%M")}"')
 

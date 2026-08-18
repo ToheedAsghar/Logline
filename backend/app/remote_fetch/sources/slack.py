@@ -23,15 +23,10 @@ SOURCE = "slack"
 EVENT_TYPE_MESSAGE = "message"
 
 SLACK_API_BASE_URL = "https://slack.com/api"
-# Includes `im` (DMs) alongside channels -- a deliberate, already-approved scope expansion over
-# the old MCP tool, which only ever listed channels.
 SLACK_CONVERSATION_TYPES = "public_channel,private_channel,im"
 
 SLACK_HISTORY_PAGE_LIMIT = 200
 SLACK_CHANNELS_PAGE_LIMIT = 200
-# Real per-channel cap on `conversations.history` cursor pages, since the Slack Web API paginates
-# genuinely (unlike the old MCP tool) -- a channel this deep in one fetch window would be
-# pathological, so this is a safety valve, not an expected truncation point.
 SLACK_HISTORY_MAX_PAGES = 10
 
 SLACK_RATE_LIMIT_MAX_RETRIES = 3
@@ -78,10 +73,6 @@ IGNORED_SLACK_MESSAGE_SUBTYPES = frozenset(
     }
 )
 
-# Errors that mean "this one conversation isn't fetchable" (stale membership, a channel the user
-# left, etc) -- safe to skip and move on to the next conversation. Anything else (missing_scope,
-# invalid_auth, and other token-level failures) means every remaining conversation would fail the
-# same way, so those must raise SourceUnavailable rather than silently look like an empty channel.
 SLACK_PER_CHANNEL_SKIPPABLE_ERRORS = frozenset({"not_in_channel", "channel_not_found", "is_archived"})
 
 
@@ -105,19 +96,18 @@ async def iter_all_slack_conversations(
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield every conversation the connected user is a member of.
 
-    Uses `users.conversations`, not `conversations.list` -- the latter enumerates every
-    conversation of the requested types *in the whole workspace* (public/private channels the
-    token can merely see, not just ones this user is in), which for a large workspace means paging
-    through thousands of irrelevant channels to find the handful this user actually belongs to.
-    Live testing against a real ~1000-channel workspace hit Slack's rate limit doing exactly that.
-    `users.conversations` takes the same `types` filter but is pre-scoped to membership, so every
-    yielded item is already readable -- no separate `is_member` check needed.
+    Uses `users.conversations`, not `conversations.list`. `conversations.list` returns every channel of the
+    requested types across the *whole workspace* -- any channel the token can see, not just ones this user has
+    joined -- so on a large workspace it means paging through thousands of irrelevant channels to find the few
+    this user is actually in, which can trip Slack's rate limits. `users.conversations` takes the same `types`
+    filter but only returns channels the user belongs to, so every conversation it yields is already readable --
+    no separate membership check is needed.
 
-    Raises SourceUnavailable on `ok: false` rather than returning nothing -- Slack reports a
-    missing-scope token as HTTP 200 with `ok: false`, and treating that the same as "this user is
-    in zero conversations" would let `fetch_with_client` return an empty result the orchestrator
-    can't distinguish from a real empty account, advancing the high-water mark past a window that
-    was never actually fetched.
+    Raises SourceUnavailable when Slack responds with `ok: false`, instead of returning nothing. Slack sends
+    `ok: false` with a normal 200 status when the token is missing a scope, and treating that the same as "this
+    user has zero conversations" would let `fetch_with_client` return an empty result. The orchestrator can't
+    tell that apart from a real empty account, so it would move the high-water mark past a time window that was
+    never actually fetched.
     """
 
     cursor = None
