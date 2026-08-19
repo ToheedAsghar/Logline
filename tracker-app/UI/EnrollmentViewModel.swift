@@ -8,9 +8,6 @@ class EnrollmentViewModel: ObservableObject {
     @Published var errorMessage: String? = nil
     @Published var isConnecting: Bool = false
     
-    // We default to localhost as per python agent config defaults
-    private let defaultBaseURL = "http://localhost:8000"
-    
     func checkExistingEnrollment() {
         if let _ = try? KeychainManager.getToken() {
             isConnected = true
@@ -22,7 +19,7 @@ class EnrollmentViewModel: ObservableObject {
     
     func connect(token: String) async {
         guard !token.isEmpty else {
-            self.errorMessage = "Token cannot be empty."
+            self.errorMessage = Constants.ErrorMessages.emptyToken
             return
         }
         
@@ -30,10 +27,10 @@ class EnrollmentViewModel: ObservableObject {
         self.errorMessage = nil
         
         // Find base_url from sync.json or default
-        var baseURL = defaultBaseURL
+        var baseURL = Constants.API.defaultBaseURL
         let fileManager = FileManager.default
         if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            let syncConfigPath = appSupport.appendingPathComponent("Logline/sync.json")
+            let syncConfigPath = appSupport.appendingPathComponent(Constants.API.syncConfigPath)
             if let data = try? Data(contentsOf: syncConfigPath),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let configURL = json["base_url"] as? String {
@@ -41,8 +38,8 @@ class EnrollmentViewModel: ObservableObject {
             }
         }
         
-        guard let url = URL(string: "\(baseURL)/tracker/sync/checkpoint") else {
-            self.errorMessage = "Invalid base URL configured."
+        guard let url = URL(string: "\(baseURL)\(Constants.API.checkpointPath)") else {
+            self.errorMessage = Constants.ErrorMessages.invalidURL
             self.isConnecting = false
             return
         }
@@ -54,7 +51,7 @@ class EnrollmentViewModel: ObservableObject {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
-                self.errorMessage = "Invalid response from server."
+                self.errorMessage = Constants.ErrorMessages.invalidResponse
                 self.isConnecting = false
                 return
             }
@@ -71,7 +68,7 @@ class EnrollmentViewModel: ObservableObject {
                     self.isConnected = true
                     self.errorMessage = nil
                 } else {
-                    self.errorMessage = "Invalid JSON response from server."
+                    self.errorMessage = Constants.ErrorMessages.invalidJSON
                 }
             } else {
                 // Extract error detail if available
@@ -82,10 +79,10 @@ class EnrollmentViewModel: ObservableObject {
                 } else if let rawString = String(data: data, encoding: .utf8), !rawString.isEmpty {
                     detail = String(rawString.prefix(100))
                 }
-                self.errorMessage = "Connection failed: \(detail)"
+                self.errorMessage = "\(Constants.ErrorMessages.connectionFailedPrefix)\(detail)"
             }
         } catch {
-            self.errorMessage = "Network error: \(error.localizedDescription)"
+            self.errorMessage = "\(Constants.ErrorMessages.networkErrorPrefix)\(error.localizedDescription)"
         }
         
         self.isConnecting = false
