@@ -89,11 +89,7 @@ struct MainView: View {
                             .fill(Tokens.Colors.SwiftUI.accent)
                             .frame(width: 10, height: 10)
                         
-                        let formatter = RelativeDateTimeFormatter()
-                        formatter.unitsStyle = .full
-                        let dateStr = formatter.localizedString(for: lastSynced, relativeTo: Date())
-                        
-                        Text("Synced \(dateStr)")
+                        Text("Synced \(formatRelativeDate(lastSynced))")
                             .foregroundColor(Tokens.Colors.SwiftUI.text)
                     } else if enrollmentVM.isConnected {
                         Circle()
@@ -119,44 +115,7 @@ struct MainView: View {
                         .stroke(Tokens.Colors.SwiftUI.border, lineWidth: 1)
                 )
             }
-            
-            // Placeholder: Events View
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Recent Events")
-                    .font(.headline)
-                    .foregroundColor(Tokens.Colors.SwiftUI.text)
-                
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(0..<3) { i in
-                            HStack {
-                                Text("Code")
-                                    .font(.caption)
-                                    .padding(4)
-                                    .background(Tokens.Colors.SwiftUI.surface2)
-                                    .cornerRadius(Tokens.Radius.xs)
-                                Text("tracker/main.py")
-                                    .font(.subheadline)
-                                Spacer()
-                                Text("10:42 AM")
-                                    .font(.caption)
-                                    .foregroundColor(Tokens.Colors.SwiftUI.muted)
-                            }
-                            .padding(8)
-                            .background(Tokens.Colors.SwiftUI.surface)
-                            .cornerRadius(Tokens.Radius.sm)
-                        }
-                    }
-                    .padding(8)
-                }
-                .frame(height: 150)
-                .background(Tokens.Colors.SwiftUI.surface)
-                .cornerRadius(Tokens.Radius.md)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Tokens.Radius.md)
-                        .stroke(Tokens.Colors.SwiftUI.border, lineWidth: 1)
-                )
-            }
+            LiveEventsView()
         }
         .padding(24)
         .background(Tokens.Colors.SwiftUI.bg)
@@ -164,5 +123,11 @@ struct MainView: View {
         .onAppear {
             enrollmentVM.checkExistingEnrollment()
         }
+    }
+    
+    private func formatRelativeDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }

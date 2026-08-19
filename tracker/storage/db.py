@@ -83,6 +83,7 @@ def get_connection() -> sqlite3.Connection:
     conn.execute(CREATE_OPEN_SESSION)
     _add_missing_columns(conn, "open_session", (("is_idle", "INTEGER NOT NULL DEFAULT 0"),) + CONTEXT_COLUMNS)
     _add_missing_columns(conn, "sessions", CONTEXT_COLUMNS)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_ended_at ON sessions(ended_at)")
     conn.commit()
     return conn
 

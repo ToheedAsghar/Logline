@@ -25,6 +25,12 @@ swiftc \
     KeychainManager.swift \
     UI/MainView.swift \
     UI/Tokens.swift \
+    DatabaseReader.swift \
+    UI/LiveEventsViewModel.swift \
+    UI/LiveEventsView.swift \
+    UI/EnrollmentViewModel.swift \
+    Constants.swift \
+    -lsqlite3 \
     -o "$MACOS_DIR/tracker-app"
 
 # Ad-hoc sign the app
