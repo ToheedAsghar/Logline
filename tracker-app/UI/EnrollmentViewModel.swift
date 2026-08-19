@@ -30,7 +30,6 @@ class EnrollmentViewModel: ObservableObject {
         self.isConnecting = true
         self.errorMessage = nil
         
-        // Find base_url from sync.json or default
         var baseURL = Constants.API.defaultBaseURL
         let fileManager = FileManager.default
         if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
@@ -61,12 +60,10 @@ class EnrollmentViewModel: ObservableObject {
             }
             
             if httpResponse.statusCode == 200 {
-                // Parse device ID
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let devId = json["device_id"] as? String {
                     self.deviceId = devId
                     
-                    // Success: store token and persist device ID
                     try KeychainManager.storeToken(token)
                     UserDefaults.standard.set(devId, forKey: Constants.Storage.deviceIdKey)
                     
@@ -77,7 +74,6 @@ class EnrollmentViewModel: ObservableObject {
                     self.errorMessage = Constants.ErrorMessages.invalidJSON
                 }
             } else {
-                // Extract error detail if available
                 var detail = "HTTP \(httpResponse.statusCode)"
                 if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let message = errorJson["detail"] as? String {
@@ -114,12 +110,10 @@ class EnrollmentViewModel: ObservableObject {
                 var request = URLRequest(url: url)
                 request.httpMethod = "DELETE"
                 request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                // Best effort DELETE, ignore failure
                 _ = try? await URLSession.shared.data(for: request)
             }
         }
         
-        // Wipe local state regardless of server call outcome
         try? KeychainManager.clearToken()
         UserDefaults.standard.removeObject(forKey: Constants.Storage.deviceIdKey)
         
@@ -145,7 +139,6 @@ class EnrollmentViewModel: ObservableObject {
     
     private func startPolling() {
         stopPolling()
-        // Immediately trigger once, then every 30 seconds
         pollSyncStatus()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
