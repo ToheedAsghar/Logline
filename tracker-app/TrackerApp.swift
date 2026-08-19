@@ -37,10 +37,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         
-        do {
-            try ProcessManager.shared.startSyncAgent()
-        } catch {
-            print("Failed to start agent: \(error)")
+        // Start the tracker if we launch in the running state
+        if currentState == .running {
+            do {
+                try ProcessManager.shared.startTrackerDaemon()
+            } catch {
+                print("Failed to start tracker: \(error)")
+                self.currentState = .error
+                self.updateIcon()
+            }
         }
         
         NotificationCenter.default.addObserver(forName: Notification.Name("syncPollDidFail"), object: nil, queue: .main) { [weak self] _ in
@@ -55,6 +60,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.updateIcon()
             }
         }
+        
+        NotificationCenter.default.addObserver(forName: ProcessManager.trackerDidCrashNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.currentState = .error
+            self?.updateIcon()
+        }
     }
     
     /// The application must not terminate when its only visible window is closed.
@@ -65,7 +75,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        ProcessManager.shared.terminateSyncAgent()
+        ProcessManager.shared.terminateAll()
     }
     
     private func setupMenu() {
@@ -77,10 +87,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(showItem)
         menu.addItem(NSMenuItem.separator())
         
-        let startItem = NSMenuItem(title: "Start Sync", action: #selector(startSync), keyEquivalent: "")
+        let startItem = NSMenuItem(title: "Start Tracker", action: #selector(startTracker), keyEquivalent: "")
         menu.addItem(startItem)
         
-        let stopItem = NSMenuItem(title: "Stop Sync", action: #selector(stopSync), keyEquivalent: "")
+        let stopItem = NSMenuItem(title: "Stop Tracker", action: #selector(stopTracker), keyEquivalent: "")
         menu.addItem(stopItem)
         
         #if DEBUG
@@ -149,14 +159,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
     
-    @objc func startSync() {
+    @objc func startTracker() {
         currentState = .running
         updateIcon()
+        do {
+            try ProcessManager.shared.startTrackerDaemon()
+        } catch {
+            print("Failed to start tracker: \(error)")
+            currentState = .error
+            updateIcon()
+        }
     }
     
-    @objc func stopSync() {
+    @objc func stopTracker() {
         currentState = .paused
         updateIcon()
+        ProcessManager.shared.terminateTrackerDaemon()
     }
     
     @objc func simulateError() {

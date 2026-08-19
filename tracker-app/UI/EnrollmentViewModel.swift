@@ -11,6 +11,7 @@ class EnrollmentViewModel: ObservableObject {
     @Published var isPollingError: Bool = false
     
     private var pollTimer: Timer?
+    private var syncTask: Task<Void, Never>?
     
     func checkExistingEnrollment() {
         if let _ = try? KeychainManager.getToken(),
@@ -156,11 +157,32 @@ class EnrollmentViewModel: ObservableObject {
                 self?.pollSyncStatus()
             }
         }
+        startSyncLoop()
     }
     
     private func stopPolling() {
         pollTimer?.invalidate()
         pollTimer = nil
+        stopSyncLoop()
+    }
+    
+    private func startSyncLoop() {
+        stopSyncLoop()
+        syncTask = Task { @MainActor in
+            while !Task.isCancelled {
+                do {
+                    try await ProcessManager.shared.triggerSync()
+                    try await Task.sleep(nanoseconds: 600_000_000_000) // 10 minutes
+                } catch {
+                    break
+                }
+            }
+        }
+    }
+    
+    private func stopSyncLoop() {
+        syncTask?.cancel()
+        syncTask = nil
     }
     
     private func pollSyncStatus() {
