@@ -78,7 +78,13 @@ struct MainView: View {
                     .foregroundColor(Tokens.Colors.SwiftUI.text)
                 
                 HStack {
-                    if let lastSynced = enrollmentVM.lastSyncedAt {
+                    if enrollmentVM.isPollingError {
+                        Circle()
+                            .fill(Tokens.Colors.SwiftUI.danger)
+                            .frame(width: 10, height: 10)
+                        Text("Sync Error")
+                            .foregroundColor(Tokens.Colors.SwiftUI.danger)
+                    } else if let lastSynced = enrollmentVM.lastSyncedAt {
                         Circle()
                             .fill(Tokens.Colors.SwiftUI.accent)
                             .frame(width: 10, height: 10)

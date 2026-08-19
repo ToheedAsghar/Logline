@@ -5,6 +5,10 @@ public class ProcessManager {
     
     private var syncProcess: Process?
     
+    public var isRunning: Bool {
+        return syncProcess?.isRunning ?? false
+    }
+    
     private init() {}
     
     public func startSyncAgent() throws {

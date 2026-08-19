@@ -8,6 +8,7 @@ class EnrollmentViewModel: ObservableObject {
     @Published var errorMessage: String? = nil
     @Published var isConnecting: Bool = false
     @Published var isDisconnecting: Bool = false
+    @Published var isPollingError: Bool = false
     
     private var pollTimer: Timer?
     
@@ -110,7 +111,16 @@ class EnrollmentViewModel: ObservableObject {
                 var request = URLRequest(url: url)
                 request.httpMethod = "DELETE"
                 request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                _ = try? await URLSession.shared.data(for: request)
+                do {
+                    let (_, response) = try await URLSession.shared.data(for: request)
+                    if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                        print("Disconnect API call failed with status: \(httpResponse.statusCode)")
+                    } else {
+                        print("Disconnect API call succeeded.")
+                    }
+                } catch {
+                    print("Disconnect API call failed: \(error.localizedDescription)")
+                }
             }
         }
         
@@ -121,6 +131,7 @@ class EnrollmentViewModel: ObservableObject {
         self.lastSyncedAt = nil
         self.isConnected = false
         self.isDisconnecting = false
+        self.isPollingError = false
     }
     
     private func getBaseURL() -> String {
@@ -172,17 +183,35 @@ class EnrollmentViewModel: ObservableObject {
                         let formatter = ISO8601DateFormatter()
                         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
                         if let date = formatter.date(from: rawDate) {
-                            await MainActor.run { self.lastSyncedAt = date }
+                            await MainActor.run { 
+                                self.lastSyncedAt = date
+                                self.isPollingError = false
+                                NotificationCenter.default.post(name: Notification.Name("syncPollDidSucceed"), object: nil)
+                            }
                         } else {
                             formatter.formatOptions = [.withInternetDateTime]
                             if let date = formatter.date(from: rawDate) {
-                                await MainActor.run { self.lastSyncedAt = date }
+                                await MainActor.run { 
+                                    self.lastSyncedAt = date 
+                                    self.isPollingError = false
+                                    NotificationCenter.default.post(name: Notification.Name("syncPollDidSucceed"), object: nil)
+                                }
                             }
                         }
+                    }
+                } else {
+                    print("Polling failed with HTTP status: \(Array(arrayLiteral: response).first.map { String(describing: $0) } ?? "unknown")")
+                    await MainActor.run { 
+                        self.isPollingError = true 
+                        NotificationCenter.default.post(name: Notification.Name("syncPollDidFail"), object: nil)
                     }
                 }
             } catch {
                 print("Polling failed: \(error)")
+                await MainActor.run { 
+                    self.isPollingError = true 
+                    NotificationCenter.default.post(name: Notification.Name("syncPollDidFail"), object: nil)
+                }
             }
         }
     }

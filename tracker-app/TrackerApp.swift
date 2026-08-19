@@ -42,6 +42,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             print("Failed to start agent: \(error)")
         }
+        
+        NotificationCenter.default.addObserver(forName: Notification.Name("syncPollDidFail"), object: nil, queue: .main) { [weak self] _ in
+            self?.currentState = .error
+            self?.updateIcon()
+        }
+        
+        NotificationCenter.default.addObserver(forName: Notification.Name("syncPollDidSucceed"), object: nil, queue: .main) { [weak self] _ in
+            guard let self = self else { return }
+            if self.currentState == .error {
+                self.currentState = ProcessManager.shared.isRunning ? .running : .paused
+                self.updateIcon()
+            }
+        }
     }
     
     /// The application must not terminate when its only visible window is closed.
