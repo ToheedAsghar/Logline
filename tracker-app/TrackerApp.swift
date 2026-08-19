@@ -22,7 +22,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     enum AgentState {
         case running
         case paused
-        case quitAdjacent
+        case error
     }
     var currentState: AgentState = .running
 
@@ -44,8 +44,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    /// The application must not terminate when its only visible window is closed.
+    /// Returning false here ensures the app stays alive as a background menu-bar app
+    /// and the window can be reopened later from the status item menu.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Crucial: do not terminate when the window closes
         return false
     }
 
@@ -68,10 +70,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let stopItem = NSMenuItem(title: "Stop Sync", action: #selector(stopSync), keyEquivalent: "")
         menu.addItem(stopItem)
         
+        #if DEBUG
         menu.addItem(NSMenuItem.separator())
-        
         let errorItem = NSMenuItem(title: "Simulate Error State", action: #selector(simulateError), keyEquivalent: "")
         menu.addItem(errorItem)
+        #endif
         
         menu.addItem(NSMenuItem.separator())
         
@@ -81,6 +84,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
     
+    /// Sets up the main window instance and configures its default behavior.
+    /// The window's `isReleasedWhenClosed` property must be false to prevent it from
+    /// being deallocated entirely when the user clicks the red close button, allowing
+    /// the application to efficiently reopen the same window object later.
     private func setupWindow() {
         let contentView = MainView()
         
@@ -93,7 +100,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindow.setFrameAutosaveName("Main Window")
         mainWindow.title = "Logline Tracker"
         mainWindow.contentView = NSHostingView(rootView: contentView)
-        mainWindow.isReleasedWhenClosed = false // Keep memory so it can be reopened
+        mainWindow.isReleasedWhenClosed = false
     }
     
     private func updateIcon() {
@@ -109,7 +116,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .paused:
             symbolName = "pause.circle.fill"
             color = NSColor.systemOrange
-        case .quitAdjacent:
+        case .error:
             symbolName = "exclamationmark.triangle.fill"
             color = NSColor.systemRed
         }
@@ -140,7 +147,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func simulateError() {
-        currentState = .quitAdjacent
+        currentState = .error
         updateIcon()
     }
     
