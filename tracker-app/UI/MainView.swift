@@ -18,6 +18,18 @@ struct MainView: View {
                             .foregroundColor(Tokens.Colors.SwiftUI.accent)
                         Text("Connected\(enrollmentVM.deviceId != nil ? " as \(enrollmentVM.deviceId!)" : "")")
                             .foregroundColor(Tokens.Colors.SwiftUI.text)
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            Task {
+                                await enrollmentVM.disconnect()
+                            }
+                        }) {
+                            Text(enrollmentVM.isDisconnecting ? "Disconnecting..." : "Disconnect")
+                        }
+                        .disabled(enrollmentVM.isDisconnecting)
+                        .buttonStyle(BorderedButtonStyle())
                     }
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -66,11 +78,30 @@ struct MainView: View {
                     .foregroundColor(Tokens.Colors.SwiftUI.text)
                 
                 HStack {
-                    Circle()
-                        .fill(Tokens.Colors.SwiftUI.accent)
-                        .frame(width: 10, height: 10)
-                    Text("Synced 2 mins ago")
-                        .foregroundColor(Tokens.Colors.SwiftUI.text)
+                    if let lastSynced = enrollmentVM.lastSyncedAt {
+                        Circle()
+                            .fill(Tokens.Colors.SwiftUI.accent)
+                            .frame(width: 10, height: 10)
+                        
+                        let formatter = RelativeDateTimeFormatter()
+                        formatter.unitsStyle = .full
+                        let dateStr = formatter.localizedString(for: lastSynced, relativeTo: Date())
+                        
+                        Text("Synced \(dateStr)")
+                            .foregroundColor(Tokens.Colors.SwiftUI.text)
+                    } else if enrollmentVM.isConnected {
+                        Circle()
+                            .fill(Tokens.Colors.SwiftUI.accentSoft)
+                            .frame(width: 10, height: 10)
+                        Text("Waiting for first sync...")
+                            .foregroundColor(Tokens.Colors.SwiftUI.muted)
+                    } else {
+                        Circle()
+                            .fill(Tokens.Colors.SwiftUI.danger)
+                            .frame(width: 10, height: 10)
+                        Text("Not Connected")
+                            .foregroundColor(Tokens.Colors.SwiftUI.muted)
+                    }
                     Spacer()
                     Button("Sync Now") {}
                 }
