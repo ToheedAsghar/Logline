@@ -54,9 +54,6 @@ fi
 unset DEVICE_TOKEN
 echo
 
-echo "==> Sync agent"
-"$REPO_ROOT/tracker/packaging/install_sync_agent.sh"
-echo
 
 echo "=================================================================="
 echo "Setup complete. One manual step remains — grant Accessibility (see"

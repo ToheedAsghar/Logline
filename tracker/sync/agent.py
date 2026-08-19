@@ -14,7 +14,7 @@ import sys
 
 from tracker.constants import (
     EXIT_ALREADY_RUNNING, SYNC_ALREADY_RUNNING_MSG, SYNC_BATCH_MSG, SYNC_COMPLETE_MSG,
-    SYNC_FAILED_MSG, SYNC_LOCK_PATH, SYNC_NOT_ENROLLED_MSG,
+    SYNC_FAILED_MSG, SYNC_LOCK_PATH,
 )
 from tracker.logging_config import configure_logging
 from tracker.singleton import AlreadyRunning, SingleInstanceLock

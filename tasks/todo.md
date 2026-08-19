@@ -10,13 +10,12 @@
 **Verification:**
 - [ ] Tests pass: `make test`
 - [ ] Build succeeds: N/A
-- [ ] Manual check: Run `python -c "from secure_storage import *; store_token('test')"` and verify in Keychain Access.
+- [ ] Manual check: Run `tracker-app-exec` and verify process piping in logs.
 
 **Dependencies:** None
 
 **Files likely touched:**
-- `requirements.txt`
-- `tracker/storage/secure_storage.py` (New)
+- `tracker/sync/agent.py`
 
 **Estimated scope:** Small: 1-2 files
 
@@ -53,11 +52,11 @@
 
 **Acceptance criteria:**
 - [ ] Validation call made to the backend.
-- [ ] Upon success, token stored via `secure_storage.py`.
+- [ ] Upon success, token stored via `KeychainManager.swift`.
 - [ ] UI status updates to "Connected".
 
 **Verification:**
-- [ ] Tests pass: Unit tests mock backend/keyring and verify success/failure flows.
+- [ ] Tests pass: Unit tests mock backend/KeychainManager and verify success/failure flows.
 - [ ] Build succeeds: N/A
 - [ ] Manual check: Submit valid/invalid tokens and verify UI changes.
 
@@ -122,7 +121,7 @@
 
 **Acceptance criteria:**
 - [ ] UI loop and tracker loop run concurrently.
-- [ ] Tracker uses the token from `secure_storage.py`.
+- [ ] Tracker receives the token via stdin piped by the Swift app.
 
 **Verification:**
 - [ ] Tests pass: Integration tests if possible.
