@@ -27,7 +27,6 @@ struct LiveEventsView: View {
             .cornerRadius(Tokens.Radius.md)
         }
         .onAppear {
-            // Start refreshing if the view appears
             isVisible = true
             viewModel.startAutoRefresh()
         }
