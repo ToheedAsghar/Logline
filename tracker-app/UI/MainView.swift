@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct MainView: View {
+    @StateObject private var enrollmentVM = EnrollmentViewModel()
+    @State private var tokenInput: String = ""
+    
     var body: some View {
         VStack(spacing: 24) {
             // Placeholder: Enrollment
@@ -9,20 +12,51 @@ struct MainView: View {
                     .font(.headline)
                     .foregroundColor(Tokens.Colors.SwiftUI.text)
                 
-                HStack {
-                    SecureField("Token...", text: .constant(""))
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                    Button("Connect") {}
+                if enrollmentVM.isConnected {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(Tokens.Colors.SwiftUI.accent)
+                        Text("Connected\(enrollmentVM.deviceId != nil ? " as \(enrollmentVM.deviceId!)" : "")")
+                            .foregroundColor(Tokens.Colors.SwiftUI.text)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Tokens.Colors.SwiftUI.surface)
+                    .cornerRadius(Tokens.Radius.md)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Tokens.Radius.md)
+                            .stroke(Tokens.Colors.SwiftUI.border, lineWidth: 1)
+                    )
+                } else {
+                    HStack {
+                        SecureField("Token...", text: $tokenInput)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .disabled(enrollmentVM.isConnecting)
+                        
+                        Button(enrollmentVM.isConnecting ? "Connecting..." : "Connect") {
+                            Task {
+                                await enrollmentVM.connect(token: tokenInput)
+                            }
+                        }
                         .buttonStyle(BorderedProminentButtonStyle())
                         .tint(Tokens.Colors.SwiftUI.accent)
+                        .disabled(enrollmentVM.isConnecting || tokenInput.isEmpty)
+                    }
+                    .padding()
+                    .background(Tokens.Colors.SwiftUI.surface)
+                    .cornerRadius(Tokens.Radius.md)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Tokens.Radius.md)
+                            .stroke(Tokens.Colors.SwiftUI.border, lineWidth: 1)
+                    )
+                    
+                    if let errorMessage = enrollmentVM.errorMessage {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundColor(Tokens.Colors.SwiftUI.danger)
+                            .padding(.top, 4)
+                    }
                 }
-                .padding()
-                .background(Tokens.Colors.SwiftUI.surface)
-                .cornerRadius(Tokens.Radius.md)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Tokens.Radius.md)
-                        .stroke(Tokens.Colors.SwiftUI.border, lineWidth: 1)
-                )
             }
             
             // Placeholder: Sync Status
@@ -90,5 +124,8 @@ struct MainView: View {
         .padding(24)
         .background(Tokens.Colors.SwiftUI.bg)
         .frame(minWidth: 400, minHeight: 500)
+        .onAppear {
+            enrollmentVM.checkExistingEnrollment()
+        }
     }
 }
