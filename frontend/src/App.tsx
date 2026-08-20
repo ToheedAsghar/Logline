@@ -6,6 +6,7 @@ import {
   History,
   Login,
   OAuthCallback,
+  RemoteLogs,
   ResetPassword,
   ReviewDraft,
   Settings,
@@ -34,6 +35,7 @@ export default function App() {
       >
         <Route path="/" element={<ReviewDraft />} />
         <Route path="/history" element={<History />} />
+        <Route path="/remote-logs" element={<RemoteLogs />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
 

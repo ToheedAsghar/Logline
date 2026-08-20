@@ -17,3 +17,10 @@ export const INTEGRATION_SOURCES: IntegrationSource[] = [
   { id: "calendar", name: "Google Calendar" },
   { id: "slack", name: "Slack" },
 ];
+
+export const SOURCE_COLORS: Record<string, { bg: string; color: string }> = {
+  github: { bg: "#F5F2EA", color: "#191917" },
+  jira: { bg: "#EBF3FB", color: "#0052CC" },
+  calendar: { bg: "#EBF3FB", color: "#1A73E8" },
+  slack: { bg: "#FBEBF3", color: "#4A154B" },
+};

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { cn, formatRelativeTime } from "@/common/utils";
-import { INTEGRATION_SOURCES } from "@/constants";
+import { INTEGRATION_SOURCES, SOURCE_COLORS } from "@/constants";
 import { ApiError } from "@/repositories/api/client";
 import { useConnectIntegration, useDisconnectIntegration } from "@/repositories/hooks";
 import type { Integration } from "@/repositories/types";
@@ -23,7 +23,7 @@ const STATUS_PILL: Record<Integration["status"], string> = {
   disconnected: "border-[#E3DFD2] bg-[#F5F2EA] text-[#8A887C]",
 };
 
-const DEFAULT_SOURCE_BADGE = { bg: "#F5F2EA", color: "#191917" };
+const DEFAULT_SOURCE_COLORS = { bg: "#F5F2EA", color: "#191917" };
 
 const DEFAULT_SOURCE_ICON: ReactNode = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -31,13 +31,6 @@ const DEFAULT_SOURCE_ICON: ReactNode = (
     <polygon points="12 8 8 12 12 16 16 12 12 8" />
   </svg>
 );
-
-const SOURCE_BADGE: Record<string, { bg: string; color: string }> = {
-  github: { bg: "#F5F2EA", color: "#191917" },
-  jira: { bg: "#EBF3FB", color: "#0052CC" },
-  calendar: { bg: "#EBF3FB", color: "#1A73E8" },
-  slack: { bg: "#FBEBF3", color: "#4A154B" },
-};
 
 const SOURCE_ICON: Record<string, ReactNode> = {
   github: (
@@ -85,7 +78,7 @@ export function IntegrationCard({ integration, className }: IntegrationCardProps
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   const name = INTEGRATION_SOURCES.find((s) => s.id === integration.source)?.name ?? integration.source;
-  const badge = SOURCE_BADGE[integration.source] ?? DEFAULT_SOURCE_BADGE;
+  const badge = SOURCE_COLORS[integration.source] ?? DEFAULT_SOURCE_COLORS;
   const icon = SOURCE_ICON[integration.source] ?? DEFAULT_SOURCE_ICON;
 
   const connectNotAvailable =

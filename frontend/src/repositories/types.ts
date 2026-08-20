@@ -199,3 +199,30 @@ export interface DeviceEnrollOut {
   token: string;
   created_at: string;
 }
+
+export type RemoteEventSource = "github" | "jira" | "slack" | "calendar";
+
+export interface RemoteEvent {
+  id: number;
+  source: RemoteEventSource;
+  event_type: string;
+  occurred_at: string;
+  summary: string | null;
+  description: string | null;
+  remote_project_id: string | null;
+  match_keys: Record<string, unknown> | null;
+}
+
+export interface RemoteEventList {
+  events: RemoteEvent[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+export interface RemoteEventListParams {
+  source?: RemoteEventSource;
+  date_range_start?: string;
+  date_range_end?: string;
+  cursor?: string | null;
+  limit?: number;
+}

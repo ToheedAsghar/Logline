@@ -90,6 +90,15 @@
     background: var(--color-accent-soft);
   }
 
+  input[type="date"] {
+    color-scheme: light;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    color: var(--ll-accent);
+    opacity: 0.8;
+  }
+
   @keyframes ll-blink {
     0%,
     49% {
