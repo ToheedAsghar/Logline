@@ -120,6 +120,15 @@ Python capture logic as-is rather than risking a rewrite.
   - Acceptance: double-click launches with no Dock icon, menu-bar icon present, Start/Stop/
     Quit and all prior-phase behavior intact in the fully packaged build.
 
+### Phase 6: UI Redesign (Task 8)
+- **Goal**: Implement the native AppKit redesign according to `Logline Tracker.dc.html`, avoiding WebViews.
+- **Tech Stack additions**: Bundle custom `.ttf` fonts (`Space Grotesk`, `JetBrains Mono`) directly into the app bundle resources. Register them via `ATSApplicationFontsPath`.
+- **Requirements**:
+  - Strict mapping of the `index.css` OKLCH colors to native HEX values in `Tokens.swift`.
+  - Dynamic `NSWindow` resizing depending on connection state (760x620 vs 520x620).
+  - Separate state models for Sync Connectivity vs Daemon Lifecycle.
+  - Fix the `LiveEventsView` table column sizing constraints.
+
 ### Checkpoint: Complete
 - [ ] All acceptance criteria in spec.md met.
 - [ ] Ready for review.

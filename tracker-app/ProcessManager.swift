@@ -15,15 +15,27 @@ public class ProcessManager {
     
     private init() {}
     
+    private func getPythonProcessArgs(isSync: Bool) -> (URL, [String]) {
+        if let bundledURL = Bundle.main.url(forResource: "logline_tracker", withExtension: nil) {
+            let args = isSync ? ["sync"] : []
+            return (bundledURL, args)
+        }
+        
+        let fileManager = FileManager.default
+        let currentPath = fileManager.currentDirectoryPath
+        let executableURL = URL(fileURLWithPath: "\(currentPath)/tracker/.venv/bin/python")
+        let args = isSync ? ["-m", "tracker.sync.agent"] : ["-m", "tracker.main"]
+        return (executableURL, args)
+    }
+    
     /// Starts the continuous tracker daemon (tracker.main)
     public func startTrackerDaemon() throws {
         terminateTrackerDaemon()
         
         let process = Process()
-        let fileManager = FileManager.default
-        let currentPath = fileManager.currentDirectoryPath
-        process.executableURL = URL(fileURLWithPath: "\(currentPath)/tracker/.venv/bin/python")
-        process.arguments = ["-m", "tracker.main"]
+        let (executableURL, args) = getPythonProcessArgs(isSync: false)
+        process.executableURL = executableURL
+        process.arguments = args
         
         // Pipe stdout/stderr for debugging
         let outPipe = Pipe()
@@ -66,8 +78,19 @@ public class ProcessManager {
             let p = process
             trackerProcess = nil // Clear it first so terminationHandler knows it was intentional
             p.terminate()
-            p.waitUntilExit()
-            print("ProcessManager: Terminated tracker daemon.")
+            
+            let timeout = Date().addingTimeInterval(3.0)
+            while p.isRunning && Date() < timeout {
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            
+            if p.isRunning {
+                NSLog("ProcessManager: Tracker daemon did not exit gracefully within timeout, force-killing...")
+                kill(p.processIdentifier, SIGKILL)
+                p.waitUntilExit()
+            } else {
+                NSLog("ProcessManager: Terminated tracker daemon gracefully.")
+            }
         } else {
             trackerProcess = nil
         }
@@ -78,8 +101,17 @@ public class ProcessManager {
         terminateTrackerDaemon()
         if let process = syncProcess, process.isRunning {
             process.terminate()
-            process.waitUntilExit()
-            print("ProcessManager: Terminated active sync agent.")
+            let timeout = Date().addingTimeInterval(3.0)
+            while process.isRunning && Date() < timeout {
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            if process.isRunning {
+                NSLog("ProcessManager: Sync agent did not exit gracefully within timeout, force-killing...")
+                kill(process.processIdentifier, SIGKILL)
+                process.waitUntilExit()
+            } else {
+                NSLog("ProcessManager: Terminated active sync agent gracefully.")
+            }
         }
         syncProcess = nil
     }
@@ -87,53 +119,47 @@ public class ProcessManager {
     /// Runs a one-shot sync agent upload
     public func triggerSync() async throws {
         guard syncProcess == nil else {
-            print("ProcessManager: Sync agent already running, skipping.")
+            NSLog("ProcessManager: Sync agent is already running, skipping trigger.")
             return
         }
         
-        let token = try KeychainManager.getToken()
+        let token = try? KeychainManager.getToken()
         guard let validToken = token, !validToken.isEmpty else {
-            print("ProcessManager: No token found in Keychain, cannot run sync agent.")
+            NSLog("ProcessManager: No token found in Keychain, cannot run sync agent.")
             return
         }
         
         let process = Process()
-        self.syncProcess = process
-        
-        let fileManager = FileManager.default
-        let currentPath = fileManager.currentDirectoryPath
-        process.executableURL = URL(fileURLWithPath: "\(currentPath)/tracker/.venv/bin/python")
-        process.arguments = ["-m", "tracker.sync.agent"]
+        let (executableURL, args) = getPythonProcessArgs(isSync: true)
+        process.executableURL = executableURL
+        process.arguments = args
+        let currentPath = FileManager.default.currentDirectoryPath
+        process.currentDirectoryURL = URL(fileURLWithPath: currentPath)
         
         let pipe = Pipe()
         process.standardInput = pipe
         
-        let outPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = outPipe
-        
-        outPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if !data.isEmpty, let str = String(data: data, encoding: .utf8) {
-                print("[SyncAgent] \(str)", terminator: "")
+        process.terminationHandler = { [weak self] p in
+            DispatchQueue.main.async {
+                NSLog("ProcessManager: Sync agent (PID: \(p.processIdentifier)) finished with status \(p.terminationStatus).")
+                if self?.syncProcess === p {
+                    self?.syncProcess = nil
+                }
             }
         }
         
-        try process.run()
-        print("ProcessManager: Started one-shot sync agent (PID: \(process.processIdentifier))")
-        
-        if let data = validToken.data(using: .utf8) {
-            pipe.fileHandleForWriting.write(data)
-        }
-        pipe.fileHandleForWriting.closeFile()
-        
-        // Wait for the sync agent to finish asynchronously
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            process.terminationHandler = { [weak self] _ in
-                print("ProcessManager: Sync agent finished.")
-                self?.syncProcess = nil
-                continuation.resume()
+        do {
+            try process.run()
+            self.syncProcess = process
+            NSLog("ProcessManager: Started one-shot sync agent (PID: \(process.processIdentifier))")
+            
+            if let data = validToken.data(using: .utf8) {
+                pipe.fileHandleForWriting.write(data)
             }
+            try pipe.fileHandleForWriting.close()
+        } catch {
+            NSLog("ProcessManager: Failed to start sync agent: \(error)")
+            throw error
         }
     }
 }

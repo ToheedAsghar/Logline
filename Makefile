@@ -94,5 +94,21 @@ blockers:
 install-hooks:
 	pip install pre-commit && pre-commit install && pre-commit install --hook-type pre-push
 
+pyinstaller:
+	@echo "Building Python tracker with PyInstaller..."
+	cd tracker && \
+	../tracker/.venv/bin/pyinstaller --noconfirm --onefile --name logline_tracker \
+		--add-data "sync/agent.py:sync" \
+		--hidden-import "tracker.sync.agent" \
+		entry.py
+	@echo "✓ PyInstaller build complete"
+
+package: pyinstaller
+	cd tracker-app && RELEASE=1 ./build.sh
+	@echo "Packaging DMG..."
+	rm -f LoglineSync.dmg
+	hdiutil create -volname "LoglineSync" -srcfolder tracker-app/LoglineSync.app -ov -format UDZO LoglineSync.dmg
+	@echo "✓ DMG created: LoglineSync.dmg"
+
 clean:
 	rm -rf .review

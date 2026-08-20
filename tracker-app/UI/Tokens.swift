@@ -1,67 +1,95 @@
 import AppKit
 import SwiftUI
 
-/// Design tokens ported from the web frontend's `index.css` OKLCH values
 public enum Tokens {
     public enum Colors {
-        // Main colors
-        public static let bg = NSColor(red: 0.964, green: 0.956, blue: 0.924, alpha: 1.000)
-        public static let surface = NSColor(red: 0.994, green: 0.991, blue: 0.970, alpha: 1.000)
-        public static let surface2 = NSColor(red: 0.932, green: 0.923, blue: 0.882, alpha: 1.000)
-        
-        // Borders
-        public static let border = NSColor(red: 0.847, green: 0.840, blue: 0.794, alpha: 1.000)
-        public static let border2 = NSColor(red: 0.723, green: 0.724, blue: 0.662, alpha: 1.000)
+        // Core Layout
+        public static let windowBg = Color(hex: "#F6F2E9")
+        public static let cardBg = Color(hex: "#FEFDF8")
+        public static let border = Color(hex: "#E3DFD5")
         
         // Text
-        public static let text = NSColor(red: 0.083, green: 0.132, blue: 0.092, alpha: 1.000)
-        public static let muted = NSColor(red: 0.280, green: 0.342, blue: 0.294, alpha: 1.000)
-        public static let faint = NSColor(red: 0.441, green: 0.497, blue: 0.446, alpha: 1.000)
+        public static let ink = Color(hex: "#1A1712") // Primary text
+        public static let body = Color(hex: "#4A4640") // Secondary text
+        public static let muted = Color(hex: "#8B8474") // Muted detail text
         
-        // Accents
-        public static let accent = NSColor(red: 0.101, green: 0.447, blue: 0.273, alpha: 1.000)
-        public static let accentInk = NSColor(red: 0.968, green: 0.965, blue: 0.906, alpha: 1.000)
-        public static let accentDim = NSColor(red: 0.101, green: 0.447, blue: 0.273, alpha: 1.000)
-        public static let accentSoft = NSColor(red: 0.101, green: 0.447, blue: 0.273, alpha: 0.130)
+        // Brand & Accents
+        public static let primaryButton = Color(hex: "#8DAA94")
+        public static let primaryButtonHover = Color(hex: "#7D9C85")
+        public static let brandLime = Color(hex: "#9BD648")
+        public static let brandGreen = Color(hex: "#12623D")
         
-        // Danger
-        public static let danger = NSColor(red: 0.693, green: 0.241, blue: 0.024, alpha: 1.000)
-        public static let dangerSoft = NSColor(red: 0.693, green: 0.241, blue: 0.024, alpha: 0.120)
+        // Status Indicators
+        public static let statusNotConnected = Color(hex: "#A39C8C")
+        public static let statusConnected = Color(hex: "#5F8A71")
+        public static let statusSyncing = Color(hex: "#9BD648")
+        public static let statusFailed = Color(hex: "#B8442F")
         
-        // Sidebar
-        public static let sidebarBg = NSColor(red: 0.065, green: 0.112, blue: 0.084, alpha: 1.000)
-        public static let sidebarSurface = NSColor(red: 0.127, green: 0.186, blue: 0.151, alpha: 1.000)
-        public static let sidebarText = NSColor(red: 0.924, green: 0.934, blue: 0.899, alpha: 1.000)
-        public static let sidebarMuted = NSColor(red: 0.565, green: 0.612, blue: 0.572, alpha: 1.000)
-        public static let sidebarBorder = NSColor(red: 0.164, green: 0.220, blue: 0.186, alpha: 1.000)
+        // Idle pill
+        public static let idlePillText = Color(hex: "#8A6C22")
+        public static let idlePillDot = Color(hex: "#B08B2F")
+        public static let idlePillBg = Color(red: 184/255.0, green: 141/255.0, blue: 47/255.0, opacity: 0.13)
         
-        // SwiftUI equivalents for convenience if using NSHostingView later
-        public struct SwiftUI {
-            public static let bg = Color(nsColor: Colors.bg)
-            public static let surface = Color(nsColor: Colors.surface)
-            public static let surface2 = Color(nsColor: Colors.surface2)
-            public static let border = Color(nsColor: Colors.border)
-            public static let border2 = Color(nsColor: Colors.border2)
-            public static let text = Color(nsColor: Colors.text)
-            public static let muted = Color(nsColor: Colors.muted)
-            public static let faint = Color(nsColor: Colors.faint)
-            public static let accent = Color(nsColor: Colors.accent)
-            public static let accentInk = Color(nsColor: Colors.accentInk)
-            public static let accentDim = Color(nsColor: Colors.accentDim)
-            public static let accentSoft = Color(nsColor: Colors.accentSoft)
-            public static let danger = Color(nsColor: Colors.danger)
-            public static let dangerSoft = Color(nsColor: Colors.dangerSoft)
-        }
+        // Tables
+        public static let tableHeaderBg = Color(hex: "#F4F0E5")
+        public static let tableRowHover = Color(hex: "#F5F1E6")
+        public static let tableRowBorder = Color(hex: "#F2EEE3")
     }
     
     public enum Radius {
-        public static let xs: CGFloat = 4
-        public static let sm: CGFloat = 7
-        public static let md: CGFloat = 9
-        public static let lg: CGFloat = 12
-        public static let xl: CGFloat = 14
-        public static let xxl: CGFloat = 16
-        public static let xxxl: CGFloat = 18
-        public static let pill: CGFloat = 999
+        public static let control: CGFloat = 7
+        public static let card: CGFloat = 10
+        public static let window: CGFloat = 14
+    }
+    
+    public enum Fonts {
+        public static func ui(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+            let weightName: String
+            switch weight {
+            case .medium: weightName = "SpaceGrotesk-Medium"
+            case .semibold: weightName = "SpaceGrotesk-SemiBold"
+            case .bold: weightName = "SpaceGrotesk-Bold"
+            default: weightName = "SpaceGrotesk-Regular"
+            }
+            return Font.custom(weightName, size: size)
+        }
+        
+        public static func mono(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+            let weightName: String
+            switch weight {
+            case .medium: weightName = "JetBrainsMono-Medium"
+            case .semibold: weightName = "JetBrainsMono-SemiBold"
+            case .bold: weightName = "JetBrainsMono-Bold"
+            default: weightName = "JetBrainsMono-Regular"
+            }
+            return Font.custom(weightName, size: size)
+        }
+    }
+}
+
+// Helper for hex colors
+extension Color {
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: // RGB (12-bit)
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: // RGB (24-bit)
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: // ARGB (32-bit)
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (1, 1, 1, 0)
+        }
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue:  Double(b) / 255,
+            opacity: Double(a) / 255
+        )
     }
 }

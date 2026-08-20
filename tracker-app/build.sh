@@ -18,6 +18,33 @@ mkdir -p "$RESOURCES_DIR"
 # Copy Info.plist
 cp Info.plist "$APP_DIR/Contents/Info.plist"
 
+# Copy Fonts
+mkdir -p "$RESOURCES_DIR/Fonts"
+cp Fonts/*.ttf "$RESOURCES_DIR/Fonts/"
+
+# Copy Placeholder Icon
+cp /Users/toheed.asghar/.gemini/antigravity-ide/brain/09d07003-0aa9-4d6e-b59b-ddf361f23c6d/logline_mark_1787212745632.jpg "$RESOURCES_DIR/AppIconPlaceholder.jpg" || true
+
+# Copy PyInstaller binary if it exists
+if [ -f "../tracker/dist/logline_tracker" ]; then
+    echo "Copying logline_tracker to Resources..."
+    cp "../tracker/dist/logline_tracker" "$RESOURCES_DIR/"
+fi
+
+# Set swift optimization flag
+SWIFT_OPT="-Onone"
+if [ "${RELEASE:-0}" = "1" ]; then
+    SWIFT_OPT="-O"
+    echo "Building in Release mode (-O)"
+fi
+
+# Set swift optimization flag
+SWIFT_OPT="-Onone"
+if [ "${RELEASE:-0}" = "1" ]; then
+    SWIFT_OPT="-O"
+    echo "Building in Release mode (-O)"
+fi
+
 # Compile Swift files
 swiftc \
     TrackerApp.swift \
@@ -29,8 +56,10 @@ swiftc \
     UI/LiveEventsViewModel.swift \
     UI/LiveEventsView.swift \
     UI/EnrollmentViewModel.swift \
+    UI/EnrollmentView.swift \
     Constants.swift \
     -lsqlite3 \
+    $SWIFT_OPT \
     -o "$MACOS_DIR/tracker-app"
 
 # Ad-hoc sign the app

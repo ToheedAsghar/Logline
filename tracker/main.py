@@ -37,8 +37,12 @@ def _install_sigterm_runloop_source():
         libdispatch.dispatch_get_main_queue(),
     )
     def _handle_sigterm():
-        AppHelper.stopEventLoop()
-        
+        try:
+            AppHelper.stopEventLoop()
+        except BaseException:
+            import os
+            os._exit(1)
+
     libdispatch.dispatch_source_set_event_handler(source, _handle_sigterm)
     libdispatch.dispatch_resume(source)
     return source

@@ -67,9 +67,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    /// The application must not terminate when its only visible window is closed.
-    /// Returning false here ensures the app stays alive as a background menu-bar app
-    /// and the window can be reopened later from the status item menu.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }

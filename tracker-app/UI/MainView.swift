@@ -2,132 +2,84 @@ import SwiftUI
 
 struct MainView: View {
     @StateObject private var enrollmentVM = EnrollmentViewModel()
-    @State private var tokenInput: String = ""
     
     var body: some View {
-        VStack(spacing: 24) {
-            // Placeholder: Enrollment
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Enrollment")
-                    .font(.headline)
-                    .foregroundColor(Tokens.Colors.SwiftUI.text)
+        VStack(spacing: 0) {
+            // Header Bar
+            HStack(spacing: 14) {
+                // Spacer for traffic lights area
+                Spacer().frame(width: 62)
                 
-                if enrollmentVM.isConnected {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(Tokens.Colors.SwiftUI.accent)
-                        Text("Connected\(enrollmentVM.deviceId != nil ? " as \(enrollmentVM.deviceId!)" : "")")
-                            .foregroundColor(Tokens.Colors.SwiftUI.text)
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            Task {
-                                await enrollmentVM.disconnect()
-                            }
-                        }) {
-                            Text(enrollmentVM.isDisconnecting ? "Disconnecting..." : "Disconnect")
-                        }
-                        .disabled(enrollmentVM.isDisconnecting)
-                        .buttonStyle(BorderedButtonStyle())
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Tokens.Colors.SwiftUI.surface)
-                    .cornerRadius(Tokens.Radius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Tokens.Radius.md)
-                            .stroke(Tokens.Colors.SwiftUI.border, lineWidth: 1)
-                    )
-                } else {
-                    HStack {
-                        SecureField("Token...", text: $tokenInput)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .disabled(enrollmentVM.isConnecting)
-                        
-                        Button(enrollmentVM.isConnecting ? "Connecting..." : "Connect") {
-                            Task {
-                                await enrollmentVM.connect(token: tokenInput)
-                            }
-                        }
-                        .buttonStyle(BorderedProminentButtonStyle())
-                        .tint(Tokens.Colors.SwiftUI.accent)
-                        .disabled(enrollmentVM.isConnecting || tokenInput.isEmpty)
-                    }
-                    .padding()
-                    .background(Tokens.Colors.SwiftUI.surface)
-                    .cornerRadius(Tokens.Radius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Tokens.Radius.md)
-                            .stroke(Tokens.Colors.SwiftUI.border, lineWidth: 1)
-                    )
-                    
-                    if let errorMessage = enrollmentVM.errorMessage {
-                        Text(errorMessage)
-                            .font(.caption)
-                            .foregroundColor(Tokens.Colors.SwiftUI.danger)
-                            .padding(.top, 4)
-                    }
-                }
-            }
-            
-            // Placeholder: Sync Status
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Sync Status")
-                    .font(.headline)
-                    .foregroundColor(Tokens.Colors.SwiftUI.text)
+                Spacer()
                 
-                HStack {
-                    if enrollmentVM.isPollingError {
-                        Circle()
-                            .fill(Tokens.Colors.SwiftUI.danger)
-                            .frame(width: 10, height: 10)
-                        Text("Sync Error")
-                            .foregroundColor(Tokens.Colors.SwiftUI.danger)
-                    } else if let lastSynced = enrollmentVM.lastSyncedAt {
-                        Circle()
-                            .fill(Tokens.Colors.SwiftUI.accent)
-                            .frame(width: 10, height: 10)
-                        
-                        Text("Synced \(formatRelativeDate(lastSynced))")
-                            .foregroundColor(Tokens.Colors.SwiftUI.text)
-                    } else if enrollmentVM.isConnected {
-                        Circle()
-                            .fill(Tokens.Colors.SwiftUI.accentSoft)
-                            .frame(width: 10, height: 10)
-                        Text("Waiting for first sync...")
-                            .foregroundColor(Tokens.Colors.SwiftUI.muted)
+                // Centered App Title & Icon
+                HStack(spacing: 9) {
+                    if let image = NSImage(named: "AppIconPlaceholder.jpg") {
+                        Image(nsImage: image)
+                            .resizable()
+                            .frame(width: 17, height: 17)
+                            .cornerRadius(5)
+                            .opacity(enrollmentVM.isConnected ? 1.0 : 0.5)
                     } else {
-                        Circle()
-                            .fill(Tokens.Colors.SwiftUI.danger)
-                            .frame(width: 10, height: 10)
-                        Text("Not Connected")
-                            .foregroundColor(Tokens.Colors.SwiftUI.muted)
+                        // Fallback if asset is missing
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color.gray)
+                            .frame(width: 17, height: 17)
+                            .opacity(enrollmentVM.isConnected ? 1.0 : 0.5)
                     }
-                    Spacer()
-                    Button("Sync Now") {}
+                    
+                    Text("Logline Tracker")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color(hex: "#26231D"))
+                        .tracking(-0.13)
                 }
-                .padding()
-                .background(Tokens.Colors.SwiftUI.surface)
-                .cornerRadius(Tokens.Radius.md)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Tokens.Radius.md)
-                        .stroke(Tokens.Colors.SwiftUI.border, lineWidth: 1)
-                )
+                
+                Spacer()
+                
+                // Right aligned "LIVE" Pill (Only if connected)
+                if enrollmentVM.isConnected {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Tokens.Colors.statusConnected)
+                            .frame(width: 6, height: 6)
+                        Text("LIVE")
+                            .font(Tokens.Fonts.mono(size: 10, weight: .medium))
+                            .tracking(0.4)
+                            .foregroundColor(Color(hex: "#3F6B52"))
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(height: 22)
+                    .background(Tokens.Colors.statusConnected.opacity(0.14))
+                    .cornerRadius(11)
+                    .frame(width: 62, alignment: .trailing)
+                } else {
+                    Spacer().frame(width: 62)
+                }
             }
-            LiveEventsView()
+            .frame(height: 48)
+            .padding(.horizontal, 16)
+            .background(Color(hex: "#F1EDE2"))
+            .overlay(
+                Rectangle()
+                    .frame(height: 0.5)
+                    .foregroundColor(Color(hex: "#DDD8CB"))
+                , alignment: .bottom
+            )
+            
+            // Main Content Area
+            VStack(spacing: 14) {
+                EnrollmentView(enrollmentVM: enrollmentVM)
+                
+                LiveEventsView(isConnected: enrollmentVM.isConnected)
+            }
+            .padding(16)
         }
-        .padding(24)
-        .background(Tokens.Colors.SwiftUI.bg)
-        .frame(minWidth: 400, minHeight: 500)
+        .background(Tokens.Colors.windowBg)
+        .frame(width: enrollmentVM.isConnected ? 760 : 520, height: 620)
         .onAppear {
             enrollmentVM.checkExistingEnrollment()
         }
-    }
-    
-    private func formatRelativeDate(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return formatter.localizedString(for: date, relativeTo: Date())
+        // Force the SwiftUI view to drive the window size natively
+        .fixedSize()
     }
 }
