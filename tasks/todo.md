@@ -28,6 +28,7 @@
   - [x] Bundle `Space Grotesk` and `JetBrains Mono` fonts natively.
   - [x] Overhaul `Tokens.swift` with exact OKLCH values and custom font modifiers.
   - [x] Update `MainView.swift`, `EnrollmentView.swift`, and `LiveEventsView.swift`.
+  - [x] **Observation from 2026-08-20**: Orphaned PIDs from earlier Gateway tests were found concurrently writing to `tracker.db` alongside the active tracker instance. This caused overlapping and duplicate rows in the database. Orphan-detection/cleanup is currently deferred to future work, but this observation elevates its priority.
 
 ---
 

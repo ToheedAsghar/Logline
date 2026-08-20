@@ -14,8 +14,8 @@ struct LiveEventsView: View {
                 .font(Tokens.Fonts.ui(size: 14, weight: .semibold))
                 .foregroundColor(Tokens.Colors.ink)
             
-            if !isConnected {
-                // Not Connected / Empty State
+            if viewModel.events.isEmpty {
+                // Empty State
                 VStack(spacing: 8) {
                     Text("Waiting for a session...")
                         .font(Tokens.Fonts.mono(size: 13))
@@ -100,16 +100,7 @@ struct LiveEventsView: View {
         }
         .onAppear {
             isVisible = true
-            if isConnected {
-                viewModel.startAutoRefresh()
-            }
-        }
-        .onChange(of: isConnected) { connected in
-            if connected && isVisible {
-                viewModel.startAutoRefresh()
-            } else {
-                viewModel.stopAutoRefresh()
-            }
+            viewModel.startAutoRefresh()
         }
         .onDisappear {
             isVisible = false
@@ -122,9 +113,7 @@ struct LiveEventsView: View {
             if window.occlusionState.contains(.visible) {
                 if !isVisible {
                     isVisible = true
-                    if isConnected {
-                        viewModel.startAutoRefresh()
-                    }
+                    viewModel.startAutoRefresh()
                 }
             } else {
                 if isVisible {

@@ -30,6 +30,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         KeychainManager.migrateLegacyToken()
         print("LoglineTracker App Launched")
         
+        let availableFamilies = NSFontManager.shared.availableFontFamilies
+        if availableFamilies.contains("Space Grotesk") {
+            print("Font Check: Space Grotesk FOUND")
+        } else {
+            print("Font Check: Space Grotesk MISSING")
+        }
+        if availableFamilies.contains("JetBrains Mono") {
+            print("Font Check: JetBrains Mono FOUND")
+        } else {
+            print("Font Check: JetBrains Mono MISSING")
+        }
+        
         setupMenu()
         setupWindow()
         updateIcon()
