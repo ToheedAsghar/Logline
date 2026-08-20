@@ -72,13 +72,19 @@ pip install -r requirements-dev.txt   # only needed if you plan to run tests/lin
 
 ### 4.2 Create your `.env` file
 
-Copy the example file and fill in the values:
+Copy the example file:
 
 ```sh
 cp .env.example .env
 ```
 
-Open `.env` and fill in at least the **required** section at the top of the file:
+`.env` is your personal, private config file — it's already in `.gitignore`, so it will never be committed. Never
+put real secrets into `.env.example`, only into `.env`.
+
+The list below reflects what the code actually reads (`app/config.py`), which is the source of truth if it ever
+disagrees with the comments in `.env.example`.
+
+#### Required — the app refuses to start without these
 
 - `DATABASE_URL` — connection string for the Postgres container you started in step 3. For the default Docker
   Compose settings above, use:
@@ -92,23 +98,59 @@ Open `.env` and fill in at least the **required** section at the top of the file
   ```
   Run it twice — these two must be **different** values from each other.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_ADDRESS` — used to send verification and
-  password-reset emails. For local development you can point these at any SMTP provider you have test credentials
-  for (e.g. Mailtrap, Gmail with an app password), or leave them blank if you don't need email-dependent features
-  (signup verification and password reset will not work without them).
-- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` — needed for "Sign in with Google" and Google Calendar. Create these
-  in the Google Cloud Console (OAuth 2.0 credentials) if you need this feature; otherwise you can leave them blank
-  and skip Google sign-in.
+  password-reset emails. These are required even for local dev (the server raises an error on startup if any are
+  missing) — point them at any SMTP provider you have test credentials for, e.g. a Gmail account with an
+  [app password](https://myaccount.google.com/apppasswords), or a test inbox like Mailtrap.
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` — also required at startup, even if you don't plan to use Google
+  sign-in yet. Create an OAuth 2.0 client in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+  (type "Web application") to get these.
 
-Everything else in `.env.example` (GitHub, Slack, Jira integrations, Anthropic/OpenAI keys, field encryption key) is
-optional for just getting the app running — fill those in later if you want to test those specific integrations.
-The comments inside `.env.example` explain what each one is for and how to generate it.
+#### Effectively required — the app starts, but these specific features break without them
 
-The two base-URL settings already have sensible local defaults and don't need to change:
+- `GOOGLE_OAUTH_CREDENTIALS` — set to `gcp-oauth.keys.json` (a client-secret file you download from the same Google
+  Cloud Console credential, kept at `backend/gcp-oauth.keys.json`, already git-ignored). Only used by the standalone
+  Google Calendar MCP connectivity script (`scripts/manual_test_calendar_mcp.py`), not by the main app.
+- `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` — needed for the AI features (draft write-ups, reconciliation). Which
+  one is actually required depends on `LLM_PROVIDER` below.
+- `ENCRYPTION_KEY` — encrypts stored OAuth tokens at rest (field-level encryption). Generate with:
+  ```sh
+  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+  ```
+  Any integration connect flow (GitHub/Slack/Jira/Calendar) will fail without this set.
 
-```
-BACKEND_BASE_URL=http://localhost:8000
-FRONTEND_BASE_URL=http://localhost:5173
-```
+#### Choose your LLM provider
+
+- `LLM_PROVIDER` — `openai` (default) or `gemini`.
+- `LLM_MODEL` — the model name for whichever provider you picked (e.g. `gpt-5-mini` for OpenAI, `gemini-2.5-flash`
+  for Gemini).
+- Set the matching key: `OPENAI_API_KEY` for `openai`, `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`) for
+  `gemini`. Any other value for `LLM_PROVIDER` fails at startup.
+
+#### Optional — per-integration OAuth (only needed to test that specific integration)
+
+- GitHub: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` (from a [GitHub OAuth App](https://github.com/settings/developers)),
+  `GITHUB_TEST_PAT` (a personal access token, only used by the manual GitHub MCP test script).
+- Slack: `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN` (from a Slack app you
+  create). `SLACK_TEAM_ID` is only used by the standalone Slack MCP test script, not the main app.
+- Jira: `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET` (from an Atlassian OAuth 2.0 app).
+
+Each provider's OAuth callback URL defaults to `<BACKEND_BASE_URL>/integrations/<source>/callback` automatically —
+you only need to set `GITHUB_REDIRECT_URI`, `SLACK_REDIRECT_URI`, `JIRA_REDIRECT_URI`, `GOOGLE_REDIRECT_URI` (Google
+sign-in), or `CALENDAR_REDIRECT_URI` (Google Calendar connect — note the name, **not** `GOOGLE_CALENDAR_REDIRECT_URI`)
+if you need to override that default. `CALENDAR_REDIRECT_URI` and `GOOGLE_REDIRECT_URI` must be different URLs from
+each other — the app checks this at startup because both flows share the same Google OAuth client.
+
+#### Other settings
+
+- `BACKEND_BASE_URL` / `FRONTEND_BASE_URL` — already default to `http://localhost:8000` / `http://localhost:5173`,
+  which is correct for local dev; no need to set them yourself unless you're running on different ports.
+- `CORS_ORIGINS` — comma-separated list of frontend origins allowed to call the API. The example file's default
+  (`http://localhost:5173,http://127.0.0.1:5173`) is correct for local dev.
+- `JWT_EXPIRE_MINUTES` — how long a login session lasts, in minutes. Defaults to `1440` (24 hours) if unset.
+
+A few variable names show up in some `.env` files from older setups but are no longer read by any code —
+`JWT_ALGORITHM` (the algorithm is fixed to `HS256` in code) and `SMTP_FROM_NAME`. Setting them is harmless but does
+nothing; you can leave them out.
 
 ### 4.3 Run the database migrations
 
