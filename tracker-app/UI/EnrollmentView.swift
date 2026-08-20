@@ -2,12 +2,33 @@ import SwiftUI
 
 struct EnrollmentView: View {
     @ObservedObject var enrollmentVM: EnrollmentViewModel
+    @Binding var showSettings: Bool
     @State private var tokenInput: String = ""
     
     var body: some View {
-        if enrollmentVM.isConnected {
-            // Connected: Side-by-side split layout
-            HStack(spacing: 14) {
+        VStack(spacing: 20) {
+            // Settings Header
+            HStack {
+                Text("Settings")
+                    .font(Tokens.Fonts.ui(size: 16, weight: .semibold))
+                    .foregroundColor(Tokens.Colors.ink)
+                Spacer()
+                Button(action: {
+                    withAnimation {
+                        showSettings = false
+                    }
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14))
+                        .foregroundColor(Tokens.Colors.muted)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+            .padding(.bottom, 10)
+            
+            if enrollmentVM.isConnected {
+                // Connected: Stacked layout
+                VStack(spacing: 14) {
                 // Enrollment Card
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Enrollment")
@@ -160,6 +181,8 @@ struct EnrollmentView: View {
                 )
             }
         }
+        }
+        .padding(.horizontal, 16)
     }
     
     // Derived properties for Sync Status

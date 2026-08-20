@@ -4,9 +4,9 @@
 <dict>
 	<key>files</key>
 	<dict>
-		<key>Resources/AppIconPlaceholder.jpg</key>
+		<key>Resources/AppIcon.icns</key>
 		<data>
-		XvLo3Wau8vr5RpXkUDfgk9fRu64=
+		dhrdE9UWUQtxKDT9eWJBKzMqIXw=
 		</data>
 		<key>Resources/Fonts/JetBrainsMono-Bold.ttf</key>
 		<data>
@@ -26,19 +26,19 @@
 		</data>
 		<key>Resources/Fonts/SpaceGrotesk-Bold.ttf</key>
 		<data>
-		ePs48hL6SQKa/yTGaaOWSNm05os=
+		8N5qD14PuoFjUeMk6nTSJtLkxsM=
 		</data>
 		<key>Resources/Fonts/SpaceGrotesk-Medium.ttf</key>
 		<data>
-		ePs48hL6SQKa/yTGaaOWSNm05os=
+		AFLUb0qmAHsRO8MzoNn9naJl1iA=
 		</data>
 		<key>Resources/Fonts/SpaceGrotesk-Regular.ttf</key>
 		<data>
-		ePs48hL6SQKa/yTGaaOWSNm05os=
+		5FVHwt7TKmdSu/EX0q2KuuIJSAA=
 		</data>
 		<key>Resources/Fonts/SpaceGrotesk-SemiBold.ttf</key>
 		<data>
-		ePs48hL6SQKa/yTGaaOWSNm05os=
+		AFLUb0qmAHsRO8MzoNn9naJl1iA=
 		</data>
 		<key>Resources/logline_tracker</key>
 		<data>
@@ -47,11 +47,11 @@
 	</dict>
 	<key>files2</key>
 	<dict>
-		<key>Resources/AppIconPlaceholder.jpg</key>
+		<key>Resources/AppIcon.icns</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			U92ODgBmjn1U2TFMXUQJ22qPzA3dB1ztvb8TpmcD9RA=
+			MC0/GDwlY6FN9P5uyT86+P9ryZOVbxGWAxXbXZmx/h8=
 			</data>
 		</dict>
 		<key>Resources/Fonts/JetBrainsMono-Bold.ttf</key>
@@ -86,28 +86,28 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			1VWM1BnI1GvclYBky5f5Y9HqeThmQUwCWQbsFQM1Eu0=
+			cgm7t1/A9cVGpfV3Ow23T/xqvwTCFIwRBcrOV2Wpa9s=
 			</data>
 		</dict>
 		<key>Resources/Fonts/SpaceGrotesk-Medium.ttf</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			1VWM1BnI1GvclYBky5f5Y9HqeThmQUwCWQbsFQM1Eu0=
+			MYO36wtCQUdjYOLNjlJ4aGFswW084zLEN2UFmJt3K0Q=
 			</data>
 		</dict>
 		<key>Resources/Fonts/SpaceGrotesk-Regular.ttf</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			1VWM1BnI1GvclYBky5f5Y9HqeThmQUwCWQbsFQM1Eu0=
+			Xt4oxEJfP+SDDI9HVLOemoepPQw7ql4KmSRTKqqKmL0=
 			</data>
 		</dict>
 		<key>Resources/Fonts/SpaceGrotesk-SemiBold.ttf</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			1VWM1BnI1GvclYBky5f5Y9HqeThmQUwCWQbsFQM1Eu0=
+			MYO36wtCQUdjYOLNjlJ4aGFswW084zLEN2UFmJt3K0Q=
 			</data>
 		</dict>
 		<key>Resources/logline_tracker</key>

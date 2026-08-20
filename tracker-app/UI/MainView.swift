@@ -2,6 +2,9 @@ import SwiftUI
 
 struct MainView: View {
     @StateObject private var enrollmentVM = EnrollmentViewModel()
+    @State private var showSettings = false
+    @State private var isTrackerRunning = ProcessManager.shared.isRunning
+    let timer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
     
     var body: some View {
         VStack(spacing: 0) {
@@ -14,7 +17,7 @@ struct MainView: View {
                 
                 // Centered App Title & Icon
                 HStack(spacing: 9) {
-                    if let image = NSImage(named: "AppIconPlaceholder.jpg") {
+                    if let image = NSImage(named: "AppIcon") {
                         Image(nsImage: image)
                             .resizable()
                             .frame(width: 17, height: 17)
@@ -36,24 +39,52 @@ struct MainView: View {
                 
                 Spacer()
                 
-                // Right aligned "LIVE" Pill (Only if connected)
-                if enrollmentVM.isConnected {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(Tokens.Colors.statusConnected)
-                            .frame(width: 6, height: 6)
-                        Text("LIVE")
-                            .font(Tokens.Fonts.mono(size: 10, weight: .medium))
-                            .tracking(0.4)
-                            .foregroundColor(Color(hex: "#3F6B52"))
+                // Right aligned controls
+                HStack(spacing: 12) {
+                    // Local Tracker Start/Stop
+                    Button(action: {
+                        if ProcessManager.shared.isRunning {
+                            ProcessManager.shared.terminateTrackerDaemon()
+                        } else {
+                            do {
+                                try ProcessManager.shared.startTrackerDaemon()
+                            } catch {
+                                print("Failed to start tracker: \(error)")
+                            }
+                        }
+                    }) {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(isTrackerRunning ? Tokens.Colors.statusConnected : Tokens.Colors.muted)
+                                .frame(width: 6, height: 6)
+                            Text(isTrackerRunning ? "TRACKING" : "STOPPED")
+                                .font(Tokens.Fonts.mono(size: 10, weight: .medium))
+                                .tracking(0.4)
+                                .foregroundColor(isTrackerRunning ? Color(hex: "#3F6B52") : Tokens.Colors.muted)
+                        }
+                        .padding(.horizontal, 9)
+                        .frame(height: 22)
+                        .background(isTrackerRunning ? Tokens.Colors.statusConnected.opacity(0.14) : Color.black.opacity(0.05))
+                        .cornerRadius(11)
                     }
-                    .padding(.horizontal, 9)
-                    .frame(height: 22)
-                    .background(Tokens.Colors.statusConnected.opacity(0.14))
-                    .cornerRadius(11)
-                    .frame(width: 62, alignment: .trailing)
-                } else {
-                    Spacer().frame(width: 62)
+                    .buttonStyle(PlainButtonStyle())
+                    .help(isTrackerRunning ? "Stop local capture" : "Start local capture")
+                    
+                    // Settings Gear
+                    Button(action: {
+                        withAnimation {
+                            showSettings.toggle()
+                        }
+                    }) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(showSettings ? Tokens.Colors.ink : Tokens.Colors.muted)
+                            .frame(width: 22, height: 22)
+                            .background(showSettings ? Color.black.opacity(0.05) : Color.clear)
+                            .cornerRadius(5)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .help("Settings")
                 }
             }
             .frame(height: 48)
@@ -68,16 +99,22 @@ struct MainView: View {
             
             // Main Content Area
             VStack(spacing: 14) {
-                EnrollmentView(enrollmentVM: enrollmentVM)
-                
-                LiveEventsView(isConnected: enrollmentVM.isConnected)
+                if showSettings {
+                    EnrollmentView(enrollmentVM: enrollmentVM, showSettings: $showSettings)
+                    Spacer()
+                } else {
+                    LiveEventsView(isConnected: enrollmentVM.isConnected)
+                }
             }
             .padding(16)
         }
         .background(Tokens.Colors.windowBg)
-        .frame(width: enrollmentVM.isConnected ? 760 : 520, height: 620)
+        .frame(width: showSettings ? 520 : (enrollmentVM.isConnected ? 760 : 520), height: 620)
         .onAppear {
             enrollmentVM.checkExistingEnrollment()
+        }
+        .onReceive(timer) { _ in
+            isTrackerRunning = ProcessManager.shared.isRunning
         }
         // Force the SwiftUI view to drive the window size natively
         .fixedSize()
