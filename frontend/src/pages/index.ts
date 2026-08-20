@@ -6,5 +6,6 @@ export { default as VerifyEmail } from "./VerifyEmail";
 export { default as OAuthCallback } from "./OAuthCallback";
 export { default as Settings } from "./Settings";
 export { default as History } from "./History";
+export { default as RemoteLogs } from "./RemoteLogs";
 export { default as StyleGuide } from "./StyleGuide";
 export { ReviewDraft } from "./ReviewDraft";

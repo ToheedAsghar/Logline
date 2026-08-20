@@ -80,3 +80,19 @@ export function parseTimeToMinutes(value: string): number {
   }
   return Math.round(num);
 }
+
+export function htmlToPlainText(html: string): string {
+  let text = html;
+  text = text.replace(/<\/(?:p|h[1-6]|li|div|tr)>/gi, "\n\n");
+  text = text.replace(/<br\s*\/?>/gi, "\n");
+  text = text.replace(/<li[^>]*>/gi, "\n- ");
+  text = text.replace(/<[^>]+>/g, "");
+  text = text.replace(/&nbsp;/gi, " ");
+  text = text.replace(/&amp;/gi, "&");
+  text = text.replace(/&lt;/gi, "<");
+  text = text.replace(/&gt;/gi, ">");
+  text = text.replace(/&quot;/gi, '"');
+  text = text.replace(/&#39;/gi, "'");
+  text = text.replace(/\n{3,}/g, "\n\n");
+  return text.trim();
+}
