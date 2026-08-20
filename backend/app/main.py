@@ -9,6 +9,7 @@ from app.core.request_context import RequestIDMiddleware
 from app.db import base  # noqa: F401
 from app.entries import routers as entries
 from app.integrations import routers as integrations
+from app.remote_fetch import routers as remote_fetch
 from app.tracker_sync import routers as tracker_sync
 
 configure_logging()
@@ -28,4 +29,5 @@ app.include_router(auth.router)
 app.include_router(integrations.router)
 app.include_router(entries.router)
 app.include_router(reconciliation.router)
+app.include_router(remote_fetch.router)
 app.include_router(tracker_sync.router)
