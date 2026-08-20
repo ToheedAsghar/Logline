@@ -24,10 +24,11 @@ struct EnrollmentView: View {
                                     .foregroundColor(.white)
                             )
                         
-                        Text("Connected as \(enrollmentVM.deviceId ?? "Unknown")")
+                        Text("Connected")
                             .font(Tokens.Fonts.ui(size: 13))
                             .foregroundColor(Tokens.Colors.ink)
-                            .lineLimit(2)
+                            .lineLimit(1)
+                            .help("Device ID: \(enrollmentVM.deviceId ?? "Unknown")")
                         
                         Spacer()
                         

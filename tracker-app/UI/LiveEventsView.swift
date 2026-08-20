@@ -136,31 +136,38 @@ struct LiveEventsView: View {
     }
     
     private func formatTimeOnly(_ isoString: String) -> String {
-        // Tracker DB stores in "YYYY-MM-DD HH:MM:SS" usually, or ISO8601.
-        // Quick fallback parsing:
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        formatter.timeZone = TimeZone(secondsFromGMT: 0) // Assuming UTC in DB
-        
-        var date = formatter.date(from: isoString)
-        if date == nil {
-            let isoFormatter = ISO8601DateFormatter()
-            isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            date = isoFormatter.date(from: isoString)
-        }
-        if date == nil {
-            let isoFormatter2 = ISO8601DateFormatter()
-            date = isoFormatter2.date(from: isoString)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: isoString) {
+            return formatAsTime(date)
         }
         
-        if let validDate = date {
-            let timeFormatter = DateFormatter()
-            timeFormatter.timeStyle = .short
-            timeFormatter.dateStyle = .none
-            timeFormatter.timeZone = TimeZone.current // Convert to local
-            return timeFormatter.string(from: validDate)
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: isoString) {
+            return formatAsTime(date)
         }
         
-        return String(isoString.suffix(8)) // Fallback, just return time part if raw string
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        df.timeZone = TimeZone(secondsFromGMT: 0)
+        if let date = df.date(from: isoString) {
+            return formatAsTime(date)
+        }
+        
+        // Manual extraction if parsing fails entirely: "2026-08-20T13:54:23"
+        let parts = isoString.split(separator: "T")
+        if parts.count == 2 {
+            let timeStr = String(parts[1])
+            return String(timeStr.prefix(5)) // "13:54"
+        }
+        return String(isoString.prefix(19)) // fallback
+    }
+    
+    private func formatAsTime(_ date: Date) -> String {
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+        timeFormatter.dateStyle = .none
+        timeFormatter.timeZone = TimeZone.current
+        return timeFormatter.string(from: date)
     }
 }

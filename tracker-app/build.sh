@@ -23,7 +23,7 @@ mkdir -p "$RESOURCES_DIR/Fonts"
 cp Fonts/*.ttf "$RESOURCES_DIR/Fonts/"
 
 # Copy Placeholder Icon
-cp /Users/toheed.asghar/.gemini/antigravity-ide/brain/09d07003-0aa9-4d6e-b59b-ddf361f23c6d/logline_mark_1787212745632.jpg "$RESOURCES_DIR/AppIconPlaceholder.jpg" || true
+cp /Users/toheed.asghar/.gemini/antigravity-ide/brain/09d07003-0aa9-4d6e-b59b-ddf361f23c6d/AppIcon.icns "$RESOURCES_DIR/AppIcon.icns" || true
 
 # Copy PyInstaller binary if it exists
 if [ -f "../tracker/dist/logline_tracker" ]; then
