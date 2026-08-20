@@ -24,3 +24,9 @@ HTTP_CLIENT_TIMEOUT_SECONDS = 15.0
 # --- Per-source event limits ---
 
 MAX_EVENTS_PER_SOURCE = 500
+
+TRIGGER_COOLDOWN_SECONDS = 60
+TRIGGER_RATE_LIMIT_ERROR_MSG = (
+    f"A remote fetch already ran within the last {TRIGGER_COOLDOWN_SECONDS} seconds. "
+    "Wait before triggering again."
+)
