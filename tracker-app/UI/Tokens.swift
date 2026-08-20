@@ -47,7 +47,7 @@ public enum Tokens {
             let weightName: String
             switch weight {
             case .medium: weightName = "SpaceGrotesk-Medium"
-            case .semibold: weightName = "SpaceGrotesk-SemiBold"
+            case .semibold: weightName = "SpaceGrotesk-Bold" // Fallback since SemiBold TTF PSName is actually Medium
             case .bold: weightName = "SpaceGrotesk-Bold"
             default: weightName = "SpaceGrotesk-Regular"
             }

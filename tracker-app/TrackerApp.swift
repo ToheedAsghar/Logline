@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ServiceManagement
 
 @main
 struct TrackerApp: App {
@@ -45,6 +46,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenu()
         setupWindow()
         updateIcon()
+        
+        do {
+            try SMAppService.mainApp.register()
+            print("Successfully registered for login auto-launch.")
+        } catch {
+            print("Failed to register for login auto-launch: \(error)")
+        }
         
         mainWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

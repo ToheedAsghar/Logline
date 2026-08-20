@@ -32,7 +32,7 @@ struct MainView: View {
                     }
                     
                     Text("Logline Tracker")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(Tokens.Fonts.ui(size: 13, weight: .semibold))
                         .foregroundColor(Color(hex: "#26231D"))
                         .tracking(-0.13)
                 }
@@ -78,9 +78,9 @@ struct MainView: View {
                     }) {
                         Image(systemName: "gearshape.fill")
                             .font(.system(size: 14))
-                            .foregroundColor(showSettings ? Tokens.Colors.ink : Tokens.Colors.muted)
+                            .foregroundColor(showSettings ? Tokens.Colors.brandGreen : Tokens.Colors.muted)
                             .frame(width: 22, height: 22)
-                            .background(showSettings ? Color.black.opacity(0.05) : Color.clear)
+                            .background(showSettings ? Tokens.Colors.brandGreen.opacity(0.14) : Color.clear)
                             .cornerRadius(5)
                     }
                     .buttonStyle(PlainButtonStyle())
