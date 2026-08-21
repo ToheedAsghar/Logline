@@ -75,14 +75,9 @@ Grant Accessibility to that terminal app to get real window titles this way.
 
 ## Backend sync
 
-A second launchd agent (`com.logline.sync`) uploads closed sessions to the Logline backend
-every 5 minutes. It is a separate, periodic job rather than part of the capture daemon:
-capture has to keep recording through a backend outage, and a failing upload must not be
-able to take window tracking down with it. It opens `tracker.db` read-only, so it cannot
-damage what the capture daemon writes.
+The Python sync agent uploads closed sessions to the Logline backend. It is managed securely by the Swift app's `ProcessManager`, which dynamically passes the authentication token over standard input (`stdin`) and supervises its lifecycle.
 
-Enrollment is manual and one-time. Get a device token from the backend as the logged-in
-user:
+Enrollment is manual and one-time. Get a device token from the backend as the logged-in user:
 
 ```sh
 curl -X POST http://localhost:8000/tracker/devices \
@@ -91,10 +86,7 @@ curl -X POST http://localhost:8000/tracker/devices \
      -d '{"name": "'"$(hostname -s)"'"}'
 ```
 
-The `token` in that response is shown **once** and is not recoverable — the backend stores
-only a hash of it. `./tracker/setup.sh` prompts for it and writes it to
-`~/Library/Application Support/Logline/device_token` with mode 600. Until a token exists the
-sync agent runs and exits cleanly, doing nothing.
+The `token` in that response is shown **once** and is not recoverable. Use `./tracker/setup.sh` to paste it, which securely stores it in the macOS Keychain. The Swift app will securely pipe this token to the sync agent on launch.
 
 Optional config at `~/Library/Application Support/Logline/sync.json`:
 
@@ -102,26 +94,13 @@ Optional config at `~/Library/Application Support/Logline/sync.json`:
 {"base_url": "https://api.example.com", "batch_size": 300, "interval_seconds": 300}
 ```
 
-`base_url` must be `https://`, or `http://` to localhost — anything else is rejected at load
-rather than uploading window titles in plaintext. Changing `interval_seconds` needs a re-run
-of `install_sync_agent.sh`, since launchd owns the schedule.
+`base_url` must be `https://`, or `http://` to localhost — anything else is rejected at load.
 
-Sync is stateless: there is no local cursor file. Every run asks the backend where it left
-off (`GET /tracker/sync/checkpoint`), so a crash mid-backlog, an offline laptop, or a
-restored backup all resume correctly.
+Sync is stateless: there is no local cursor file. Every run asks the backend where it left off (`GET /tracker/sync/checkpoint`), so a crash mid-backlog, an offline laptop, or a restored backup all resume correctly.
 
-```sh
-launchctl kickstart -p gui/$(id -u)/com.logline.sync   # run one sync now
-tracker/.venv/bin/python -m tracker.sync.agent         # or run it in the foreground
-./tracker/packaging/install_sync_agent.sh --uninstall  # stop syncing
-```
+Logs: `~/Library/Logs/Logline/sync.log` and `sync.error.log`.
 
-Logs: `~/Library/Logs/Logline/sync.log` and `sync.error.log`. A silent failure is also
-visible in the app's Settings page, which shows when the account last synced.
-
-To retire a machine, revoke its device (`DELETE /tracker/devices/{device_id}` as the logged-in
-user). The token stops working immediately; the sync checkpoint is kept, so re-enrolling the
-same machine does not re-upload its whole history.
+To retire a machine, revoke its device (`DELETE /tracker/devices/{device_id}` as the logged-in user). The token stops working immediately; the sync checkpoint is kept, so re-enrolling the same machine does not re-upload its whole history.
 
 ## Tests
 

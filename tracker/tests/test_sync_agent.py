@@ -13,7 +13,7 @@ import pytest
 
 from tracker.constants import CREATE_OPEN_SESSION, CREATE_SESSIONS, SYNC_OVERLAP_SECONDS
 from tracker.sync import reader
-from tracker.sync.agent import read_device_token, run_sync
+from tracker.sync.agent import run_sync
 from tracker.sync.client import Checkpoint, SyncClient, SyncError
 
 BASE = datetime(2026, 8, 6, 9, 0, tzinfo=timezone.utc)
@@ -175,36 +175,37 @@ class TestRunSync:
                 run_sync(client, sessions_conn, batch_size=10)
 
 
-class TestDeviceToken:
-    def test_missing_file_reads_as_not_enrolled(self, tmp_path):
-        assert read_device_token(tmp_path / "device_token") is None
+class TestMainTokenReading:
+    @patch("tracker.sync.agent.sys.stdin")
+    @patch("tracker.sync.agent.load_config")
+    @patch("tracker.sync.agent.run_sync")
+    @patch("tracker.sync.agent.reader.open_read_only")
+    def test_main_reads_token_from_stdin_and_strips(self, mock_db, mock_run, mock_config, mock_stdin):
+        from tracker.sync.agent import main
+        mock_stdin.isatty.return_value = False
+        mock_stdin.read.return_value = "tok-123\n"
+        
+        # Prevent it from actually looping or running logic
+        mock_config.return_value = MagicMock(base_url="http://test", timeout_seconds=5, batch_size=10)
+        
+        main()
+        
+        # Verify the client was initialized with the stripped token
+        # This requires checking the SyncClient instantiated inside main
+        # But we mocked run_sync, let's just assert run_sync was called
+        mock_run.assert_called_once()
+        client = mock_run.call_args[0][0]
+        assert client._token == "tok-123"
 
-    def test_empty_file_reads_as_not_enrolled(self, tmp_path):
-        path = tmp_path / "device_token"
-        path.write_text("   \n", encoding="utf-8")
-        assert read_device_token(path) is None
+    @patch("tracker.sync.agent.sys.stdin")
+    def test_main_exits_if_no_token_on_stdin(self, mock_stdin, capsys):
+        from tracker.sync.agent import main
+        mock_stdin.isatty.return_value = False
+        mock_stdin.read.return_value = "   \n"
+        
+        main()
+        
+        assert "not enrolled" in capsys.readouterr().err
 
-    def test_token_is_stripped_of_trailing_newline(self, tmp_path):
-        path = tmp_path / "device_token"
-        path.write_text("tok-123\n", encoding="utf-8")
-        assert read_device_token(path) == "tok-123"
 
-    def test_loose_permissions_warn_but_still_sync(self, tmp_path, caplog):
-        path = tmp_path / "device_token"
-        path.write_text("tok-123\n", encoding="utf-8")
-        path.chmod(0o644)
 
-        with caplog.at_level("WARNING"):
-            assert read_device_token(path) == "tok-123"
-
-        assert "chmod 600" in caplog.text
-
-    def test_correct_permissions_are_silent(self, tmp_path, caplog):
-        path = tmp_path / "device_token"
-        path.write_text("tok-123\n", encoding="utf-8")
-        path.chmod(0o600)
-
-        with caplog.at_level("WARNING"):
-            read_device_token(path)
-
-        assert caplog.text == ""

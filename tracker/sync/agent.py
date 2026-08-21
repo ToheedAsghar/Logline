@@ -5,19 +5,16 @@ been synced. Within a run the cursor advances locally rather than re-reading the
 server's checkpoint only moves for accepted or duplicate rows and a wholesale-rejected batch would otherwise be
 re-read forever instead of paged past.
 
-Run manually with: tracker/.venv/bin/python -m tracker.sync.agent
+Run manually with: tracker/.venv/bin/python -m tracker.sync.agent < path/to/token.txt
 """
 
 import logging
 import sqlite3
-import stat
 import sys
-from pathlib import Path
-from typing import Optional
 
 from tracker.constants import (
-    DEVICE_TOKEN_PATH, EXIT_ALREADY_RUNNING, SYNC_ALREADY_RUNNING_MSG, SYNC_BATCH_MSG, SYNC_COMPLETE_MSG,
-    SYNC_FAILED_MSG, SYNC_LOCK_PATH, SYNC_NOT_ENROLLED_MSG, SYNC_TOKEN_PERMISSIONS_MSG,
+    EXIT_ALREADY_RUNNING, SYNC_ALREADY_RUNNING_MSG, SYNC_BATCH_MSG, SYNC_COMPLETE_MSG,
+    SYNC_FAILED_MSG, SYNC_LOCK_PATH,
 )
 from tracker.logging_config import configure_logging
 from tracker.singleton import AlreadyRunning, SingleInstanceLock
@@ -27,22 +24,6 @@ from tracker.sync.config import SyncConfigError, load_config
 
 logger = logging.getLogger(__name__)
 
-
-def read_device_token(path: Optional[Path] = None) -> Optional[str]:
-    """Reads the enrollment token, or returns None when this machine has not been enrolled. Loose permissions warn
-    rather than fail, so a fixable file mode does not stop syncing outright."""
-    path = path if path is not None else DEVICE_TOKEN_PATH
-    try:
-        token = path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    if not token:
-        return None
-
-    mode = stat.S_IMODE(path.stat().st_mode)
-    if mode & (stat.S_IRWXG | stat.S_IRWXO):
-        logger.warning(SYNC_TOKEN_PERMISSIONS_MSG, path, mode, path)
-    return token
 
 
 def run_sync(client: SyncClient, conn, batch_size: int) -> int:
@@ -83,13 +64,16 @@ def main() -> int:
         return EXIT_ALREADY_RUNNING
 
     try:
-        token = read_device_token()
-        if token is None:
-            logger.info(SYNC_NOT_ENROLLED_MSG, DEVICE_TOKEN_PATH)
+        device_token = ""
+        if not sys.stdin.isatty():
+            device_token = sys.stdin.read().strip()
+        
+        if not device_token:
+            print("Device not enrolled. Exiting quietly.", file=sys.stderr)
             return 0
 
         config = load_config()
-        client = SyncClient(config.base_url, token, config.timeout_seconds)
+        client = SyncClient(config.base_url, device_token, config.timeout_seconds)
         conn = reader.open_read_only()
         try:
             run_sync(client, conn, config.batch_size)

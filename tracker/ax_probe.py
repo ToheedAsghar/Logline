@@ -29,7 +29,7 @@ def probe() -> dict:
     """Mirrors tracker.watchers.title_watcher's trust check and title read so the result reflects the tracker's real
     behaviour, not a more permissive approximation."""
     result = {
-        "trusted": bool(AS.AXIsProcessTrustedWithOptions({AS.kAXTrustedCheckOptionPrompt: False})),
+        "trusted": bool(AS.AXIsProcessTrustedWithOptions({AS.kAXTrustedCheckOptionPrompt: True})),
         "frontmost_app": None,
         "frontmost_bundle_id": None,
         "frontmost_pid": None,

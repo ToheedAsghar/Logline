@@ -126,7 +126,6 @@ LOG_DIR = Path.home() / "Library" / "Logs" / "Logline"
 EXIT_ALREADY_RUNNING = 75
 
 SYNC_LOCK_PATH = DB_DIR / "sync.lock"
-DEVICE_TOKEN_PATH = DB_DIR / "device_token"
 SYNC_CONFIG_PATH = DB_DIR / "sync.json"
 
 SYNC_INTERVAL_SECONDS = 300
@@ -138,14 +137,11 @@ SYNC_OVERLAP_SECONDS = 600
 SYNC_DEFAULT_BASE_URL = "http://localhost:8000"
 SYNC_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
-SYNC_NOT_ENROLLED_MSG = (
-    "sync: no device token at %s — not enrolled, nothing to do. Enroll this machine and re-run tracker/setup.sh."
-)
+
 SYNC_ALREADY_RUNNING_MSG = "sync: refusing to start — %s"
 SYNC_COMPLETE_MSG = "sync: complete — %d session(s) sent in %d batch(es)"
 SYNC_BATCH_MSG = "sync: batch of %d sent (accepted=%s duplicate=%s invalid=%s)"
 SYNC_FAILED_MSG = "sync: failed — %s"
-SYNC_TOKEN_PERMISSIONS_MSG = "sync: %s is readable beyond its owner (mode %o) — run: chmod 600 %s"
 
 CONTEXT_COLUMNS = (("project_path", "TEXT"), ("context_detail", "TEXT"),)
 
