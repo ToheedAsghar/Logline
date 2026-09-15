@@ -1,4 +1,4 @@
-"""Fetches calendar events from Google Calendar and normalizes them into events.
+"""Fetches calendar events from the Google Calendar REST API and normalizes them into events.
 
 Filters out working location entries and declined invitations.
 """
@@ -7,22 +7,24 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from mcp import ClientSession
+import httpx
 
-from app.remote_fetch.base import FetchedEvent, SourceFetchData, SourceFetcher
+from app.remote_fetch.base import FetchedEvent, SourceCredentials, SourceFetchData, SourceFetcher
 from app.remote_fetch.constants import MAX_EVENTS_PER_SOURCE
-from app.remote_fetch.mcp.connection import mcp_result_to_json
-from app.remote_fetch.parsing import first_non_empty_string, parse_iso_datetime, to_naive_utc_isoformat
+from app.remote_fetch.parsing import first_non_empty_string, parse_iso_datetime, to_utc_rfc3339
 
 logger = logging.getLogger(__name__)
 
 SOURCE = "calendar"
 EVENT_TYPE_MEETING = "meeting"
 
+GOOGLE_CALENDAR_API_BASE_URL = "https://www.googleapis.com/calendar/v3"
 PRIMARY_CALENDAR_ID = "primary"
 WORKING_LOCATION_EVENT_TYPE = "workingLocation"
 DECLINED_RESPONSE_STATUS = "declined"
+
 CALENDAR_LIST_EVENTS_PAGE_SIZE = 250
+CALENDAR_MAX_PAGES = 10
 
 
 def _event_time(value: Any) -> Optional[datetime]:
@@ -101,46 +103,81 @@ def _calendar_event(event: dict[str, Any], calendar_id: str) -> Optional[Fetched
 class CalendarFetcher(SourceFetcher):
     source = SOURCE
 
-    async def fetch_with_session(
-        self, session: ClientSession, user_id: int, since: Optional[datetime]
+    async def fetch_with_client(
+        self, client: httpx.AsyncClient, credentials: SourceCredentials, user_id: int, since: Optional[datetime]
     ) -> SourceFetchData:
+        headers = {"Authorization": f"Bearer {credentials.access_token}"}
         now = datetime.now(timezone.utc)
-        arguments: dict[str, Any] = {"calendarId": PRIMARY_CALENDAR_ID, "timeMax": to_naive_utc_isoformat(now)}
+        params: dict[str, Any] = {
+            "timeMax": to_utc_rfc3339(now),
+            "maxResults": CALENDAR_LIST_EVENTS_PAGE_SIZE,
+            "singleEvents": "true",
+            "orderBy": "startTime",
+        }
         if since is not None:
-            arguments["timeMin"] = to_naive_utc_isoformat(since)
+            params["timeMin"] = to_utc_rfc3339(since)
 
-        result = await session.call_tool("list-events", arguments=arguments)
-        payload = mcp_result_to_json(result)
-        raw_events = _events_from_payload(payload)
+        raw_events, hit_page_cap = await self._fetch_all_pages(client, headers, params)
 
         events: list[FetchedEvent] = []
         for raw_event in raw_events:
             event = _calendar_event(raw_event, PRIMARY_CALENDAR_ID)
             if event is not None:
                 events.append(event)
-
         events.sort(key=lambda event: event.occurred_at)
 
         override = None
-        api_may_be_truncated = len(raw_events) >= CALENDAR_LIST_EVENTS_PAGE_SIZE
-        if api_may_be_truncated or len(events) > MAX_EVENTS_PER_SOURCE:
-            if len(events) > MAX_EVENTS_PER_SOURCE:
-                events = events[:MAX_EVENTS_PER_SOURCE]
-            if events:
-                override = events[-1].occurred_at
-                logger.warning(
-                    "calendar_list_events_possibly_truncated",
-                    extra={"raw_event_count": len(raw_events), "high_water_mark": override.isoformat()},
-                )
+        if hit_page_cap:
+            override = _event_time(raw_events[-1].get("start")) if raw_events else None
+        if len(events) > MAX_EVENTS_PER_SOURCE:
+            events = events[:MAX_EVENTS_PER_SOURCE]
+            trimmed_override = events[-1].occurred_at
+            override = trimmed_override if override is None else min(override, trimmed_override)
 
         return SourceFetchData(events=events, fetched_through_override=override)
 
+    async def _fetch_all_pages(
+        self, client: httpx.AsyncClient, headers: dict[str, str], params: dict[str, Any]
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Follow `nextPageToken` up to CALENDAR_MAX_PAGES.
+
+        Returns every raw event dict seen and whether the page cap was hit before pagination
+        naturally exhausted (i.e. the raw fetch is known-incomplete).
+        """
+
+        raw_events: list[dict[str, Any]] = []
+        page_token: Optional[str] = None
+        hit_page_cap = False
+
+        for _ in range(CALENDAR_MAX_PAGES):
+            page_params = dict(params)
+            if page_token:
+                page_params["pageToken"] = page_token
+
+            response = await client.get(
+                f"{GOOGLE_CALENDAR_API_BASE_URL}/calendars/{PRIMARY_CALENDAR_ID}/events",
+                headers=headers,
+                params=page_params,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            raw_events.extend(_events_from_payload(payload))
+
+            page_token = payload.get("nextPageToken") if isinstance(payload, dict) else None
+            if not page_token:
+                break
+        else:
+            hit_page_cap = True
+            logger.warning("calendar_hit_max_pages_without_exhausting_results", extra={"max_pages": CALENDAR_MAX_PAGES})
+
+        return raw_events, hit_page_cap
+
 
 def _events_from_payload(payload: Any) -> list[dict[str, Any]]:
-    """Extract raw event dicts from the list-events MCP response."""
+    """Extract raw event dicts from the events.list response."""
 
     if isinstance(payload, dict):
-        items = payload.get("items") or payload.get("events") or []
+        items = payload.get("items") or []
         if isinstance(items, list):
             return [item for item in items if isinstance(item, dict)]
     elif isinstance(payload, list):

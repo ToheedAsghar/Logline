@@ -2,21 +2,25 @@
 
 import logging
 from abc import ABC, abstractmethod
-from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-from mcp import ClientSession
+import httpx
 
+from app.db.session import SessionLocal
+from app.integrations import crud
 from app.integrations.config import RemoteFetchConfig
-from app.remote_fetch.mcp.connection import connect_mcp_source
+from app.integrations.errors import TokenRefreshError
+from app.integrations.models import IntegrationSource, IntegrationStatus
+from app.integrations.token_refresh import ensure_token_fresh
+from app.remote_fetch.constants import HTTP_CLIENT_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
 
 class SourceUnavailable(RuntimeError):
-    """Exception raised when an MCP server source cannot be reached or initialized."""
+    """Exception raised when a remote source isn't connected, has no usable token, or can't be reached."""
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,20 @@ class SourceFetchData:
     fetched_through_override: Optional[datetime] = None
 
 
+@dataclass(frozen=True)
+class SourceCredentials:
+    """Per-fetch OAuth credentials resolved for one user's connected integration.
+
+    `authed_user_id` is the provider-reported identity of the connected account, populated only for
+    sources whose OAuth response actually carries one (currently Slack only -- see
+    `OAuthToken.authed_user_id`'s docstring). It rides alongside the token rather than being fetched
+    separately so a fetcher never needs its own DB read to resolve identity.
+    """
+
+    access_token: str
+    authed_user_id: Optional[str] = None
+
+
 class SourceFetcher(ABC):
     """Abstract base class for remote source fetchers."""
 
@@ -51,16 +69,32 @@ class SourceFetcher(ABC):
         self.remote_fetch_config: Optional[RemoteFetchConfig] = None
 
     async def fetch(self, user_id: int, since: Optional[datetime]) -> SourceFetchData:
-        """Connect to source and fetch all events occurring after since timestamp."""
+        """Resolve this user's OAuth credentials for `self.source` and fetch events since `since`.
 
-        async with AsyncExitStack() as stack:
-            session = await connect_mcp_source(self.source, stack)
-            if session is None:
-                raise SourceUnavailable(f"could not connect to the {self.source} MCP server")
-            return await self.fetch_with_session(session, user_id, since)
+        Raises SourceUnavailable if the integration isn't connected, or its token can't be resolved
+        or refreshed -- both collapse to the same "can't fetch right now" outcome for the caller.
+        """
+
+        credentials = await self._resolve_credentials(user_id)
+        async with httpx.AsyncClient(timeout=HTTP_CLIENT_TIMEOUT_SECONDS) as client:
+            return await self.fetch_with_client(client, credentials, user_id, since)
+
+    async def _resolve_credentials(self, user_id: int) -> SourceCredentials:
+        source_enum = IntegrationSource(self.source)
+        with SessionLocal() as db:
+            integration = crud.get_integration_by_source(db, user_id, source_enum)
+            if integration is None or integration.status != IntegrationStatus.connected:
+                raise SourceUnavailable(f"{self.source} is not connected for user_id={user_id}")
+
+            try:
+                token = await ensure_token_fresh(db, source_enum, integration.id)
+            except TokenRefreshError as exc:
+                raise SourceUnavailable(str(exc)) from exc
+
+            return SourceCredentials(access_token=token.access_token, authed_user_id=token.authed_user_id)
 
     @abstractmethod
-    async def fetch_with_session(
-        self, session: ClientSession, user_id: int, since: Optional[datetime]
+    async def fetch_with_client(
+        self, client: httpx.AsyncClient, credentials: SourceCredentials, user_id: int, since: Optional[datetime]
     ) -> SourceFetchData:
-        """Fetch events newer than `since` using an already-open session."""
+        """Fetch events newer than `since` using an authenticated HTTP client."""

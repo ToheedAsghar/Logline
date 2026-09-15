@@ -260,13 +260,13 @@ class TestRedactionSignal:
 class TestFullPipelineIntegration:
     def test_a_real_existing_call_site_produces_valid_json(self, capsys):
         configure_logging()
-        logging.getLogger("app.remote_fetch.mcp.connection").warning(
-            "could not connect '%s' MCP server: %s", "github", "connection refused"
+        logging.getLogger("app.remote_fetch.sources.github").warning(
+            "github_repo_unavailable", extra={"repo": "ToheedAsghar/logline", "status_code": 404}
         )
         out = capsys.readouterr().out.strip()
         parsed = json.loads(out)
         assert parsed["level"] == "warning"
-        assert "github" in parsed["event"]
+        assert parsed["event"] == "github_repo_unavailable"
 
     def test_percent_s_interpolated_evidence_leak_is_redacted_end_to_end(self, capsys):
         """A %s-style stdlib log call has no field name for Layer 2 to match, so Layer 3 must catch it by

@@ -19,10 +19,11 @@ from app.integrations.config import load_remote_fetch_config
 from app.matching.models import RemoteEvent
 from app.remote_fetch.base import FetchedEvent, SourceFetcher, SourceUnavailable
 from app.remote_fetch.constants import DEFAULT_SOURCE_TIMEOUT_SECONDS, FIRST_FETCH_LOOKBACK_DAYS, SOURCE_TIMEOUT_SECONDS
-from app.remote_fetch.mcp.calendar import CalendarFetcher
-from app.remote_fetch.mcp.github import GitHubFetcher
-from app.remote_fetch.mcp.jira import JiraFetcher
 from app.remote_fetch.models import RemoteFetchState
+from app.remote_fetch.sources.calendar import CalendarFetcher
+from app.remote_fetch.sources.github import GitHubFetcher
+from app.remote_fetch.sources.jira import JiraFetcher
+from app.remote_fetch.sources.slack import SlackFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ ALL_FETCHERS: list[type[SourceFetcher]] = [
     GitHubFetcher,
     JiraFetcher,
     CalendarFetcher,
+    SlackFetcher,
 ]
 
 FETCHERS: dict[str, type[SourceFetcher]] = {cls.source: cls for cls in ALL_FETCHERS}

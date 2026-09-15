@@ -64,6 +64,54 @@ def _query_user_github_repos(db: Session, user_id: int) -> Optional[list[str]]:
     return repos or None
 
 
+def get_cached_jira_cloud_id(user_id: int, db: Optional[Session] = None) -> Optional[str]:
+    """Read the user's previously discovered Jira cloud ID from integration metadata, if cached."""
+
+    if db is not None:
+        return _query_cached_jira_cloud_id(db, user_id)
+    with SessionLocal() as session:
+        return _query_cached_jira_cloud_id(session, user_id)
+
+
+def _query_cached_jira_cloud_id(db: Session, user_id: int) -> Optional[str]:
+    integration = (
+        db.query(Integration)
+        .filter(Integration.user_id == user_id, Integration.source == IntegrationSource.jira)
+        .first()
+    )
+    if integration is None or not integration.integration_metadata:
+        return None
+    return integration.integration_metadata.get("cloud_id") or None
+
+
+def set_cached_jira_cloud_id(user_id: int, cloud_id: str, db: Optional[Session] = None) -> None:
+    """Persist a newly discovered Jira cloud ID onto the user's Jira integration metadata.
+
+    The cloud ID is stable per connection, so a fetcher that already knows it should never call
+    `/oauth/token/accessible-resources` again -- this is the write side of that cache.
+    """
+
+    if db is not None:
+        _store_cached_jira_cloud_id(db, user_id, cloud_id)
+        return
+    with SessionLocal() as session:
+        _store_cached_jira_cloud_id(session, user_id, cloud_id)
+        session.commit()
+
+
+def _store_cached_jira_cloud_id(db: Session, user_id: int, cloud_id: str) -> None:
+    integration = (
+        db.query(Integration)
+        .filter(Integration.user_id == user_id, Integration.source == IntegrationSource.jira)
+        .first()
+    )
+    if integration is None:
+        return
+    metadata = dict(integration.integration_metadata or {})
+    metadata["cloud_id"] = cloud_id
+    integration.integration_metadata = metadata
+
+
 def get_mapped_remote_project_ids(user_id: int, source: str, db: Optional[Session] = None) -> list[str]:
     """Return distinct remote project IDs mapped by the user for a given source."""
 

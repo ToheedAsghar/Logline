@@ -61,11 +61,11 @@ def _event(source="github", external_id="sha-1", summary="Did a thing", descript
 
 
 class _FakeFetcher(SourceFetcher):
-    """Stands in for a real fetcher: no MCP connection, scripted outcome.
+    """Stands in for a real fetcher: no OAuth credential resolution or HTTP calls, scripted outcome.
 
-    Overrides `fetch` rather than `fetch_with_session` precisely because
-    `fetch` is the layer that would open a real MCP connection -- replacing it
-    is what keeps these tests offline.
+    Overrides `fetch` rather than `fetch_with_client` precisely because `fetch` is the layer that
+    would resolve real DB-backed credentials and open a real HTTP client -- replacing it is what
+    keeps these tests offline.
     """
 
     def __init__(self, source, events=None, raises=None, hang=False):
@@ -81,8 +81,8 @@ class _FakeFetcher(SourceFetcher):
             raise self._raises
         return SourceFetchData(events=self._events)
 
-    async def fetch_with_session(self, session, user_id, since):  # pragma: no cover - never reached
-        raise AssertionError("fetch() is overridden; fetch_with_session must not be called")
+    async def fetch_with_client(self, client, credentials, user_id, since):  # pragma: no cover - never reached
+        raise AssertionError("fetch() is overridden; fetch_with_client must not be called")
 
 
 def _install(monkeypatch, fetchers: dict):

@@ -61,12 +61,16 @@ def split_commit_message(message: Any) -> tuple[Optional[str], Optional[str]]:
     return subject, body or None
 
 
-def to_naive_utc_isoformat(value: datetime) -> str:
-    """Format datetime as ISO 8601 string without microseconds for Google Calendar MCP requests."""
+def to_utc_rfc3339(value: datetime) -> str:
+    """Format a datetime as an RFC3339 UTC timestamp (trailing 'Z', no microseconds).
+
+    Google Calendar's `timeMin`/`timeMax` query parameters require an explicit time zone offset;
+    a naive or offset-less string is rejected outright.
+    """
 
     if value.tzinfo is not None:
         value = value.astimezone(timezone.utc)
-    return value.strftime("%Y-%m-%dT%H:%M:%S")
+    return value.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def first_non_empty_string(*values: Any) -> Optional[str]:

@@ -12,12 +12,14 @@ FIRST_FETCH_LOOKBACK_DAYS = 90
 # --- Per-source timeouts ---
 
 SOURCE_TIMEOUT_SECONDS: dict[str, float] = {
-    "github": 120.0,
-    "jira": 120.0,
-    "slack": 90.0,
-    "calendar": 90.0,
+    "github": 45.0,
+    "jira": 30.0,
+    "slack": 60.0,
+    "calendar": 20.0,
 }
-DEFAULT_SOURCE_TIMEOUT_SECONDS = 120.0
+DEFAULT_SOURCE_TIMEOUT_SECONDS = 30.0
+
+HTTP_CLIENT_TIMEOUT_SECONDS = 15.0
 
 # --- Per-source event limits ---
 

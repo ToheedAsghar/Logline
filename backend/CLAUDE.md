@@ -35,7 +35,7 @@ duration directly.
 | Stage | Module | Status on `main` |
 | --- | --- | --- |
 | 1. Local aggregation (raw tracker activity → blocks, pure function) | `app/local_activity/` | Built, tested (`tests/test_local_activity_aggregation.py`) |
-| 2. Remote fetch (code decides what to fetch, never the LLM) | `app/remote_fetch/` | Built, tested (`tests/test_remote_fetch_sources.py`, `tests/test_remote_fetch_orchestrator.py`). Per-source fetchers live under `app/remote_fetch/mcp/`; `orchestrator.py` drives them and advances the `remote_fetch_state` high-water marks |
+| 2. Remote fetch (code decides what to fetch, never the LLM) | `app/remote_fetch/` | Built, tested (`tests/test_remote_fetch_sources.py`, `tests/test_remote_fetch_orchestrator.py`). Per-source fetchers live under `app/remote_fetch/sources/`, calling each provider's REST API directly with per-user OAuth tokens (no MCP in the live fetch path); `orchestrator.py` drives them and advances the `remote_fetch_state` high-water marks |
 | 3. Deterministic matching (exact project + time-window rules, no automatic tiebreaking) | `app/matching/` | Built, tested (`tests/test_matching_resolution.py`) |
 | 4. Reminder generation (unmatched remote events, never auto-assigned durations) | `app/reminders/` | Built, tested |
 | 5. AI reconciliation (structured draft; AI allocates minutes against real measured blocks, never states bare durations) | `app/agent/reconciliation/` | **Schemas only** (`WorkLogDraft`, `DraftEntry`, `DraftReminder`, `BlockAllocation` in `schemas.py`, tested in `tests/test_reconciliation_schema*.py`). No service calls `run_structured` with them yet — nothing produces a `WorkLogDraft` in a real run. |
@@ -67,8 +67,8 @@ The `confidence` principle above still applies universally regardless of table s
 information to a human should carry a proven/estimated/gap signal, whatever the underlying table looks like.
 
 All of the above constrains *storage*, not file layout. One fetcher module per source is fine — each source's real
-API genuinely differs — even when those fetchers all write into one shared table. `app/remote_fetch/mcp/` is the
-worked example: four per-source fetchers (`github.py`, `jira.py`, `slack.py`, `calendar.py`) all persisting into
+API genuinely differs — even when those fetchers all write into one shared table. `app/remote_fetch/sources/` is
+the worked example: four per-source fetchers (`github.py`, `jira.py`, `slack.py`, `calendar.py`) all persisting into
 the single `remote_events` table.
 
 ### `metadata` is a reserved name on SQLAlchemy's declarative base
@@ -178,11 +178,11 @@ detect it.
 
 ## Integrations: per-user OAuth, not shared test credentials
 
-Real per-user OAuth connect flows exist for GitHub, Slack, and Jira — `app/integrations/providers/{github,jira,
-slack}.py` implement the shared `OAuthProvider` interface (`providers/base.py`), wired through
+Real per-user OAuth connect flows exist for GitHub, Slack, Jira, and Calendar — `app/integrations/providers/{github,
+jira,slack,calendar}.py` implement the shared `OAuthProvider` interface (`providers/base.py`), wired through
 `POST /integrations/{source}/connect-link`, `GET /integrations/{source}/connect`, `GET
-/integrations/{source}/callback`, and `DELETE /integrations/{source}` in `app/integrations/routers.py`. Calendar
-has no provider module yet (`is_source_registered` 404s cleanly for it) — still pending, per-user OAuth work. Do
+/integrations/{source}/callback`, and `DELETE /integrations/{source}` in `app/integrations/routers.py`. All four are
+registered in `PROVIDERS` (`providers/__init__.py`), so `is_source_registered` is true for all of them. Do
 not build new integration work against shared/global test credentials in `.env` — that pattern was an early
 bootstrapping shortcut for standalone MCP connectivity testing (see below), not the production design. Route new
 work through the existing per-source OAuth pattern rather than reintroducing a global credential.
