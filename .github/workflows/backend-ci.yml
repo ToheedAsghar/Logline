@@ -1,0 +1,70 @@
+name: Backend CI
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  db-integrity:
+    # Catches the class of bug from PR #18/#23: a domain's models.py never gets
+    # imported anywhere, so its mapped classes never register on Base.metadata,
+    # and the first cross-domain relationship() lookup fails -- but only once
+    # something actually calls configure_mappers(), which local dev may not hit
+    # for a while. Runs on a real Postgres service container, not SQLite, because
+    # the schema uses Postgres-only JSONB and native enum types that SQLite can't
+    # render.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: logline
+          POSTGRES_PASSWORD: logline
+          POSTGRES_DB: logline
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U logline"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://logline:logline@localhost:5432/logline
+      # Placeholder values for settings app.config.Settings requires at import
+      # time (_require_env) -- this job never sends mail or talks to Google,
+      # it just needs Settings() to construct successfully.
+      JWT_SECRET_KEY: ci-placeholder
+      ITSDANGEROUS_SECRET_KEY: ci-placeholder
+      SMTP_HOST: localhost
+      SMTP_PORT: "587"
+      SMTP_USERNAME: ci-placeholder
+      SMTP_PASSWORD: ci-placeholder
+      SMTP_FROM_ADDRESS: ci@example.com
+      GOOGLE_CLIENT_ID: ci-placeholder
+      GOOGLE_CLIENT_SECRET: ci-placeholder
+      GOOGLE_REDIRECT_URI: http://localhost/callback
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: alembic upgrade head
+        run: alembic upgrade head
+
+      - name: configure_mappers sanity check
+        run: |
+          python -c "
+          from app.db import base
+          from sqlalchemy.orm import configure_mappers
+          configure_mappers()
+          print('mappers OK')
+          "
